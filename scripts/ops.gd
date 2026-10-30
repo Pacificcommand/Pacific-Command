@@ -765,11 +765,28 @@ func _front_zones() -> Array:
 	return out
 
 
-## The two active bases of a side nearest a point; groups sail from there.
-func _bases_near(side: String, lon: float, lat: float) -> Array:
+## Pick a base of a side at random, the ones nearer a point more often (so the fleet
+## works out of the forward bases but convoys still come up from the rear).
+func _base_weighted(side: String, lon: float, lat: float, exclude := "") -> String:
 	var bases := _active_bases(side)
-	bases.sort_custom(func(a, b): return War.dist_nm(lon, lat, War.BASES[a].lon, War.BASES[a].lat) < War.dist_nm(lon, lat, War.BASES[b].lon, War.BASES[b].lat))
-	return bases.slice(0, mini(2, bases.size()))
+	var weights := []
+	var total := 0.0
+	for nm in bases:
+		if nm == exclude:
+			weights.append(0.0)
+			continue
+		var d := War.dist_nm(lon, lat, War.BASES[nm].lon, War.BASES[nm].lat)
+		var w := 1.0 / (1.0 + d / 700.0)
+		weights.append(w)
+		total += w
+	if total <= 0.0:
+		return ""
+	var r := _rng.randf() * total
+	for i in bases.size():
+		r -= weights[i]
+		if r <= 0.0:
+			return bases[i]
+	return bases[bases.size() - 1]
 
 
 ## Put a new group to sea. `anywhere` places it along its route (for the start of a campaign).
@@ -782,32 +799,41 @@ func _spawn_group(side: String, anywhere: bool) -> void:
 	var fronts := _front_zones()
 	var zid: String = fronts[_rng.randi() % fronts.size()]
 	var z: Dictionary = War.ZONES[zid]
-	var near := _bases_near(side, z.lon, z.lat)
-	var home: String = near[_rng.randi() % near.size()]
+	var home := _base_weighted(side, z.lon, z.lat)
+	if home == "":
+		return
 	var hb: Dictionary = War.BASES[home]
-	# destination: a point in the front zone, or (for convoys) a base near the front
+	# destination: a point in the front zone, or another of our bases (convoys mostly run
+	# base to base, bringing supplies up from the rear; warships mostly go to the front)
 	var dest := []
-	var to_base: bool = kind in ["convoy", "sub"] and _rng.randf() < 0.5 and near.size() > 1
 	var dest_name := ""
+	var base_chance := 0.7 if kind in ["convoy", "sub"] else (0.3 if kind == "patrol" else 0.2)
+	var to_base: bool = _rng.randf() < base_chance and bases.size() > 1
 	if to_base:
-		var other: String = near[0] if near[0] != home else near[1]
-		dest = [War.BASES[other].lon, War.BASES[other].lat]
-		dest_name = other
-	else:
+		var other := _base_weighted(side, z.lon, z.lat, home)
+		if other == "":
+			to_base = false
+		else:
+			dest = [War.BASES[other].lon, War.BASES[other].lat]
+			dest_name = other
+	if not to_base:
 		var a := _rng.randf() * TAU
 		var r: float = z.r * _rng.randf_range(0.1, 0.7) / 60.0
 		dest = [z.lon + cos(a) * r / cos(deg_to_rad(z.lat)), z.lat + sin(a) * r]
 		# convoys and barges do not sail into waters the other side holds
 		if kind in ["convoy", "barges"] and War.owner(zid, C.day, C.shift) != side:
-			if near.size() > 1:
-				var other2: String = near[0] if near[0] != home else near[1]
+			var other2 := _base_weighted(side, z.lon, z.lat, home)
+			if other2 != "":
 				dest = [War.BASES[other2].lon, War.BASES[other2].lat]
 				dest_name = other2
 				to_base = true
 			else:
 				kind = "express" if side == "ijn" else "patrol"
-	if War.dist_nm(hb.lon, hb.lat, dest[0], dest[1]) > 2600.0 or War.dist_nm(hb.lon, hb.lat, dest[0], dest[1]) < 30.0:
+	var route := War.dist_nm(hb.lon, hb.lat, dest[0], dest[1])
+	if route > 3200.0 or route < 30.0:
 		return
+	if kind == "barges" and route > 500.0:
+		kind = "express"
 	var g := _make_group(side, home, dest, to_base, year, kind)
 	if g.is_empty():
 		return

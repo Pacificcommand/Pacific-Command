@@ -2018,6 +2018,7 @@ func step_ship(s: Ship, dt: float) -> void:
 			elif s != player and s.T.get("crew", 0) >= 10:
 				stats.lost_friends = stats.get("lost_friends", [])
 				stats.lost_friends.append(s.ship_name)
+				_launch_rafts(s)
 				if s.last_hit_by == player:
 					tally.kills += 1
 					if s.cls() in ["bb", "cv"]:
@@ -2153,6 +2154,22 @@ func _step_shore(s: Ship, dt: float) -> void:
 		m.reload = maxf(0.0, m.reload - dt)
 
 
+## A friendly ship has gone down: her survivors take to rafts that the player can pick up.
+func _launch_rafts(s: Ship) -> void:
+	if s.role() == "survivors" or s.crew < 6:
+		return
+	var survivors := int(s.crew * randf_range(0.5, 0.75))
+	var n := clampi(int(survivors / 60) + 1, 1, 4)
+	for i in n:
+		var a := randf() * TAU
+		var d := randf_range(40.0, 90.0 + s.T.L * 0.3)
+		var r: Ship = _add_ship("raft", s.team, "Survivors of %s" % s.ship_name, s.x + sin(a) * d, s.z - cos(a) * d, randf() * TAU, 0.0)
+		r.crew = int(survivors / n)
+		r.objective = false
+		r.tele = 0
+	say("%s's crew is in the water: %d men on rafts. Pick them up when you can." % [s.ship_name, survivors], "")
+
+
 ## Life rafts drift with the wind; the player picks them up by coming alongside slowly.
 func _step_raft(s: Ship, dt: float) -> void:
 	if not s.alive:
@@ -2173,7 +2190,14 @@ func _step_raft(s: Ship, dt: float) -> void:
 			s.alive = false
 			s.gone = true
 			stats.rescued = stats.get("rescued", 0) + s.crew
-			say("%d survivors taken aboard from %s." % [s.crew, s.ship_name], "good")
+			# men from our own sunk ships fill the gaps in the crew; the rest are passengers
+			var room: int = maxi(0, int(player.T.crew) - player.crew)
+			var take: int = mini(room, s.crew) if s.team == player.team else 0
+			player.crew += take
+			if take > 0:
+				say("%d survivors taken aboard from %s; %d of them turn to at our battle stations." % [s.crew, s.ship_name, take], "good")
+			else:
+				say("%d survivors taken aboard from %s." % [s.crew, s.ship_name], "good")
 	elif d < 400.0 and not s.get_meta("hailed", false):
 		s.set_meta("hailed", true)
 		say("Men in the water ahead! Slow to under 10 knots and close the raft; the boats will do the rest.")

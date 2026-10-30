@@ -141,9 +141,32 @@ func fleet_of(s: Ship):
 	if not fleets.has(s.group):
 		fleets[s.group] = {"leader": null, "mode": "approach", "tgt": null, "plan_t": -99.0, "attack_t": -99.0, "msg": false}
 	var F: Dictionary = fleets[s.group]
+	# once the shooting starts, the ships in the player's group fight on their own under the
+	# senior AI ship instead of keeping station on the player (who may want to hang back)
+	var indep := independent(s.group)
+	if F.get("indep", false) != indep:
+		F.indep = indep
+		F.leader = null
+		if indep and s.group == B.player.group and not F.get("indep_msg", false):
+			F.indep_msg = true
+			B.say("Our ships are engaging independently.", "")
 	if F.leader == null or not F.leader.alive or F.leader.escaped or F.leader.detached:
 		F.leader = pick_leader(s.group)
 	return F
+
+
+## A group leaves the player's station-keeping once a fight is on or an enemy is close.
+func independent(group: String) -> bool:
+	if group != B.player.group or B.player.group == "":
+		return false
+	if B.combat_t >= 0.0:
+		return true
+	for o in B.ships:
+		if o.group == group and o.alive and not o.is_player:
+			var c := nearest_noticed(o, false)
+			if c and o.range_to(c) < 14000.0:
+				return true
+	return false
 
 
 ## The senior surviving ship leads: biggest first, then the one named leader in setup.
@@ -153,6 +176,8 @@ func pick_leader(group: String) -> Ship:
 	for o in B.ships:
 		if o.group != group or not o.alive or o.escaped or o.detached:
 			continue
+		if o.is_player and independent(group):
+			continue
 		var v: float = o.T.displacement + (1e6 if o.leader_flag else 0.0) + (1e7 if o.is_player else 0.0)
 		if v > bv:
 			bv = v; best = o
@@ -161,8 +186,9 @@ func pick_leader(group: String) -> Ship:
 
 func members(group: String) -> Array:
 	var out := []
+	var skip_player := independent(group)
 	for o in B.ships:
-		if o.group == group and o.alive and not o.escaped:
+		if o.group == group and o.alive and not o.escaped and not (o.is_player and skip_player):
 			out.append(o)
 	return out
 
