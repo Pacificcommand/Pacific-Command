@@ -78,6 +78,8 @@ func _migrate() -> void:
 		C.attached = ""
 	if not C.has("intercept"):
 		C.intercept = ""
+	if not C.has("next_id"):
+		C.next_id = 1
 	C.erase("contacts")
 
 
