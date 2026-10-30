@@ -335,3 +335,113 @@ static func for_contact(kind: String, rng: RandomNumberGenerator, strength: floa
 		"escort":
 			var p3 := convoy_escort(rng); p3.choices = _choices(ship_type, ship_name); return p3
 	return tokyo_express(rng, strength, year, ship_type, ship_name)
+
+
+# =====================================================================
+# encounters between groups on the operations map
+# =====================================================================
+
+## Threat points of a list of [type, name] ships (for resolving fights the player is not in).
+static func group_strength(ships: Array) -> float:
+	var pts := 0.0
+	for sh in ships:
+		var T: Dictionary = Data.TYPES.get(sh[0], {})
+		pts += THREAT_PTS.get(T.get("cls", "dd"), 1.0)
+	return pts
+
+## Lay out a list of [type, name] ships as a formation: warships in a column, merchants in two
+## columns, with escorts to the flanks. Returns [[type, name, back, side], ...].
+static func layout(ships: Array, rng: RandomNumberGenerator) -> Array:
+	var war := []
+	var soft := []
+	for sh in ships:
+		var T: Dictionary = Data.TYPES.get(sh[0], {})
+		if T.get("cls", "dd") in ["merchant", "barge"]:
+			soft.append(sh)
+		else:
+			war.append(sh)
+	# biggest ships lead
+	war.sort_custom(func(a, b): return float(Data.TYPES[a[0]].get("displacement", 0)) > float(Data.TYPES[b[0]].get("displacement", 0)))
+	var out := []
+	if soft.is_empty():
+		for i in war.size():
+			var L: float = Data.TYPES[war[i][0]].get("L", 100.0)
+			out.append([war[i][0], war[i][1], 650.0 * i + L * 2.0, 0.0])
+	else:
+		for i in soft.size():
+			out.append([soft[i][0], soft[i][1], 450.0 * int(i / 2), 300.0 if i % 2 == 0 else -300.0])
+		for i in war.size():
+			var ang := TAU * float(i) / maxf(1.0, war.size())
+			out.append([war[i][0], war[i][1], -900.0 + 600.0 * int(i / 2) + 200.0 * soft.size(), (1100.0 if i % 2 == 0 else -1100.0)])
+	return out
+
+const GROUP_LABEL := {"convoy": "convoy", "express": "Tokyo Express run", "taskforce": "task force", "carriers": "carrier force", "barges": "barge column", "sub": "submarine", "patrol": "destroyer patrol", "escort": "convoy with escort"}
+
+## A battle between the player's side and an enemy group met on the map.
+## `friends`: [type, name] ships sailing with the player (squadron plus any friendly group joined).
+## `convoy`: friendly merchant ships to protect (when the player joins a convoy under attack), or [].
+static func encounter(rng: RandomNumberGenerator, enemy: Dictionary, friends: Array, convoy: Array, player_type: String, player_name: String, weather: String) -> Dictionary:
+	var brg := rng.randf_range(0.0, TAU)
+	var ekind: String = enemy.get("kind", "taskforce")
+	var eships: Array = enemy.ships
+	var big := group_strength(eships) >= 16.0 or ekind == "carriers"
+	var dist := rng.randf_range(9000.0, 12000.0)
+	if big:
+		dist = rng.randf_range(15000.0, 20000.0)
+	if ekind == "barges":
+		dist = rng.randf_range(4500.0, 6000.0)
+	if ekind == "sub":
+		dist = rng.randf_range(5000.0, 8000.0)
+	var h := fposmod(brg + PI + rng.randf_range(-0.5, 0.5), TAU)
+	var kn := 9.0 if ekind in ["convoy"] else (7.0 if ekind == "barges" else (3.0 if ekind == "sub" else 24.0))
+	var fl := []
+	var fr_ships := layout([[player_type, player_name]] + friends, rng)
+	for i in range(1, fr_ships.size()):
+		fl.append(fr_ships[i])
+	# enemy groups: merchants (objective, routed) and escorts, or one warship group
+	var groups := []
+	var merch := []
+	var esc := []
+	for sh in eships:
+		if Data.TYPES[sh[0]].get("cls", "dd") in ["merchant", "barge"]:
+			merch.append(sh)
+		else:
+			esc.append(sh)
+	var ex := sin(brg) * dist
+	var ez := -cos(brg) * dist
+	if ekind == "sub":
+		for i in esc.size():
+			var b2 := rng.randf_range(0.0, TAU)
+			var d2 := rng.randf_range(5000.0, 8000.0)
+			groups.append({"group": "", "x": sin(b2) * d2, "z": -cos(b2) * d2, "h": fposmod(b2 + PI, TAU), "kn": 3.0, "ships": [[esc[i][0], esc[i][1], 0.0, 0.0]], "objective": true, "sub": true})
+	elif not merch.is_empty():
+		groups.append({"group": "", "x": ex, "z": ez, "h": h, "kn": kn, "ships": layout(merch, rng), "objective": true, "route": true, "dest": 20000.0})
+		if not esc.is_empty():
+			var el := []
+			for i in esc.size():
+				el.append([esc[i][0], esc[i][1], -900.0 + 600.0 * i, 1100.0 if i % 2 == 0 else -1100.0])
+			groups.append({"group": "", "x": ex, "z": ez, "h": h, "kn": kn, "ships": el, "objective": false, "escort": true})
+	else:
+		groups.append({"group": enemy.get("name", "Enemy force"), "x": ex, "z": ez, "h": h, "kn": kn, "ships": layout(esc, rng), "objective": true, "route": ekind == "express", "dest": 30000.0})
+	var plan := {"id": "encounter", "title": "%s: %s" % [enemy.get("name", "Enemy"), GROUP_LABEL.get(ekind, ekind)], "kind": "sink", "weather": weather,
+		"choices": [[player_type, player_name]], "friends": fl, "enemies": groups,
+		"report": _report(brg, dist, h, kn, 2500.0 if not big else 5000.0), "escape_r": 26000.0 if not big else 36000.0,
+		"text": "Contact bearing %s, about %s away: " + _enemy_text(ekind) + "\n\nYou command %s" + (" with %d other ship%s in company" % [fl.size(), "" if fl.size() == 1 else "s"] if not fl.is_empty() else "") + "."}
+	if not convoy.is_empty():
+		# the player's side has merchants to protect: they come under attack from the enemy group
+		var ch := rng.randf_range(0.0, TAU)
+		plan.kind = "protect"
+		plan.title = "Convoy under attack"
+		plan.convoy = {"ships": layout(convoy, rng), "x": -sin(ch) * 2500.0, "z": cos(ch) * 2500.0, "h": ch, "kn": 9.0, "dest": 24000.0}
+		plan.escape_r = 20000.0
+		plan.text = "Enemy ships bearing %s, about %s away, are closing the convoy. Keep them off the merchantmen until the convoy is clear.\n\nYou command %s."
+	return plan
+
+static func _enemy_text(kind: String) -> String:
+	match kind:
+		"convoy": return "a Japanese convoy with escort. Sink the merchantmen."
+		"express": return "destroyers at high speed on a Tokyo Express run. Stop them before they pass out of reach."
+		"barges": return "landing barges creeping along the coast, some of them gun barges. Torpedoes run under them."
+		"sub": return "a Japanese submarine on the route. Find it on sonar and sink it."
+		"carriers": return "Japanese carriers with their screen. The first strike home wins."
+	return "a Japanese surface force. Fleet command wants it brought to action."

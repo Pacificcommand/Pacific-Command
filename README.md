@@ -1,18 +1,22 @@
-# Pacific Command (build 0.12)
+# Pacific Command (build 0.13)
 
 WWII Pacific naval game for PC, made in **Godot 4.7.2**.
 
 **Campaign:** from the main menu, start a campaign in December 1941, August 1942,
-November 1943 or October 1944 with the ship of your choice. The operations map shows
-the Pacific from Pearl Harbor to Japan: sea zones held by either side, bases, and
-contacts (Tokyo Express runs, convoys, barges, submarines, task forces, carrier
-forces, bombardment requests, rescues, convoys to escort) that appear where the war
-is busy. Click the sea to set a course, run the clock (pause / 1 h per 3 s / fast /
-very fast), sail within 60 nm of a contact and engage it: the battle opens with the
-contact's force and the weather of the hour. Historical operations (Savo, Midway,
-Guadalcanal, Leyte...) arrive on their dates and offer you a part. Your results nudge
-the war: wins bring the Allied advance forward, losses hold it back. After the
-surrender the Pacific stays open for patrols.
+November 1943 or October 1944. Every career starts in a PT boat; rank earned in battle
+unlocks bigger commands, requested in port. The operations map shows the Pacific from
+Pearl Harbor to Japan: sea zones held by either side, bases, and **groups moving like
+you do** - our convoys, destroyer patrols, task forces and submarines (blue), and the
+Japanese Tokyo Express runs, convoys, task forces, barges and submarines (red, once
+radar, aircraft or a friendly ship has found them). Groups that meet fight each other,
+and the fight is marked on the map for a few hours: sail to it and join, intercept an
+enemy group yourself, or sail with a friendly convoy as its escort and fight when it is
+attacked. In a friendly port you repair, refit, request a new command and **recruit
+ships for your squadron with reputation**; they sail with you and fight under your
+orders until they are sunk. Click the sea to set a course, run the clock (pause / 1 h
+per 3 s / fast / very fast). Historical operations (Savo, Midway, Guadalcanal,
+Leyte...) arrive on their dates and offer you a part. Your results nudge the war. After
+the surrender the Pacific stays open for patrols.
 
 **Single battle:** twelve stand-alone missions picked on the briefing screen (most
 let you choose your ship), each with a threat rating; reputation buys support ships
@@ -61,7 +65,7 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 | M | Switch aim: Crew (automatic) or Manual (mouse) |
 | F | Crew aim: open / cease fire on the target |
 | Left click | Crew aim: pick a target. Manual aim: fire where you click |
-| Right click | Pick a target (both modes) |
+| Right drag | Move the camera (it unlocks; Home locks it back). A plain right click picks a target. Settings can swap this to the left button |
 | Tab | Next target |
 | T | Torpedo aim: lanes follow the mouse, a lead marker shows where to aim, click to fire (T or Esc to cancel) |
 | Z | Lay a smoke screen |
@@ -69,7 +73,7 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 | C | Camera on the enemy target / back on your own ship |
 | Space | Tactical pause |
 | 1 / 2 / 3 | Slow ¼× / normal / fast 3× |
-| Mouse wheel | Zoom; drag to look around (the camera unlocks); Home locks it back on the ship |
+| Mouse wheel | Zoom |
 | L | Carriers and ships with floatplanes: launch an air strike at your target |
 | X / E | Submarines: dive (periscope depth, then deep) / come up |
 | G / H | Drop depth charges / fire the hedgehog |
@@ -92,13 +96,14 @@ All keys can be changed in Settings › Controls.
   (Ensign, Officer, Veteran, Ironman) chosen with a new campaign. Career screen from
   the map and the pause menu.
 - The operations map (scripts/ops.gd, scripts/war.gd): 18 sea zones with historical
-  ownership dates, 21 bases, 23 operations on the 1941-45 timeline, contacts generated
-  from zone activity, time compression, campaign saved to user://campaign.json.
+  ownership dates, 21 bases, 23 operations on the 1941-45 timeline; friendly and enemy
+  groups sail between bases and the front, hunt each other, fight (resolved by weight of
+  metal when you are not there) and can be joined; detection by radar, friendly ships,
+  air search and coastwatchers; time compression; campaign saved to user://campaign.json.
 - Islands with beaches you can run aground on, coastal gun batteries that shoot back,
   Liberty ships, life rafts; threat ratings (Low to Extreme) from the enemy force;
-  reputation earned by results and spent on support ships (destroyers to carriers)
-  on the briefing, limited by rank. Sandbox career: Captain with 900 reputation,
-  saved in user://career.json until the career build replaces it.
+  reputation earned by results and spent in port on ships for your squadron (PT boats
+  to carriers), limited by rank; in single battles support is bought on the briefing.
 - Aircraft as weapons: carriers launch and recover fighter, dive-bomber and torpedo
   squadrons that fly out visibly, attack, dogfight, take flak and come home to rearm;
   cruisers and battleships launch floatplane scouts that report what they find.

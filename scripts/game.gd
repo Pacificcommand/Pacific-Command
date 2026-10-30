@@ -7,7 +7,7 @@ signal graphics_changed
 const CFG := "user://settings.cfg"
 const SAVE_DIR := "user://saves"
 const SLOTS := 5
-const VERSION := "0.12"
+const VERSION := "0.13"
 
 ## Graphics and sound settings with their defaults.
 var settings := {
@@ -18,6 +18,7 @@ var settings := {
 	"ui_scale": 1.0,
 	"pyro": true,               # PYROLUX fire and explosion addon, when installed
 	"vol_master": 1.0, "vol_music": 0.7, "vol_fx": 1.0, "vol_radio": 1.0,
+	"pan_left": false,          # drag the camera with the left button instead of the right
 }
 const RESOLUTIONS := ["1280x720", "1600x900", "1920x1080", "2560x1440", "3840x2160"]
 

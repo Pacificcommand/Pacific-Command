@@ -426,7 +426,10 @@ func _build_support_row() -> void:
 		if sh.team == p.team and sh != p and sh.group == p.group and sh.group != "":
 			in_group += 1
 	lbl.rep.text = "%s · reputation %d (%d to spend after this) · ships in battle %d of %d allowed" % [Missions.RANKS[clampi(Game.career.rank, 0, 8)], Game.career.reputation, Game.career.reputation - B._spent, in_group, cap]
-	support_row.get_parent().get_parent().visible = not avail.is_empty()
+	# in the campaign, ships are recruited in port instead (the squadron sails with you)
+	support_row.get_parent().get_parent().visible = not avail.is_empty() and not Game.campaign_active()
+	if Game.campaign_active():
+		return
 	var grid := GridContainer.new()
 	grid.columns = 4
 	grid.add_theme_constant_override("h_separation", 2)
@@ -1132,24 +1135,27 @@ func _unhandled_input(e: InputEvent) -> void:
 			B.zoom(1.0 / 1.15)
 		elif e.button_index == MOUSE_BUTTON_WHEEL_DOWN and e.pressed:
 			B.zoom(1.15)
-		elif e.button_index == MOUSE_BUTTON_LEFT:
-			if e.pressed:
-				drag = {"start": e.position, "last": e.position, "moved": 0.0}
-			else:
-				if not drag.is_empty() and drag.moved < 6.0 and B.started:
-					var w = B.screen_to_world(e.position)
-					if w != null:
-						if B.torp_aim and p.alive:
-							B.torp_click(w)
-						elif B.aim_mode == "manual" and p.alive:
-							B.click_shot = w
-						else:
-							B.pick_target_at(w)
-				drag = {}
-		elif e.button_index == MOUSE_BUTTON_RIGHT and e.pressed:
-			var w2 = B.screen_to_world(e.position)
-			if w2 != null:
-				B.pick_target_at(w2)
+		elif e.button_index == MOUSE_BUTTON_LEFT or e.button_index == MOUSE_BUTTON_RIGHT:
+			var pan_btn: int = MOUSE_BUTTON_LEFT if Game.settings.get("pan_left", false) else MOUSE_BUTTON_RIGHT
+			if e.button_index == pan_btn:
+				# drag moves the camera; a plain click still picks a target
+				if e.pressed:
+					drag = {"start": e.position, "last": e.position, "moved": 0.0}
+				else:
+					if not drag.is_empty() and drag.moved < 6.0 and B.started:
+						var w0 = B.screen_to_world(e.position)
+						if w0 != null:
+							B.pick_target_at(w0)
+					drag = {}
+			elif e.pressed and B.started:
+				var w = B.screen_to_world(e.position)
+				if w != null:
+					if B.torp_aim and p.alive:
+						B.torp_click(w)
+					elif B.aim_mode == "manual" and p.alive:
+						B.click_shot = w
+					else:
+						B.pick_target_at(w)
 	elif e is InputEventMouseMotion:
 		B.mouse_w = B.screen_to_world(e.position)
 		if not drag.is_empty():

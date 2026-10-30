@@ -200,19 +200,9 @@ func _on_campaign() -> void:
 		sb.add_child(b)
 	v.add_child(sb)
 	v.add_child(UI.label("Your first command", 16))
-	var ships := [["pt_elco", "PT-109"], ["fletcher", "USS O'Bannon"], ["gato", "USS Wahoo"], ["buckley", "USS England"], ["cleveland", "USS Cleveland"], ["baltimore", "USS Baltimore"], ["essex", "USS Essex"], ["iowa", "USS Iowa"]]
-	var grid := GridContainer.new()
-	grid.columns = 4
-	grid.add_theme_constant_override("h_separation", 4)
-	grid.add_theme_constant_override("v_separation", 4)
-	var ship_btns := []
-	for it in ships:
-		var b2 := UI.button("%s (%s)" % [it[1], Data.TYPES[it[0]].name.replace(" class", "")], func(): pass, true)
-		b2.pressed.connect(func(): ship[0] = it[0]; ship[1] = it[1]; for o in ship_btns: o.set_pressed_no_signal(o == b2))
-		b2.set_pressed_no_signal(it[0] == "fletcher")
-		ship_btns.append(b2)
-		grid.add_child(b2)
-	v.add_child(grid)
+	var pt_no := 100 + randi() % 100
+	ship = ["pt_elco", "PT-%d" % pt_no]
+	v.add_child(UI.wrap("Every career starts at the bottom: an 80-foot Elco PT boat, %s, with a crew of fourteen. Fight well and the Navy gives you bigger ships: at each new rank, call at a friendly port and request a new command (destroyer escorts and destroyers first, then cruisers, carriers and battleships). Reputation earned in battle also buys other ships to sail with you." % ship[1], 560, 12, UI.MUTED))
 	v.add_child(UI.label("Difficulty", 16))
 	var diff := ["officer"]
 	var drow := UI.row([], 4)
@@ -224,7 +214,7 @@ func _on_campaign() -> void:
 		dbtns.append(db)
 		drow.add_child(db)
 	v.add_child(drow)
-	v.add_child(UI.wrap("Ensign: retry lost battles, half reputation losses. Officer: the war goes on. Veteran: five tactical pauses a battle, no lead marker, officers can die, you can be wounded. Ironman: no pause, and the career ends if your ship sinks. Your first command sets your starting rank; a new campaign replaces the saved one.", 560, 12, UI.MUTED))
+	v.add_child(UI.wrap("Ensign: retry lost battles, half reputation losses. Officer: the war goes on. Veteran: five tactical pauses a battle, no lead marker, officers can die, you can be wounded. Ironman: no pause, and the career ends if your ship sinks. A new campaign replaces the saved one.", 560, 12, UI.MUTED))
 	v.add_child(UI.row([UI.big_button("Begin", func():
 		Game.campaign = load("res://scripts/ops.gd").new_campaign(start[0], ship[0], ship[1])
 		Game.career = Career.fresh(diff[0])

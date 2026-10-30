@@ -193,6 +193,8 @@ func _test_args() -> void:
 		print("ran ", _test.run, "s: t=", t, " player crew ", player.crew, " flood ", player.flood, " salvos ", stats.salvos, " hits ", stats.hits, " sunk ", stats.sunk)
 		for s in ships:
 			print("  ", s.ship_name, " alive=", s.alive, " crew=", s.crew, " flood=", int(s.flood), " fires=", s.fires.size(), " range=", int(player.range_to(s)), " vis=", player.vis.get(s.ship_name, false), " radar=", player.radar.get(s.ship_name, false))
+		if _test.has("quit") and not _test.has("shot"):
+			get_tree().quit()
 	if _test.has("torpaim"):
 		torp_aim = true
 		if player.target:
@@ -1017,7 +1019,7 @@ func _settle() -> void:
 	if Game.campaign_active():
 		for a in SteamHook.check_battle(self):
 			say("Achievement: %s" % SteamHook.name_of(a), "good")
-	Game.last_result = {"over": over, "sunk": stats.sunk.duplicate(), "rescued": stats.get("rescued", 0), "player_alive": player.alive, "crew_lost": stats.start_crew - player.crew,
+	Game.last_result = {"over": over, "sunk": stats.sunk.duplicate(), "lost_friends": stats.get("lost_friends", []).duplicate(), "rescued": stats.get("rescued", 0), "player_alive": player.alive, "crew_lost": stats.start_crew - player.crew,
 		"flood": player.flood / maxf(1.0, player.flood_cap()), "mission": Game.mission.duplicate(true)}
 	Game.career.missions += 1
 	var tons := 0.0
@@ -1866,7 +1868,8 @@ func step_torps(dt: float) -> void:
 		tp.x += sin(tp.h) * d
 		tp.z -= cos(tp.h) * d
 		tp.left -= d
-		if randf() < dt * 18.0:
+		# enemy wakes are invisible until a lookout on one of our ships spots them (see below)
+		if randf() < dt * 18.0 and (tp.team == player.team or tp.warned):
 			fx.foam(tp.x, tp.z, 0, 0, randf_range(0.8, 1.4), 0.5, randf_range(4, 7), 0.6)
 		for s in ships:
 			if s.team == tp.team or s.sink > 2.0 or (s.is_sub() and s.depth == 2):
@@ -1901,12 +1904,16 @@ func step_torps(dt: float) -> void:
 				break
 		# warn the player about wakes the lookouts can see
 		if not tp.warned and tp.team != player.team and player.alive:
-			var dist := U.hyp(tp.x - player.x, tp.z - player.z)
 			var W: Dictionary = Data.WEATHER[weather]
-			var see := 500.0 if W.night else (600.0 if weather == "fog" else 1400.0)
+			var see := 450.0 if W.night else (400.0 if weather == "fog" else (800.0 if weather == "overcast" else 1000.0))
+			see *= 1.0 + 0.3 * Career.mod("lookouts")
+			var dist := 1e9
+			for o in ships:
+				if o.team == player.team and o.alive and not o.is_sub() and o.T.get("crew", 0) >= 10:
+					dist = minf(dist, U.hyp(tp.x - o.x, tp.z - o.z))
 			if dist < see:
 				tp.warned = true
-				if t - _torp_warn_t > 4.0:
+				if t - _torp_warn_t > 4.0 and U.hyp(tp.x - player.x, tp.z - player.z) < 4000.0:
 					_torp_warn_t = t
 					say("Torpedo wakes! Bearing %s." % U.deg3(player.bearing_to(tp.x, tp.z)), "bad")
 					sfx.play("alarm", Vector2(player.x, player.z), cam.position, 0.6)
@@ -1998,6 +2005,9 @@ func step_ship(s: Ship, dt: float) -> void:
 			sfx.play("creak", Vector2(s.x, s.z), cam.position, 0.9)
 			if s.team != player.team:
 				stats.sunk.append(s.ship_name)
+			elif s != player and s.T.get("crew", 0) >= 10:
+				stats.lost_friends = stats.get("lost_friends", [])
+				stats.lost_friends.append(s.ship_name)
 				if s.last_hit_by == player:
 					tally.kills += 1
 					if s.cls() in ["bb", "cv"]:
@@ -2145,9 +2155,10 @@ func _step_raft(s: Ship, dt: float) -> void:
 		say("%s: no survivors left alive." % s.ship_name, "bad")
 		return
 	var d := player.range_to(s)
-	if player.alive and d < 60.0 and absf(player.v) < 5.0 * Data.KN:
+	var reach: float = 60.0 + player.T.L * 0.6 + 120.0   # boats and lines reach well past the hull
+	if player.alive and d < reach and absf(player.v) < 10.0 * Data.KN:
 		s.sinking += dt
-		if s.sinking > 10.0:
+		if s.sinking > 8.0:
 			s.rescued = true
 			s.alive = false
 			s.gone = true
@@ -2155,7 +2166,7 @@ func _step_raft(s: Ship, dt: float) -> void:
 			say("%d survivors taken aboard from %s." % [s.crew, s.ship_name], "good")
 	elif d < 400.0 and not s.get_meta("hailed", false):
 		s.set_meta("hailed", true)
-		say("Men in the water ahead! Slow to under 5 knots and come alongside the raft.")
+		say("Men in the water ahead! Slow to under 10 knots and close the raft; the boats will do the rest.")
 	else:
 		s.sinking = 0.0
 

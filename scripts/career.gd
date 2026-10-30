@@ -70,6 +70,7 @@ const SKILLS := {
 	"bb_shore": ["Shore bombardment", "bb", "Stronger fire against land targets.", {"shore": 0.4}],
 	"gen_steady": ["Steady under fire", "all", "Morale holds longer.", {"morale": 0.3}],
 	"gen_night": ["Night fighter", "all", "Better night spotting.", {"night_spot": 0.2}],
+	"gen_lookouts": ["Sharp lookouts", "all", "Torpedo wakes are spotted farther out.", {"lookouts": 1.0}],
 	"gen_handler": ["Ship handler", "all", "Faster engine and rudder response.", {"agility": 0.15}],
 }
 

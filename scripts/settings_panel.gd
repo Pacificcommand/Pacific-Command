@@ -85,6 +85,7 @@ func _sound_tab() -> Control:
 func _controls_tab() -> Control:
 	var v := UI.column(6)
 	v.add_child(UI.wrap("Click a key to change it, then press the new key. Esc cancels. A key already in use is taken from its old action.", 680, 12, UI.MUTED))
+	v.add_child(UI.check("Move the camera with the left mouse button (default: right button drags, left button selects and fires)", bool(Game.settings.get("pan_left", false)), func(on): Game.settings.pan_left = on; Game.save_settings()))
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(680, 330)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
