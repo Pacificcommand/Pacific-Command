@@ -9,7 +9,8 @@ license or credit. See `CREDITS.txt`.
 ## Replacing a sound with a recording
 
 Drop a file in this folder with one of the names below (`.wav` or `.ogg`) and it is used
-instead of the synthesised one. Music goes in `assets/music/` as `menu`, `map`, `battle`,
+instead of the synthesised one. Several takes of the same sound can be given as `name_1`,
+`name_2`, ... and one is picked at random each time (the gun reports work this way). Music goes in `assets/music/` as `menu`, `map`, `battle`,
 `victory`, `defeat` (`.ogg` preferred). Loops must be seamless. Then add a line to
 `CREDITS.txt` for each file: title, author, source link, licence.
 

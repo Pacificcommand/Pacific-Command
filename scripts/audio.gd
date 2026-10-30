@@ -22,6 +22,7 @@ const LOOPS := ["plane", "fire", "ocean", "wind", "rain"]
 const TRACKS := ["menu", "map", "battle", "victory", "defeat"]
 
 var bank := {}                 # name -> AudioStream
+var variants := {}             # name -> [AudioStream, ...] when recordings with _1, _2 ... exist
 var music_streams := {}        # track -> AudioStream
 var ready_ok := false          # true once the bank exists
 var headless := false
@@ -168,17 +169,24 @@ func _built(snd: Dictionary, mus: Dictionary) -> void:
 
 ## Real recordings in assets/ override the synthesised ones, then everything goes live.
 func _finish_bank() -> void:
+	variants.clear()
 	for nm in SOUNDS:
-		for ext in ["wav", "ogg"]:
-			var path := "res://assets/sounds/%s.%s" % [nm, ext]
-			if ResourceLoader.exists(path):
-				var st = load(path)
-				if st is AudioStreamWAV and nm in LOOPS:
-					st.loop_mode = AudioStreamWAV.LOOP_FORWARD
-					st.loop_end = st.data.size() / (2 if st.format == AudioStreamWAV.FORMAT_16_BITS else 1) / (2 if st.stereo else 1)
-				elif st is AudioStreamOggVorbis:
-					st.loop = nm in LOOPS
-				bank[nm] = st
+		# name.wav|ogg replaces the synthesised sound; name_1, name_2 ... are variations picked at random
+		var found := []
+		for suffix in ["", "_1", "_2", "_3", "_4", "_5", "_6", "_7", "_8"]:
+			for ext in ["wav", "ogg"]:
+				var path := "res://assets/sounds/%s%s.%s" % [nm, suffix, ext]
+				if ResourceLoader.exists(path):
+					var st = load(path)
+					if st is AudioStreamWAV and nm in LOOPS:
+						st.loop_mode = AudioStreamWAV.LOOP_FORWARD
+						st.loop_end = st.data.size() / (2 if st.format == AudioStreamWAV.FORMAT_16_BITS else 1) / (2 if st.stereo else 1)
+					elif st is AudioStreamOggVorbis:
+						st.loop = nm in LOOPS
+					found.append(st)
+		if not found.is_empty():
+			bank[nm] = found[0]
+			variants[nm] = found
 	for tr in TRACKS:
 		for ext in ["ogg", "wav"]:
 			var path := "res://assets/music/%s.%s" % [tr, ext]
@@ -216,10 +224,14 @@ func at(nm: String, pos: Vector2, cam: Vector3, vol := 1.0) -> void:
 func _shoot(nm: String, g: float, pitch: float, bus: String) -> void:
 	if not ready_ok or not bank.has(nm):
 		return
+	var st: AudioStream = bank[nm]
+	if variants.has(nm):
+		var v: Array = variants[nm]
+		st = v[randi() % v.size()]
 	for p in fx_players:
 		if not p.playing:
 			p.bus = bus
-			p.stream = bank[nm]
+			p.stream = st
 			p.volume_db = linear_to_db(clampf(g, 0.0, 1.5))
 			p.pitch_scale = pitch
 			p.play()

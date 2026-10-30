@@ -6,3 +6,10 @@ compositions. Copyright of that audio belongs to the game's owner.
 
 When a recording replaces a synthesised sound, add it here, one line per file:
   file name | title | author | source URL | licence
+
+gun_small_1-3, gun_medium_1-6, gun_large_1-4 | "2081 - Light Naval Cannon Blast Pack" | Stormwave Audio
+  (https://stormwave-audio.com) | licensed to Matt Whodak (purchaser) for commercial and
+  non-commercial projects including video games; the raw files may not be redistributed or
+  resold, so they stay in this private repository and ship only inside the compiled game.
+  Converted to mono 22 kHz .ogg and trimmed; the gun_large set is pitched down from the originals.
+  Licence text: docs/licenses/Stormwave Audio - Sound Effect License Agreement.pdf
