@@ -1,4 +1,4 @@
-# Pacific Command — combat sandbox (build 0.3)
+# Pacific Command — combat sandbox (build 0.4)
 
 WWII Pacific naval game for PC, made in **Godot 4.7.2**. Combat sandbox with three
 missions, picked on the briefing screen:
@@ -16,7 +16,8 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 1. Start Godot 4.7.2. In the Project Manager choose **Import**, pick
    `project.godot` in this folder, then **Import & Edit**.
 2. The first time, Godot spends a minute importing the ship models.
-3. Press **F5** (or the ▶ Play button at the top right) to run the game.
+3. Press **F5** (or the ▶ Play button at the top right) to run the game. The main menu
+   opens; **New battle** goes to the mission briefing, **Load battle** resumes a save.
 
 ## Controls
 | Key / mouse | Action |
@@ -34,9 +35,15 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 | C | Camera on the enemy target / back on your own ship |
 | Space | Tactical pause |
 | 1 / 2 / 3 | Slow ¼× / normal / fast 3× |
-| Mouse wheel | Zoom; drag to look around (the camera unlocks); Esc locks it back on the ship |
+| Mouse wheel | Zoom; drag to look around (the camera unlocks); Home locks it back on the ship |
+| Esc | Pause menu: resume, save, load, settings, main menu |
+
+All keys can be changed in Settings › Controls.
 
 ## What's in this build
+- Main menu, pause menu (Esc), settings (quality preset, fullscreen/resolution/v-sync,
+  UI scale, volumes for music/effects/radio, key rebinding) saved between sessions,
+  and five save slots for battles in progress.
 - Enemy AI that fights as a fleet: destroyer divisions keep formation, run in for
   torpedo attacks, break away under smoke and come back; a convoy escort screens its
   charges and drives off attackers; lone ships mix tactics (open range, zigzag, cross

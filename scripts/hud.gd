@@ -26,6 +26,8 @@ var rud_view: Control
 var guns_box: HBoxContainer
 var brief: PanelContainer
 var endp: PanelContainer
+var pausep: Control = null
+var _pause_prev := 1.0
 var drag := {}
 var tele_btns: Array = []
 
@@ -193,7 +195,7 @@ func _build_plates() -> void:
 	btn.snd = _button("Sound on", _on_sound, true)
 	btn.restart = _button("New battle", func(): B.new_game())
 	btn.pyro = _button("PYROLUX effects", _on_pyro, true)
-	p3.add_child(_row([_caps("Game"), btn.snd, btn.pyro, btn.restart, _button("Quit", func(): get_tree().quit())]))
+	p3.add_child(_row([_caps("Game"), btn.snd, btn.pyro, btn.restart, _button("Menu (Esc)", open_pause)]))
 	trv.add_child(p3)
 	_place(trv, "tr")
 
@@ -285,11 +287,20 @@ func _build_plates() -> void:
 	vpv.add_child(_row([_caps("Camera on"), _seg("cam", [["player", "Own ship"], ["target", "Enemy target (C)"]], _on_focus)]))
 	vp.add_child(vpv)
 	brv.add_child(vp)
-	var keys := _label("W/S engines · A/D rudder · Q center · M crew/manual aim\nF fire · T torpedo aim · Z smoke · Tab next target · V follow salvos\nC camera on target · Space pause · 1/2/3 slow/normal/fast\nWheel zoom · drag to look around (Esc locks the camera back on)\nLeft-click: target (crew aim) or fire (manual) · right-click: target", 11, C_MUTED)
+	lbl.keys = _label("", 11, C_MUTED)
+	_update_keys_help()
 	var kp := _panel()
-	kp.add_child(keys)
+	kp.add_child(lbl.keys)
 	brv.add_child(kp)
 	_place(brv, "br")
+
+
+func _update_keys_help() -> void:
+	var k := Game.key_name
+	lbl.keys.text = "%s/%s engines · %s/%s rudder · %s center · %s crew/manual aim\n%s fire · %s torpedo aim · %s smoke · %s next target · %s follow salvos\n%s camera on target · %s pause · %s/%s/%s slow/normal/fast · %s menu\nWheel zoom · drag to look around (%s locks the camera back on)\nLeft-click: target (crew aim) or fire (manual) · right-click: target" % [
+		k.call("tele_up"), k.call("tele_down"), k.call("rudder_left"), k.call("rudder_right"), k.call("rudder_center"), k.call("aim_mode"),
+		k.call("fire"), k.call("torpedo"), k.call("smoke"), k.call("next_target"), k.call("follow"),
+		k.call("camera"), k.call("pause"), k.call("slow"), k.call("normal"), k.call("fast"), k.call("menu"), k.call("recenter")]
 
 
 func _build_log() -> void:
@@ -429,6 +440,7 @@ func _clock(sec: float) -> String:
 func on_new_game() -> void:
 	brief.visible = true
 	endp.visible = false
+	_update_keys_help()
 	for c in log_box.get_children():
 		c.queue_free()
 	_set_seg("weather", B.weather)
@@ -882,37 +894,43 @@ func _edge_arrow(target: Vector2, text: String, col: Color) -> void:
 func _unhandled_input(e: InputEvent) -> void:
 	var p: Ship = B.player
 	if e is InputEventKey and e.pressed:
+		if pausep != null and pausep.visible:
+			if Game.pressed(e, "menu"):
+				close_pause()
+			return
 		if brief.visible:
 			if e.keycode == KEY_ENTER or e.keycode == KEY_SPACE:
 				brief.visible = false
 				B.begin()
+			elif Game.pressed(e, "menu"):
+				open_pause()
 			return
-		match e.keycode:
-			KEY_W: B.order_tele(p.tele + 1)
-			KEY_S: B.order_tele(p.tele - 1)
-			KEY_A: B.order_rudder(p.rud_cmd - 5.0)
-			KEY_D: B.order_rudder(p.rud_cmd + 5.0)
-			KEY_Q: B.order_rudder(0.0)
-			KEY_F: B.toggle_fire()
-			KEY_M: B.set_aim("auto" if B.aim_mode == "manual" else "manual")
-			KEY_T: B.fire_torpedoes()
-			KEY_Z: B.toggle_smoke()
-			KEY_TAB: B.cycle_target()
-			KEY_V:
-				B.follow = not B.follow
-				btn.follow.set_pressed_no_signal(B.follow)
-				if not B.follow:
-					B.camst.salvo = null
-			KEY_SPACE: _toggle_pause()
-			KEY_1: B.set_speed(0.25)
-			KEY_2: B.set_speed(1.0)
-			KEY_3: B.set_speed(3.0)
-			KEY_C: B.set_focus("player" if B.camst.focus == "target" else "target")
-			KEY_ESCAPE:
-				if B.torp_aim:
-					B.torp_aim = false
-				else:
-					B.recenter()
+		if Game.pressed(e, "tele_up"): B.order_tele(p.tele + 1)
+		elif Game.pressed(e, "tele_down"): B.order_tele(p.tele - 1)
+		elif Game.pressed(e, "rudder_left"): B.order_rudder(p.rud_cmd - 5.0)
+		elif Game.pressed(e, "rudder_right"): B.order_rudder(p.rud_cmd + 5.0)
+		elif Game.pressed(e, "rudder_center"): B.order_rudder(0.0)
+		elif Game.pressed(e, "fire"): B.toggle_fire()
+		elif Game.pressed(e, "aim_mode"): B.set_aim("auto" if B.aim_mode == "manual" else "manual")
+		elif Game.pressed(e, "torpedo"): B.fire_torpedoes()
+		elif Game.pressed(e, "smoke"): B.toggle_smoke()
+		elif Game.pressed(e, "next_target"): B.cycle_target()
+		elif Game.pressed(e, "follow"):
+			B.follow = not B.follow
+			btn.follow.set_pressed_no_signal(B.follow)
+			if not B.follow:
+				B.camst.salvo = null
+		elif Game.pressed(e, "camera"): B.set_focus("player" if B.camst.focus == "target" else "target")
+		elif Game.pressed(e, "recenter"): B.recenter()
+		elif Game.pressed(e, "pause"): _toggle_pause()
+		elif Game.pressed(e, "slow"): B.set_speed(0.25)
+		elif Game.pressed(e, "normal"): B.set_speed(1.0)
+		elif Game.pressed(e, "fast"): B.set_speed(3.0)
+		elif Game.pressed(e, "menu"):
+			if B.torp_aim:
+				B.torp_aim = false
+			else:
+				open_pause()
 	elif e is InputEventMouseButton:
 		if e.button_index == MOUSE_BUTTON_WHEEL_UP and e.pressed:
 			B.zoom(1.0 / 1.15)
@@ -946,6 +964,74 @@ func _unhandled_input(e: InputEvent) -> void:
 				B.pan(d.x, d.y)
 
 
+# =====================================================================
+# pause menu (Esc)
+# =====================================================================
+
+func open_pause() -> void:
+	if pausep != null:
+		return
+	_pause_prev = B.speed if B.speed > 0.0 else B.prev_speed
+	B.set_speed(0.0)
+	pausep = Control.new()
+	pausep.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pausep.mouse_filter = Control.MOUSE_FILTER_STOP
+	pausep.add_child(UI.backdrop(0.5))
+	var pnl := UI.panel(22)
+	var v := UI.column(8)
+	v.add_child(UI.label("PAUSED", 11, UI.BRASS))
+	v.add_child(UI.label(B.brief.get("title", "Battle"), 24))
+	v.add_child(UI.label("%s · battle time %s" % [B.player.ship_name, _clock(B.t)], 12, UI.MUTED))
+	var sp := Control.new()
+	sp.custom_minimum_size.y = 8
+	v.add_child(sp)
+	v.add_child(UI.big_button("Resume", close_pause))
+	var sv := UI.big_button("Save battle", _pause_save)
+	sv.disabled = not B.started or B.over != ""
+	v.add_child(sv)
+	v.add_child(UI.big_button("Load battle", _pause_load))
+	v.add_child(UI.big_button("Settings", func(): pausep.add_child(SettingsPanel.new())))
+	v.add_child(UI.big_button("New battle (briefing)", func(): close_pause(); B.new_game()))
+	v.add_child(UI.big_button("Main menu", func(): get_tree().change_scene_to_file("res://scenes/menu.tscn")))
+	v.add_child(UI.big_button("Quit to desktop", func(): get_tree().quit()))
+	pnl.add_child(v)
+	pausep.add_child(pnl)
+	UI.center(pnl)
+	root.add_child(pausep)
+
+
+func close_pause() -> void:
+	if pausep == null:
+		return
+	pausep.queue_free()
+	pausep = null
+	if B.started and B.over == "":
+		B.set_speed(_pause_prev if _pause_prev > 0.0 else 1.0)
+
+
+func _pause_save() -> void:
+	var sp := SlotPanel.new("save")
+	pausep.add_child(sp)
+	sp.picked.connect(func(i):
+		if Game.save_slot(i, B.save_state()):
+			log_msg("Battle saved to slot %d." % (i + 1), "good")
+		else:
+			log_msg("Could not write the save file.", "bad")
+		close_pause())
+
+
+func _pause_load() -> void:
+	var sp := SlotPanel.new("load")
+	pausep.add_child(sp)
+	sp.picked.connect(func(i):
+		var d := Game.load_slot(i)
+		close_pause()
+		if d.is_empty():
+			log_msg("That slot is empty.", "bad")
+		else:
+			B.load_state(d))
+
+
 func _toggle_pause() -> void:
 	if B.speed == 0.0:
 		B.set_speed(B.prev_speed if B.prev_speed > 0.0 else 1.0)
@@ -956,6 +1042,8 @@ func _toggle_pause() -> void:
 
 func _on_pyro() -> void:
 	B.fx.use_pyro = btn.pyro.button_pressed
+	Game.settings.pyro = btn.pyro.button_pressed
+	Game.save_settings()
 	if not B.fx.use_pyro:
 		for n in get_tree().get_nodes_in_group("pyro"):
 			n.queue_free()

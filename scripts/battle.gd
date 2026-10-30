@@ -70,8 +70,30 @@ func _ready() -> void:
 	ai.B = self
 	hud = load("res://scripts/hud.gd").new()
 	add_child(hud)
+	scenario = Game.start_scenario
+	Game.graphics_changed.connect(apply_quality)
+	apply_quality()
 	new_game()
+	if Game.pending_load >= 0:
+		var d := Game.load_slot(Game.pending_load)
+		Game.pending_load = -1
+		if not d.is_empty():
+			load_state(d)
 	_test_args()
+
+
+## Quality preset from the settings: shadows, glow, particle density, PYROLUX.
+func apply_quality() -> void:
+	var q: Dictionary = Game.quality_params()
+	if sun:
+		sun.shadow_enabled = q.shadows
+	if env:
+		env.glow_enabled = q.glow
+	if fx:
+		fx.density = q.particles
+		fx.use_pyro = Game.settings.pyro and fx.has_pyro()
+	if hud and hud.btn.has("pyro"):
+		hud.btn.pyro.set_pressed_no_signal(fx.use_pyro)
 
 
 # ---------- test options (used when running from the command line) ----------
@@ -86,6 +108,14 @@ func _test_args() -> void:
 	if _test.has("scenario"):
 		scenario = _test.scenario
 		new_game()
+	if _test.has("load"):
+		var d := Game.load_slot(int(_test.load))
+		if d.is_empty():
+			print("slot empty")
+		else:
+			load_state(d)
+			set_speed(1.0)
+			print("loaded slot ", _test.load, " t=", t)
 	if _test.has("weather"):
 		weather = _test.weather
 		apply_weather()
@@ -140,6 +170,9 @@ func _test_args() -> void:
 				for hs in ships:
 					line += "| %s %s R=%d crew=%d fl=%d %s " % [hs.ship_name, hs.ai_state, int(player.range_to(hs)), hs.crew, int(hs.flood), "" if hs.alive else ("ESC" if hs.escaped else "SUNK")]
 				print(line)
+		if _test.has("save"):
+			Game.save_slot(int(_test.save), save_state())
+			print("saved slot ", _test.save, " at t=", t)
 		print("debug ", _dbg)
 		print("ran ", _test.run, "s: t=", t, " player crew ", player.crew, " flood ", player.flood, " salvos ", stats.salvos, " hits ", stats.hits, " sunk ", stats.sunk)
 		for s in ships:
@@ -155,6 +188,8 @@ func _test_args() -> void:
 		player.h = 0.0
 		for m in player.mounts:
 			m.ang = deg_to_rad(float(_test.train))
+	if _test.has("pause"):
+		hud.open_pause()
 	if _test.has("shot"):
 		_shoot.call_deferred()
 
@@ -370,6 +405,7 @@ func begin() -> void:
 
 func set_scenario(sc: String) -> void:
 	scenario = sc
+	Game.start_scenario = sc
 	weather = "night" if sc != "dd" or weather == "night" else weather
 	new_game()
 
@@ -436,6 +472,73 @@ func mag_chance() -> float:
 		"reduced":
 			return 0.25
 	return 1.0
+
+
+# =====================================================================
+# save and load
+# =====================================================================
+
+## The whole battle as plain data. Shells in flight are not kept (they land within seconds).
+func save_state() -> Dictionary:
+	var idx := func(sh): return ships.find(sh) if sh != null else -1
+	var d := {"v": 1, "scenario": scenario, "weather": weather, "magazine": magazine, "aim_mode": aim_mode, "scheme": scheme,
+		"t": t, "over": over, "started": started, "combat_t": combat_t, "salvo_n": salvo_n, "report": report, "stats": stats, "brief": brief,
+		"follow": follow, "slow_follow": slow_follow, "show_lead": show_lead, "speed": speed if speed > 0.0 else prev_speed,
+		"cam": {"focus": camst.focus, "th": camst.th}}
+	var sl := []
+	for sh in ships:
+		var sd: Dictionary = sh.save()
+		sd.target = idx.call(sh.target)
+		sl.append(sd)
+	d.ships = sl
+	var tl := []
+	for tp in torps:
+		tl.append({"x": tp.x, "z": tp.z, "h": tp.h, "v": tp.v, "left": tp.left, "team": tp.team, "owner": idx.call(tp.owner), "dud": tp.dud, "warned": tp.warned, "depth": tp.get("depth", 3.0)})
+	d.torps = tl
+	d.smokes = smokes.duplicate(true)
+	d.stars = stars.duplicate(true)
+	d.info = {"title": brief.get("title", "Battle"), "ship": player.ship_name, "clock": "%d:%02d" % [int(t) / 60, int(t) % 60], "date": Game.stamp()}
+	return d
+
+
+func load_state(d: Dictionary) -> void:
+	for sh in ships:
+		sh.queue_free()
+	ships.clear(); shells.clear(); torps.clear(); smokes.clear(); stars.clear(); events.clear()
+	fx.clear()
+	ai.reset()
+	scenario = d.scenario; weather = d.weather; magazine = d.magazine; aim_mode = d.aim_mode; scheme = d.scheme
+	t = d.t; over = d.over; combat_t = d.combat_t; salvo_n = int(d.salvo_n)
+	report = d.report; stats = d.stats; brief = d.brief
+	for k in ["salvos", "shells", "hits", "torps", "torp_hits", "start_crew"]:
+		stats[k] = int(stats[k])
+	follow = d.follow; slow_follow = d.slow_follow; show_lead = d.show_lead
+	for sd in d.ships:
+		var sh := _add_ship(sd.type_id, sd.team, sd.ship_name, sd.x, sd.z, sd.h, 0.0)
+		sh.restore(sd)
+		if sh.is_player:
+			player = sh
+	for i in d.ships.size():
+		var ti := int(d.ships[i].target)
+		ships[i].target = ships[ti] if ti >= 0 else null
+	for td in d.torps:
+		var oi := int(td.owner)
+		torps.append({"x": td.x, "z": td.z, "h": td.h, "v": td.v, "left": td.left, "team": td.team, "owner": ships[oi] if oi >= 0 else null, "dud": td.dud, "warned": td.warned, "depth": td.depth})
+	smokes = d.smokes.duplicate(true)
+	stars = d.stars.duplicate(true)
+	for sh in ships:
+		for f in sh.fires:
+			f.erase("node")
+	camst.focus = d.cam.focus; camst.th = d.cam.th; camst.free = false
+	camst.x = player.x; camst.z = player.z; camst.h = camst.th
+	apply_weather()
+	update_visibility()
+	hud.on_new_game()
+	hud.brief.visible = false
+	started = true
+	set_speed(0.0)
+	prev_speed = float(d.speed)
+	say("Battle resumed. Press %s or pick a time speed to continue." % Game.key_name("pause"))
 
 
 # =====================================================================
@@ -824,6 +927,8 @@ func damage(s: Ship, lx: float, lz: float, dmg: float, kind: String, shooter: Sh
 	if best and bd < reach:
 		var before: float = best.hp
 		best.hp = maxf(0.0, best.hp - dmg * (4.0 if kind == "torpedo" else 1.0))
+		if best.ref != null:
+			best.ref.hp = best.hp   # the mount or tube itself stops working
 		if best.hp <= 0.0 and before > 0.0:
 			match best.kind:
 				"mount": what.append("%s knocked out" % _pretty(best.label))
@@ -1128,6 +1233,10 @@ func step_ship(s: Ship, dt: float) -> void:
 			for m in s.modules:
 				if absf(m.x - f.lx) < 6.0 and m.hp > 0.0:
 					m.hp = maxf(0.0, m.hp - dt * 0.02 * f.int)
+					if m.ref != null:
+						m.ref.hp = m.hp
+					if m.hp <= 0.0 and (s.is_player or player.contact(s)):
+						say("%s%s burnt out by the fire." % ["" if s.is_player else s.ship_name + ": ", _pretty(m.label)], "bad" if s.is_player else "good")
 					if m.kind == "magazine" and f.int > 0.8 and randf() < dt * 0.0015 * (mag_chance() if s.is_player else 1.0):
 						magazine_boom(s, m.x)
 						return

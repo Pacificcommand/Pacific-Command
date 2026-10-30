@@ -38,6 +38,7 @@ var wind := Vector2(-1.4, 1.1)
 # PYROLUX Lite fire and explosion effects (free to use in the game; the addon files
 # themselves may not be shared or resold, see addons/pyrolux_fx/LICENSE.md)
 var use_pyro := true
+var density := 1.0   # particle density from the quality setting (1 = all)
 const PYRO_EXPLOSION := "res://addons/pyrolux_fx/nodes_3d/pyrolux_explosion_3d.gd"
 const PYRO_FIRE := "res://addons/pyrolux_fx/nodes_3d/pyrolux_fire_3d.gd"
 var _pyro_exp: Script
@@ -112,6 +113,9 @@ func clear() -> void:
 
 func add(k: int, x: float, y: float, z: float, pvx: float, pvz: float, pvy: float, rad: float, grow: float,
 		lf: float, a: float, col: Color, shp: float, pspin := 0.0) -> void:
+	# lower quality: skip a share of the foam and smoke (flashes and splashes always draw)
+	if density < 1.0 and (k == FOAM or k == SMOKE) and randf() > density:
+		return
 	if n >= CAP:
 		if k == FOAM:
 			return

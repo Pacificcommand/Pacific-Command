@@ -15,7 +15,12 @@ experience; explain in plain words, he tests by playing). Top-down 3D view of li
 ## Layout
 | Path | What it is |
 |---|---|
-| `scenes/battle.tscn` | Main scene; everything else is built by scripts |
+| `scenes/menu.tscn` + `scripts/menu.gd` | Main scene: title screen (3D ship + menu); jumps to the battle when test flags are given |
+| `scenes/battle.tscn` | The battle; everything in it is built by scripts |
+| `scripts/game.gd` | Autoload `Game`: settings (user://settings.cfg), key bindings (InputMap actions), save slots (user://saves) |
+| `scripts/ui.gd` | Static UI builders (panels, buttons, sliders) shared by menu, settings, pause and slot panels |
+| `scripts/settings_panel.gd`, `slot_panel.gd` | Settings screen; save/load slot picker |
+| `scripts/ai.gd` | Ship AI: fleets, roles, solo tactics, Japanese destroyer doctrine, PT boats, transports |
 | `scripts/data.gd` | GUNS, ARCS, TYPES (ship classes), TELE, WEATHER: the numbers to tune |
 | `scripts/battle.gd` | Simulation: missions (`_setup_*`), gunnery, torpedoes, damage, AI, camera, test flags |
 | `scripts/ship.gd` | One ship: state, geometry helpers, model sync (mounts rotate on glb nodes) |
@@ -44,8 +49,10 @@ xvfb-run -a -s "-screen 0 1920x1080x24" godot --path . --rendering-method gl_com
   --rendering-driver opengl3 -- --scenario=convoy --start --run=300 --view=wide --shot=out.png --quit
 ```
 Flags: `--scenario=dd|barges|convoy --weather=clear|overcast|fog|night --start --run=SECONDS
---fire --auto (AI drives the player too) --trace --view=close|ship|wide|tac --nofollow
---aim=manual --torpaim=DEG --shot=PNG --frames=N --quit`. Godot 4.7.2 Linux binary:
+--fire --auto (AI drives the player too) --trace (prints messages and ship states) --view=close|ship|wide|tac
+--cam=player|target --nofollow --aim=manual --torpaim=DEG --save=SLOT (after the run) --load=SLOT
+--pause (open the pause menu) --shot=PNG --frames=N --quit`. Menu screenshots: `--menushot=PNG [--settings]`.
+Keys in hud.gd go through `Game.pressed(e, "action")`, never raw keycodes; add new actions to `Game.ACTIONS`. Godot 4.7.2 Linux binary:
 https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip
 Watch for "Cannot infer the type" parse errors (use `=` not `:=` when the value is a Variant).
 

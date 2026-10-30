@@ -312,3 +312,69 @@ func update_visual(t: float) -> void:
 		var an: Node3D = parts.get(T.aa[i])
 		if an:
 			an.rotation.y = -aa_ang[i]
+
+
+# ---------- save and load ----------
+
+const SAVE_FIELDS := ["type_id", "team", "ship_name", "is_player", "objective", "escaped", "route_h", "dest_dist", "side",
+	"group", "leader_flag", "detached", "escort_group", "tactic", "tactic_until", "zig", "zig_t",
+	"x", "z", "h", "v", "tele", "rud", "rud_cmd", "rud_jam_until", "roll", "pitch", "sink", "sinking", "alive", "gone", "mag_blown",
+	"crew", "flood", "flood_side", "flood_fwd", "dir_ang", "illum", "q", "fire", "smoke_on", "star_cd", "torp_cd",
+	"ai_state", "evade_until", "spotted_once", "weave_t", "last_fired"]
+
+
+## Everything about this ship as plain data (ship references become indices in battle.gd).
+func save() -> Dictionary:
+	var d := {}
+	for f in SAVE_FIELDS:
+		d[f] = get(f)
+	d.station = [station.x, station.y]
+	d.fstation = [fstation.x, fstation.y]
+	d.holes = holes.duplicate(true)
+	var fl := []
+	for f in fires:
+		fl.append({"lx": f.lx, "lz": f.lz, "int": f.int})
+	d.fires = fl
+	var mods := []
+	for m in modules:
+		mods.append(m.hp)
+	d.modules = mods
+	var mts := []
+	for m in mounts:
+		mts.append({"ang": m.ang, "reload": m.reload, "hp": m.hp})
+	d.mounts = mts
+	var tps := []
+	for tp in torps:
+		tps.append({"ang": tp.ang, "left": tp.left, "hp": tp.hp, "reload_t": tp.reload_t})
+	d.torps = tps
+	return d
+
+
+func restore(d: Dictionary) -> void:
+	for f in SAVE_FIELDS:
+		if d.has(f):
+			var cur = get(f)
+			var val = d[f]
+			if cur is int:
+				val = int(val)
+			set(f, val)
+	station = Vector2(d.station[0], d.station[1])
+	fstation = Vector2(d.fstation[0], d.fstation[1])
+	holes = d.holes.duplicate(true)
+	fires = []
+	for f in d.fires:
+		fires.append({"lx": f.lx, "lz": f.lz, "int": f.int})
+	for i in mini(modules.size(), d.modules.size()):
+		modules[i].hp = d.modules[i]
+	for i in mini(mounts.size(), d.mounts.size()):
+		mounts[i].ang = d.mounts[i].ang
+		mounts[i].reload = d.mounts[i].reload
+		mounts[i].hp = d.mounts[i].hp
+	for i in mini(torps.size(), d.torps.size()):
+		torps[i].ang = d.torps[i].ang
+		torps[i].left = int(d.torps[i].left)
+		torps[i].hp = d.torps[i].hp
+		torps[i].reload_t = d.torps[i].reload_t
+	for m in modules:
+		if m.ref != null:
+			m.ref.hp = m.hp

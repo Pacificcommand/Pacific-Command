@@ -23,6 +23,7 @@ func _ready() -> void:
 				streams[nm] = load(path)
 	for i in 12:
 		var p := AudioStreamPlayer.new()
+		p.bus = "Effects"
 		add_child(p)
 		players.append(p)
 
