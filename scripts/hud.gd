@@ -1,0 +1,859 @@
+extends CanvasLayer
+## Heads-up display: instrument plates in the corners, message log, markers drawn
+## over the sea, the mission briefing and the action report. Built in code so it
+## does not depend on any editor scene. Keyboard and mouse input is handled here too.
+
+const C_GLASS := Color(0.027, 0.063, 0.078, 0.84)
+const C_LINE := Color(0.79, 0.64, 0.29, 0.32)
+const C_INK := Color(0.91, 0.93, 0.91)
+const C_MUTED := Color(0.6, 0.66, 0.67)
+const C_BRASS := Color(0.79, 0.64, 0.29)
+const C_BRASS_INK := Color(0.11, 0.086, 0.024)
+const C_RED := Color(0.89, 0.34, 0.25)
+const C_GREEN := Color(0.31, 0.62, 0.5)
+const C_WATER := Color(0.35, 0.66, 0.84)
+
+var B   # the battle
+var root: Control
+var overlay: Control
+var log_box: VBoxContainer
+var seg_groups := {}           # name -> {value: Button}
+var lbl := {}                  # named labels
+var bars := {}                 # named ProgressBar-like ColorRects
+var btn := {}
+var dmg_view: Control
+var rud_view: Control
+var guns_box: HBoxContainer
+var brief: PanelContainer
+var endp: PanelContainer
+var drag := {}
+var tele_btns: Array = []
+
+
+func _ready() -> void:
+	B = get_parent()
+	root = Control.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(root)
+	overlay = Control.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.draw.connect(_draw_overlay)
+	root.add_child(overlay)
+	_build_plates()
+	_build_log()
+	_build_brief()
+	_build_end()
+
+
+# =====================================================================
+# building blocks
+# =====================================================================
+
+func _panel() -> PanelContainer:
+	var p := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = C_GLASS
+	sb.border_color = C_LINE
+	sb.set_border_width_all(1)
+	sb.set_content_margin_all(10)
+	p.add_theme_stylebox_override("panel", sb)
+	p.mouse_filter = Control.MOUSE_FILTER_STOP
+	return p
+
+
+func _label(text: String, size := 14, col := C_INK) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", col)
+	return l
+
+
+func _caps(text: String) -> Label:
+	var l := _label(text.to_upper(), 11, C_MUTED)
+	l.custom_minimum_size.x = 74
+	return l
+
+
+func _button(text: String, cb: Callable, toggle := false) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.toggle_mode = toggle
+	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_font_size_override("font_size", 13)
+	for st in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		var sb := StyleBoxFlat.new()
+		sb.border_color = C_LINE
+		sb.set_border_width_all(1)
+		sb.set_corner_radius_all(3)
+		sb.content_margin_left = 8; sb.content_margin_right = 8
+		sb.content_margin_top = 4; sb.content_margin_bottom = 4
+		sb.bg_color = Color(0, 0, 0, 0)
+		if st == "hover":
+			sb.bg_color = Color(0.08, 0.13, 0.16, 0.95)
+		if st == "pressed" or st == "hover_pressed":
+			sb.bg_color = C_BRASS
+		b.add_theme_stylebox_override(st, sb)
+	b.add_theme_color_override("font_color", C_INK)
+	b.add_theme_color_override("font_pressed_color", C_BRASS_INK)
+	b.add_theme_color_override("font_hover_pressed_color", C_BRASS_INK)
+	b.add_theme_color_override("font_disabled_color", C_MUTED)
+	b.pressed.connect(cb)
+	return b
+
+
+## A row of buttons where one is selected.
+func _seg(group: String, items: Array, cb: Callable) -> HBoxContainer:
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 2)
+	seg_groups[group] = {}
+	for it in items:
+		var v = it[0]
+		var b := _button(it[1], func(): cb.call(v), true)
+		seg_groups[group][v] = b
+		hb.add_child(b)
+	return hb
+
+
+func _set_seg(group: String, value) -> void:
+	for v in seg_groups[group]:
+		seg_groups[group][v].set_pressed_no_signal(v == value)
+
+
+func _row(children: Array) -> HBoxContainer:
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 7)
+	for c in children:
+		hb.add_child(c)
+	return hb
+
+
+func _bar(nm: String, col: Color) -> Control:
+	var back := ColorRect.new()
+	back.color = Color(1, 1, 1, 0.12)
+	back.custom_minimum_size = Vector2(120, 7)
+	back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	back.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var fill := ColorRect.new()
+	fill.color = col
+	fill.size = Vector2(0, 7)
+	back.add_child(fill)
+	bars[nm] = fill
+	return back
+
+
+func _set_bar(nm: String, f: float) -> void:
+	var fill: ColorRect = bars[nm]
+	fill.size = Vector2(fill.get_parent().size.x * clampf(f, 0.0, 1.0), fill.get_parent().size.y)
+
+
+## Pin a control to a corner or edge of the screen; it grows inward to fit its contents.
+func _place(c: Control, where: String, m := 12.0) -> void:
+	root.add_child(c)
+	var ax = {"tl": 0.0, "tr": 1.0, "bl": 0.0, "br": 1.0, "bc": 0.5, "c": 0.5, "tc": 0.5}[where]
+	var ay = {"tl": 0.0, "tr": 0.0, "bl": 1.0, "br": 1.0, "bc": 1.0, "c": 0.5, "tc": 0.0}[where]
+	c.anchor_left = ax; c.anchor_right = ax; c.anchor_top = ay; c.anchor_bottom = ay
+	var ox := m if ax == 0.0 else (-m if ax == 1.0 else 0.0)
+	var oy := m if ay == 0.0 else (-m if ay == 1.0 else 0.0)
+	c.offset_left = ox; c.offset_right = ox; c.offset_top = oy; c.offset_bottom = oy
+	c.grow_horizontal = Control.GROW_DIRECTION_END if ax == 0.0 else (Control.GROW_DIRECTION_BEGIN if ax == 1.0 else Control.GROW_DIRECTION_BOTH)
+	c.grow_vertical = Control.GROW_DIRECTION_END if ay == 0.0 else (Control.GROW_DIRECTION_BEGIN if ay == 1.0 else Control.GROW_DIRECTION_BOTH)
+
+
+# =====================================================================
+# plates
+# =====================================================================
+
+func _build_plates() -> void:
+	# top left: ship name
+	var tl := _panel()
+	var tlv := VBoxContainer.new()
+	tlv.add_child(_label("PACIFIC COMMAND  ·  COMBAT SANDBOX", 11, C_BRASS))
+	lbl.title = _label("USS O'Bannon", 26)
+	tlv.add_child(lbl.title)
+	lbl.sub = _label("", 13, C_MUTED)
+	tlv.add_child(lbl.sub)
+	tl.add_child(tlv)
+	_place(tl, "tl")
+
+	# top right: time and options
+	var trv := VBoxContainer.new()
+	trv.add_theme_constant_override("separation", 6)
+	var p1 := _panel()
+	p1.add_child(_row([_caps("Time"), _seg("time", [[0.0, "Pause"], [0.25, "Slow ¼×"], [1.0, "Normal"], [3.0, "Fast 3×"]], func(v): B.set_speed(v))]))
+	trv.add_child(p1)
+	var p2 := _panel()
+	btn.follow = _button("Follow salvos (V)", func(): B.follow = btn.follow.button_pressed, true)
+	btn.slowf = _button("Slow-mo when following", func(): B.slow_follow = btn.slowf.button_pressed, true)
+	p2.add_child(_row([_caps("Camera"), btn.follow, btn.slowf]))
+	trv.add_child(p2)
+	var p3 := _panel()
+	btn.snd = _button("Sound on", _on_sound, true)
+	btn.restart = _button("New battle", func(): B.new_game())
+	btn.pyro = _button("PYROLUX effects", _on_pyro, true)
+	p3.add_child(_row([_caps("Game"), btn.snd, btn.pyro, btn.restart, _button("Quit", func(): get_tree().quit())]))
+	trv.add_child(p3)
+	_place(trv, "tr")
+
+	# bottom left: navigation
+	var bl := _panel()
+	var blv := VBoxContainer.new()
+	blv.add_theme_constant_override("separation", 6)
+	var tele_row := HBoxContainer.new()
+	tele_row.add_theme_constant_override("separation", 2)
+	for i in Data.TELE.size():
+		var b := _button(Data.TELE[i].n, func(): B.order_tele(i), true)
+		b.add_theme_font_size_override("font_size", 12)
+		tele_btns.append(b)
+		tele_row.add_child(b)
+	blv.add_child(_row([_caps("Engines"), tele_row]))
+	lbl.spd = _label("25.0 kn", 20)
+	lbl.hdg = _label("Course 000°", 13, C_MUTED)
+	blv.add_child(_row([_caps("Speed"), lbl.spd, lbl.hdg]))
+	rud_view = Control.new()
+	rud_view.custom_minimum_size = Vector2(170, 16)
+	rud_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rud_view.draw.connect(_draw_rudder)
+	blv.add_child(_row([_caps("Rudder"), _button("◀", func(): B.order_rudder(B.player.rud_cmd - 10.0)), rud_view, _button("▶", func(): B.order_rudder(B.player.rud_cmd + 10.0))]))
+	lbl.rud = _label("Rudder amidships", 12, C_MUTED)
+	blv.add_child(lbl.rud)
+	bl.add_child(blv)
+	_place(bl, "bl")
+
+	# bottom center: damage control
+	var bc := _panel()
+	bc.custom_minimum_size.x = 480
+	var bcv := VBoxContainer.new()
+	bcv.add_theme_constant_override("separation", 4)
+	lbl.fires = _label("No fires", 12, C_MUTED)
+	var head := HBoxContainer.new()
+	var dl := _label("DAMAGE CONTROL", 11, C_BRASS)
+	dl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(dl)
+	head.add_child(lbl.fires)
+	bcv.add_child(head)
+	dmg_view = Control.new()
+	dmg_view.custom_minimum_size = Vector2(460, 64)
+	dmg_view.draw.connect(_draw_damage)
+	bcv.add_child(dmg_view)
+	lbl.crew = _label("329 / 329", 12)
+	bcv.add_child(_row([_caps("Crew"), _bar("crew", C_GREEN), lbl.crew]))
+	lbl.eff = _label("100%", 12)
+	lbl.list = _label("0.0°", 12)
+	bcv.add_child(_row([_caps("Efficiency"), lbl.eff, _caps("List"), lbl.list]))
+	lbl.flood = _label("0 t", 12)
+	bcv.add_child(_row([_caps("Flooding"), _bar("flood", C_WATER), lbl.flood]))
+	bc.add_child(bcv)
+	_place(bc, "bc")
+
+	# bottom right: fire control
+	var brv := VBoxContainer.new()
+	brv.add_theme_constant_override("separation", 6)
+	var br := _panel()
+	br.custom_minimum_size.x = 380
+	var fv := VBoxContainer.new()
+	fv.add_theme_constant_override("separation", 6)
+	var fh := HBoxContainer.new()
+	var fl := _label("FIRE CONTROL", 11, C_BRASS)
+	fl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fh.add_child(fl)
+	lbl.tgt = _label("No target", 12, C_MUTED)
+	fh.add_child(lbl.tgt)
+	fv.add_child(fh)
+	btn.lead = _button("Lead marker", func(): B.show_lead = btn.lead.button_pressed, true)
+	fv.add_child(_row([_caps("Aim"), _seg("aim", [["auto", "Crew (auto)"], ["manual", "Manual (mouse)"]], func(v): B.set_aim(v)), btn.lead]))
+	lbl.sol = _label("No solution", 12, C_MUTED)
+	fv.add_child(_row([_caps("Solution"), _bar("sol", C_BRASS), lbl.sol]))
+	guns_box = HBoxContainer.new()
+	guns_box.add_theme_constant_override("separation", 3)
+	fv.add_child(_row([_caps("5-inch"), guns_box]))
+	lbl.torps = _label("5/5 · 5/5", 12)
+	fv.add_child(_row([_caps("Torpedoes"), lbl.torps]))
+	btn.fire = _button("Open fire (F)", func(): B.toggle_fire(), true)
+	btn.torp = _button("Torpedoes (T)", func(): B.fire_torpedoes())
+	btn.smoke = _button("Lay smoke (Z)", func(): B.toggle_smoke(), true)
+	fv.add_child(_row([btn.fire, btn.torp, btn.smoke]))
+	br.add_child(fv)
+	brv.add_child(br)
+	var vp := _panel()
+	vp.add_child(_row([_caps("View"), _seg("view", [["close", "Close"], ["ship", "Ship"], ["wide", "Wide"], ["tac", "Tactical"]], _on_view)]))
+	brv.add_child(vp)
+	var keys := _label("W/S engines · A/D rudder · Q center · M crew/manual aim\nF fire · T torpedoes · Z smoke · Tab next target · V follow salvos\nSpace pause · 1/2/3 slow/normal/fast · wheel zoom · drag to look\nLeft-click: target (crew aim) or fire (manual) · right-click: target", 11, C_MUTED)
+	var kp := _panel()
+	kp.add_child(keys)
+	brv.add_child(kp)
+	_place(brv, "br")
+
+
+func _build_log() -> void:
+	log_box = VBoxContainer.new()
+	log_box.add_theme_constant_override("separation", 3)
+	log_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	log_box.custom_minimum_size.x = 520
+	_place(log_box, "tc")
+
+
+func log_msg(txt: String, kind := "") -> void:
+	var p := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = C_GLASS
+	sb.border_color = C_RED if kind == "bad" else (C_GREEN if kind == "good" else C_BRASS)
+	sb.border_width_left = 3
+	sb.content_margin_left = 9; sb.content_margin_right = 9
+	sb.content_margin_top = 4; sb.content_margin_bottom = 4
+	p.add_theme_stylebox_override("panel", sb)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var l := _label(txt, 13)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size.x = 500
+	p.add_child(l)
+	log_box.add_child(p)
+	log_box.move_child(p, 0)
+	while log_box.get_child_count() > 5:
+		var last := log_box.get_child(log_box.get_child_count() - 1)
+		log_box.remove_child(last)
+		last.queue_free()
+	var tw := p.create_tween()
+	tw.tween_interval(7.0)
+	tw.tween_property(p, "modulate:a", 0.0, 0.9)
+	tw.tween_callback(p.queue_free)
+
+
+# =====================================================================
+# briefing and action report
+# =====================================================================
+
+func _build_brief() -> void:
+	brief = _panel()
+	brief.custom_minimum_size = Vector2(560, 0)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 9)
+	v.add_child(_label("MISSION BRIEFING", 11, C_BRASS))
+	lbl.brief_title = _label("Intercept the Tokyo Express", 28)
+	v.add_child(lbl.brief_title)
+	lbl.threat = _label("", 15, C_BRASS)
+	v.add_child(lbl.threat)
+	lbl.brief_text = _label("", 14, Color(0.8, 0.84, 0.83))
+	lbl.brief_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.brief_text.custom_minimum_size.x = 520
+	v.add_child(lbl.brief_text)
+	v.add_child(_row([_caps("Conditions"), _seg("weather", [["clear", "Clear day"], ["overcast", "Overcast"], ["fog", "Fog"], ["night", "Night"]], _on_weather)]))
+	v.add_child(_row([_caps("Aim"), _seg("aim_b", [["auto", "Crew (auto)"], ["manual", "Manual (mouse)"]], _on_aim_brief)]))
+	v.add_child(_row([_caps("Magazines"), _seg("mag", [["historical", "Historical"], ["reduced", "Reduced"], ["off", "Off"]], _on_mag)]))
+	v.add_child(_row([_caps("Paint"), _seg("scheme", [["m21", "Measure 21"], ["m22", "Measure 22"]], _on_scheme)]))
+	var go := _button("Begin the action", _on_begin)
+	go.add_theme_font_size_override("font_size", 16)
+	v.add_child(go)
+	brief.add_child(v)
+	_place(brief, "c")
+
+
+func _update_brief() -> void:
+	var W: Dictionary = Data.WEATHER[B.weather]
+	var threat := "Moderate"
+	if B.weather == "night":
+		threat = "High (night action; Japanese crews are trained for it)"
+	elif B.weather == "fog":
+		threat = "Moderate (fog will hide both sides)"
+	lbl.threat.text = "Threat assessment: %s" % threat
+	var p: Ship = B.player
+	var rp: Dictionary = B.report
+	lbl.brief_text.text = "Coastwatchers report two Japanese destroyers bearing %s from you, about %s away, steering %s at high speed. Expect Kagero-class ships armed with Long Lance torpedoes that outrange ours.\n\nYou command USS O'Bannon, a Fletcher-class destroyer with five 5-inch guns, ten torpedoes and SG radar. Find the enemy, stop the run, and bring your ship home. Conditions: %s." % [U.deg3(p.bearing_to(rp.x, rp.z)), U.yards(p.range_to(rp)), U.deg3(rp.h), W.name.to_lower()]
+
+
+func _build_end() -> void:
+	endp = _panel()
+	endp.custom_minimum_size = Vector2(460, 0)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 9)
+	v.add_child(_label("ACTION REPORT", 11, C_BRASS))
+	lbl.end_t = _label("", 28)
+	v.add_child(lbl.end_t)
+	lbl.end_p = _label("", 14, Color(0.8, 0.84, 0.83))
+	lbl.end_p.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.end_p.custom_minimum_size.x = 430
+	v.add_child(lbl.end_p)
+	v.add_child(_row([_button("Fight again", func(): B.new_game()), _button("Keep watching", func(): endp.visible = false)]))
+	endp.add_child(v)
+	_place(endp, "c")
+	endp.visible = false
+
+
+func show_end() -> void:
+	var st: Dictionary = B.stats
+	var p: Ship = B.player
+	var lost: int = st.start_crew - p.crew
+	var won: bool = B.over == "won"
+	lbl.end_t.text = "Enemy force defeated" if won else "USS O'Bannon lost"
+	var sunk_txt: String = ", ".join(st.sunk) if not st.sunk.is_empty() else "none"
+	var acc: float = 100.0 * st.hits / maxf(1.0, _shells_fired())
+	lbl.end_p.text = "Battle time %s.\nEnemy ships sunk: %s.\nSalvos fired: %d, shell hits: %d (%.0f%%).\nTorpedoes fired: %d, torpedo hits: %d.\nCrew lost: %d of %d." % [_clock(B.t), sunk_txt, st.salvos, st.hits, acc, st.torps, st.torp_hits, lost, st.start_crew]
+	if won and p.alive:
+		lbl.end_p.text += "\n\nThe run is stopped and your ship is still afloat. Well done, Captain."
+	endp.visible = true
+
+
+func _shells_fired() -> float:
+	return float(B.stats.shells)
+
+
+func _clock(sec: float) -> String:
+	return "%d:%02d" % [int(sec) / 60, int(sec) % 60]
+
+
+# =====================================================================
+# callbacks from the battle
+# =====================================================================
+
+func on_new_game() -> void:
+	brief.visible = true
+	endp.visible = false
+	for c in log_box.get_children():
+		c.queue_free()
+	_set_seg("weather", B.weather)
+	_set_seg("mag", B.magazine)
+	_set_seg("scheme", B.scheme)
+	_set_seg("view", "ship")
+	btn.follow.set_pressed_no_signal(B.follow)
+	btn.slowf.set_pressed_no_signal(B.slow_follow)
+	btn.lead.set_pressed_no_signal(B.show_lead)
+	btn.snd.set_pressed_no_signal(B.sfx.enabled)
+	btn.pyro.set_pressed_no_signal(B.fx.use_pyro and B.fx.has_pyro())
+	btn.pyro.visible = B.fx.has_pyro()
+	on_aim()
+	for c in guns_box.get_children():
+		c.queue_free()
+	for m in B.player.mounts:
+		var cr := ColorRect.new()
+		cr.custom_minimum_size = Vector2(14, 14)
+		guns_box.add_child(cr)
+	lbl.title.text = B.player.ship_name
+	_update_brief()
+
+
+func on_speed(v: float) -> void:
+	_set_seg("time", v)
+
+
+func on_aim() -> void:
+	_set_seg("aim", B.aim_mode)
+	_set_seg("aim_b", B.aim_mode)
+
+
+# =====================================================================
+# per-frame refresh
+# =====================================================================
+
+func refresh() -> void:
+	var p: Ship = B.player
+	if p == null:
+		return
+	var W: Dictionary = Data.WEATHER[B.weather]
+	lbl.sub.text = "Fletcher-class destroyer · %s · Battle time %s" % [W.name, _clock(B.t)]
+	for i in tele_btns.size():
+		tele_btns[i].set_pressed_no_signal(i == p.tele)
+	lbl.spd.text = "%.1f kn" % (p.v / Data.KN)
+	lbl.hdg.text = "Course %s°" % U.deg3(p.h)
+	if B.t < p.rud_jam_until:
+		lbl.rud.text = "RUDDER JAMMED at %d° %s" % [absi(int(p.rud)), "right" if p.rud > 0 else "left"]
+	elif absf(p.rud_cmd) < 0.5:
+		lbl.rud.text = "Rudder amidships"
+	else:
+		lbl.rud.text = "%s %d° rudder" % ["Right" if p.rud_cmd > 0 else "Left", absi(int(round(p.rud_cmd)))]
+	rud_view.queue_redraw()
+	# damage
+	lbl.crew.text = "%d / %d" % [p.crew, p.T.crew]
+	_set_bar("crew", float(p.crew) / p.T.crew)
+	lbl.eff.text = "%d%%" % int(round(p.eff() * 100.0))
+	lbl.flood.text = "%d t" % int(p.flood)
+	_set_bar("flood", p.flood / p.flood_cap())
+	lbl.list.text = "%.1f° %s" % [absf(rad_to_deg(p.roll)), "" if absf(p.roll) < 0.01 else ("stbd" if p.roll > 0 else "port")]
+	var fire_sum := 0.0
+	for f in p.fires:
+		fire_sum += f.int
+	lbl.fires.text = "No fires" if p.fires.is_empty() else "%d fire%s burning%s" % [p.fires.size(), "s" if p.fires.size() > 1 else "", ", spreading" if fire_sum > 1.2 else ""]
+	lbl.fires.add_theme_color_override("font_color", C_MUTED if p.fires.is_empty() else C_RED)
+	dmg_view.queue_redraw()
+	# fire control
+	var tg: Ship = p.target
+	if tg and tg.alive:
+		var how := "visual" if p.vis.get(tg.ship_name, false) else ("radar" if p.radar.get(tg.ship_name, false) else "lost contact")
+		lbl.tgt.text = "%s · %s · %s" % [tg.ship_name, U.yards(p.range_to(tg)), how]
+	else:
+		lbl.tgt.text = "No target"
+	_set_bar("sol", p.q / 0.95)
+	if B.aim_mode == "manual":
+		lbl.sol.text = "Manual aim"
+	elif tg == null:
+		lbl.sol.text = "No solution"
+	else:
+		lbl.sol.text = "Poor" if p.q < 0.3 else ("Fair" if p.q < 0.6 else ("Good" if p.q < 0.85 else "Excellent"))
+	var gi := 0
+	for c in guns_box.get_children():
+		if gi >= p.mounts.size():
+			break
+		var m: Dictionary = p.mounts[gi]
+		c.color = Color(0.07, 0.07, 0.07) if m.hp <= 0.0 else (C_GREEN if m.reload <= 0.0 else C_BRASS)
+		gi += 1
+	var tparts := []
+	for tp in p.torps:
+		tparts.append("x" if tp.hp <= 0.0 else "%d/%d" % [tp.left, tp.n])
+	lbl.torps.text = " · ".join(tparts)
+	btn.fire.disabled = B.aim_mode == "manual"
+	btn.fire.text = "Click to fire" if B.aim_mode == "manual" else ("Cease fire (F)" if p.fire else "Open fire (F)")
+	btn.fire.set_pressed_no_signal(p.fire and B.aim_mode != "manual")
+	btn.smoke.set_pressed_no_signal(p.smoke_on)
+	overlay.queue_redraw()
+
+
+# =====================================================================
+# drawing
+# =====================================================================
+
+func _draw_rudder() -> void:
+	var p: Ship = B.player
+	var s := rud_view.size
+	rud_view.draw_rect(Rect2(0, s.y / 2 - 3, s.x, 6), Color(1, 1, 1, 0.12))
+	rud_view.draw_line(Vector2(s.x / 2, 1), Vector2(s.x / 2, s.y - 1), Color(1, 1, 1, 0.5), 1.0)
+	var xc := s.x / 2 + p.rud_cmd / 35.0 * (s.x / 2 - 3)
+	rud_view.draw_line(Vector2(xc, s.y / 2 - 5), Vector2(xc, s.y / 2 + 5), Color(1, 1, 1, 0.35), 2.0)
+	var x := s.x / 2 + p.rud / 35.0 * (s.x / 2 - 3)
+	rud_view.draw_rect(Rect2(x - 2, 0, 4, s.y), C_BRASS)
+
+
+func _draw_damage() -> void:
+	var p: Ship = B.player
+	var s := dmg_view.size
+	var L: float = p.T.L
+	var k := (s.x - 20.0) / L
+	var cy := s.y / 2.0
+	var wk = (s.y - 14.0) / p.T.B
+	var pts := PackedVector2Array()
+	var steps := 40
+	for i in steps + 1:
+		var lx := -L / 2.0 + L * i / steps
+		pts.append(Vector2(s.x / 2.0 + lx * k, cy - p.half_width_at(lx) * wk))
+	for i in range(steps, -1, -1):
+		var lx := -L / 2.0 + L * i / steps
+		pts.append(Vector2(s.x / 2.0 + lx * k, cy + p.half_width_at(lx) * wk))
+	# water inside the hull as it floods
+	var ff := clampf(p.flood / p.flood_cap(), 0.0, 1.0)
+	dmg_view.draw_colored_polygon(pts, Color(0.1, 0.14, 0.15))
+	if ff > 0.0:
+		var wp := PackedVector2Array()
+		for q in pts:
+			wp.append(Vector2(q.x, lerpf(cy, q.y, ff)))
+		dmg_view.draw_colored_polygon(wp, Color(C_WATER, 0.45))
+	pts.append(pts[0])
+	dmg_view.draw_polyline(pts, Color(0.75, 0.8, 0.8, 0.8), 1.2)
+	# modules
+	for m in p.modules:
+		var f: float = m.hp / m.max
+		var col := Color(0.12, 0.12, 0.12) if f <= 0.0 else (C_RED if f < 0.4 else (C_BRASS if f < 0.8 else C_GREEN))
+		var mx: float = s.x / 2.0 + m.x * k
+		var w := 6.0 if m.kind in ["mount", "torp"] else 9.0
+		var hh := 9.0 if m.kind in ["mount", "torp"] else 5.0
+		var yoff := 0.0 if m.kind != "magazine" else 7.0
+		if m.kind == "engine":
+			yoff = -7.0
+		dmg_view.draw_rect(Rect2(mx - w / 2, cy - hh / 2 + yoff, w, hh), col)
+	# holes and fires
+	for hl in p.holes:
+		var hx: float = s.x / 2.0 + hl.lx * k
+		var hy: float = cy + hl.side * (p.half_width_at(hl.lx) * wk - 2.0)
+		dmg_view.draw_circle(Vector2(hx, hy), 3.5 if hl.fix < 0.9 else 2.0, C_WATER if hl.fix < 0.9 else Color(C_WATER, 0.4))
+	for fr in p.fires:
+		var fxp: float = s.x / 2.0 + fr.lx * k
+		var a := 0.6 + 0.4 * sin(B.t * 9.0 + fr.lx)
+		dmg_view.draw_circle(Vector2(fxp, cy + fr.lz * wk * 0.5), 3.0 + fr.int * 4.0, Color(1.0, 0.5, 0.15, a))
+	dmg_view.draw_string(ThemeDB.fallback_font, Vector2(s.x - 30, 11), "BOW", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, C_MUTED)
+
+
+func _p(x: float, z: float, y := 0.0) -> Vector2:
+	return B.cam.unproject_position(Vector3(x, y, z))
+
+
+func _draw_overlay() -> void:
+	var p: Ship = B.player
+	if p == null:
+		return
+	var vs := overlay.size
+	var font = ThemeDB.fallback_font
+	var px_per_m: float = vs.y / (2.0 * tan(deg_to_rad(32.0) / 2.0) * B.camst.h)
+	# gun range ring when zoomed out
+	if px_per_m < 0.12 and p.alive:
+		_ring(Vector2(p.x, p.z), p.T.gun.range_max, Color(C_BRASS, 0.35), "5-inch gun range")
+		if p.T.radar > 0.0:
+			_ring(Vector2(p.x, p.z), p.T.radar, Color(C_GREEN, 0.25), "SG radar")
+	# own ship marker when zoomed far out
+	if px_per_m < 0.5 and not p.gone:
+		var pc := _p(p.x, p.z, 6.0)
+		overlay.draw_arc(pc, 9.0, 0, TAU, 24, Color(0.55, 0.85, 1.0, 0.9), 1.6)
+		var fwv := U.fwd(p.h)
+		overlay.draw_line(pc, pc + Vector2(fwv.x, fwv.y) * 18.0, Color(0.55, 0.85, 1.0, 0.9), 1.6)
+	# reported enemy position until they are found
+	var rp: Dictionary = B.report
+	if rp.active:
+		var c := _p(rp.x, rp.z)
+		var rr: float = rp.r * px_per_m
+		if rr > 8.0:
+			_dashed_circle(c, rr, Color(C_RED, 0.6))
+		var f := U.fwd(rp.h)
+		var tip := _p(rp.x + f.x * rp.r * 0.9, rp.z + f.y * rp.r * 0.9)
+		if Rect2(Vector2.ZERO, vs).has_point(c):
+			overlay.draw_line(c, tip, Color(C_RED, 0.8), 2.0)
+			overlay.draw_string(font, c + Vector2(8, -6), "Enemy reported here, course %s" % U.deg3(rp.h), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, C_RED)
+		else:
+			_edge_arrow(c, "Enemy reported · %s" % U.yards(p.range_to(rp)), C_RED)
+	# ships
+	for s in B.ships:
+		if s == p or s.gone:
+			continue
+		var known: bool = p.contact(s) or (not s.alive and s.spotted_once)
+		if not known:
+			continue
+		var sp := _p(s.x, s.z, 6.0)
+		var on := Rect2(Vector2.ZERO, vs).grow(-20).has_point(sp)
+		var is_t = s == p.target
+		var col := C_BRASS if is_t else (C_RED if s.alive else C_MUTED)
+		var name_txt: String = s.ship_name if p.vis.get(s.ship_name, false) or not s.alive else "Radar contact"
+		var info := "%s · %s" % [name_txt, U.yards(p.range_to(s))]
+		if not s.alive:
+			info = "%s · sinking" % s.ship_name
+		if on:
+			var half := maxf(10.0, s.T.L * 0.5 * px_per_m + 6.0)
+			_bracket(sp, half, col, is_t)
+			overlay.draw_string(font, sp + Vector2(half + 6, -half + 10), info, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
+			if is_t:
+				overlay.draw_string(font, sp + Vector2(half + 6, -half + 26), "TARGET", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, col)
+		else:
+			_edge_arrow(sp, info, col)
+	# torpedoes we know about
+	for tp in B.torps:
+		if tp.team == "us" or tp.warned:
+			var tc := _p(tp.x, tp.z)
+			var f2 := U.fwd(tp.h)
+			var tail := _p(tp.x - f2.x * 35.0, tp.z - f2.y * 35.0)
+			overlay.draw_line(tail, tc, Color(C_INK, 0.55) if tp.team == "us" else Color(C_RED, 0.6), 1.5)
+	# manual aim reticle
+	if B.aim_mode == "manual" and B.mouse_w != null and p.alive and B.started:
+		_draw_reticle(p, px_per_m, font)
+	# crew aim: show where the guns are pointing
+	if B.speed == 0.0 and B.started:
+		var t := "TACTICAL PAUSE"
+		overlay.draw_string(font, Vector2(vs.x / 2 - 90, vs.y * 0.3), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, C_BRASS)
+	if B.camst.salvo != null:
+		var sv: Dictionary = B.camst.salvo
+		overlay.draw_string(font, Vector2(vs.x / 2 - 120, vs.y * 0.3 + 30), "Following salvo %d  (V to stop)" % sv.n, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, C_INK)
+
+
+func _draw_reticle(p: Ship, px_per_m: float, font: Font) -> void:
+	var mw: Vector2 = B.mouse_w
+	var mp := _p(mw.x, mw.y)
+	var R := U.hyp(mw.x - p.x, mw.y - p.z)
+	var rb := p.rel_bearing(mw.x, mw.y)
+	var bearing := 0
+	var ready := 0
+	for m in p.mounts:
+		if m.hp > 0.0 and Ship.mount_can_bear(m, rb):
+			bearing += 1
+			if m.reload <= 0.0 and absf(U.ang_d(m.ang, rb)) < deg_to_rad(4.0):
+				ready += 1
+	var in_range: bool = R <= p.T.gun.range_max
+	var col := C_RED if not in_range or bearing == 0 else (Color(0.44, 0.81, 0.66) if ready > 0 else C_BRASS)
+	var spread := maxf(10.0, R * 0.007 / p.eff() * px_per_m * 2.0)
+	overlay.draw_arc(mp, spread, 0, TAU, 48, col, 1.6)
+	overlay.draw_line(mp + Vector2(-spread - 10, 0), mp + Vector2(-4, 0), col, 1.6)
+	overlay.draw_line(mp + Vector2(4, 0), mp + Vector2(spread + 10, 0), col, 1.6)
+	overlay.draw_line(mp + Vector2(0, -spread - 10), mp + Vector2(0, -4), col, 1.6)
+	overlay.draw_line(mp + Vector2(0, 4), mp + Vector2(0, spread + 10), col, 1.6)
+	overlay.draw_string(font, mp + Vector2(spread + 14, -4), "%s · %d s" % [U.yards(R), int(round(p.tof_for(R)))], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, C_INK)
+	var st := "Out of range" if not in_range else ("Guns cannot bear" if bearing == 0 else "%d/%d guns ready" % [ready, bearing])
+	overlay.draw_string(font, mp + Vector2(spread + 14, 12), st, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, C_INK)
+	# lead marker: where the target will be when the shells arrive
+	var tg: Ship = p.target
+	if B.show_lead and tg and tg.alive and p.contact(tg):
+		var Rt := p.range_to(tg)
+		var tof := p.tof_for(Rt)
+		var f := U.fwd(tg.h)
+		var a := _p(tg.x, tg.z)
+		var b := _p(tg.x + f.x * tg.v * tof, tg.z + f.y * tg.v * tof)
+		_dashed_line(a, b, Color(C_INK, 0.6))
+		overlay.draw_line(b + Vector2(-7, -7), b + Vector2(7, 7), Color(C_INK, 0.9), 1.6)
+		overlay.draw_line(b + Vector2(7, -7), b + Vector2(-7, 7), Color(C_INK, 0.9), 1.6)
+		overlay.draw_string(font, b + Vector2(-14, -12), "Lead", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, C_INK)
+
+
+func _bracket(c: Vector2, half: float, col: Color, thick: bool) -> void:
+	var l := half * 0.4
+	var w := 2.0 if thick else 1.3
+	for sx in [-1, 1]:
+		for sy in [-1, 1]:
+			var corner := c + Vector2(sx * half, sy * half)
+			overlay.draw_line(corner, corner - Vector2(sx * l, 0), col, w)
+			overlay.draw_line(corner, corner - Vector2(0, sy * l), col, w)
+
+
+func _ring(center: Vector2, radius: float, col: Color, text: String) -> void:
+	var c := _p(center.x, center.y)
+	var e := _p(center.x + radius, center.y)
+	var rr := (e - c).length()
+	_dashed_circle(c, rr, col)
+	overlay.draw_string(ThemeDB.fallback_font, c + Vector2(6, -rr - 4), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, col)
+
+
+func _dashed_circle(c: Vector2, rr: float, col: Color) -> void:
+	var n := 72
+	for i in n:
+		if i % 2 == 0:
+			var a0 := TAU * i / n
+			var a1 := TAU * (i + 1) / n
+			overlay.draw_line(c + Vector2(cos(a0), sin(a0)) * rr, c + Vector2(cos(a1), sin(a1)) * rr, col, 1.4)
+
+
+func _dashed_line(a: Vector2, b: Vector2, col: Color) -> void:
+	var d := b - a
+	var ln := d.length()
+	if ln < 1.0:
+		return
+	var u := d / ln
+	var s := 0.0
+	while s < ln:
+		overlay.draw_line(a + u * s, a + u * minf(ln, s + 5.0), col, 1.2)
+		s += 10.0
+
+
+func _edge_arrow(target: Vector2, text: String, col: Color) -> void:
+	var vs := overlay.size
+	var c := vs / 2.0
+	var d := target - c
+	if d.length() < 1.0:
+		return
+	# keep arrows inside the area between the instrument plates
+	var inner := Rect2(Vector2(70, 180), vs - Vector2(140, 400))
+	c = inner.get_center()
+	d = target - c
+	var kx: float = (inner.size.x / 2.0) / maxf(absf(d.x), 0.001)
+	var ky: float = (inner.size.y / 2.0) / maxf(absf(d.y), 0.001)
+	var p := c + d * minf(kx, ky)
+	var u := d.normalized()
+	var n := Vector2(-u.y, u.x)
+	var tri := PackedVector2Array([p + u * 12.0, p - u * 6.0 + n * 8.0, p - u * 6.0 - n * 8.0])
+	overlay.draw_colored_polygon(tri, col)
+	var font = ThemeDB.fallback_font
+	var tw = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+	var tp := p - u * 22.0 - Vector2(tw / 2.0, -4)
+	tp.x = clampf(tp.x, 8.0, vs.x - tw - 8.0)
+	overlay.draw_string(font, tp, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col)
+
+
+# =====================================================================
+# input
+# =====================================================================
+
+func _unhandled_input(e: InputEvent) -> void:
+	var p: Ship = B.player
+	if e is InputEventKey and e.pressed:
+		if brief.visible:
+			if e.keycode == KEY_ENTER or e.keycode == KEY_SPACE:
+				brief.visible = false
+				B.begin()
+			return
+		match e.keycode:
+			KEY_W: B.order_tele(p.tele + 1)
+			KEY_S: B.order_tele(p.tele - 1)
+			KEY_A: B.order_rudder(p.rud_cmd - 5.0)
+			KEY_D: B.order_rudder(p.rud_cmd + 5.0)
+			KEY_Q: B.order_rudder(0.0)
+			KEY_F: B.toggle_fire()
+			KEY_M: B.set_aim("auto" if B.aim_mode == "manual" else "manual")
+			KEY_T: B.fire_torpedoes()
+			KEY_Z: B.toggle_smoke()
+			KEY_TAB: B.cycle_target()
+			KEY_V:
+				B.follow = not B.follow
+				btn.follow.set_pressed_no_signal(B.follow)
+				if not B.follow:
+					B.camst.salvo = null
+			KEY_SPACE: _toggle_pause()
+			KEY_1: B.set_speed(0.25)
+			KEY_2: B.set_speed(1.0)
+			KEY_3: B.set_speed(3.0)
+			KEY_ESCAPE:
+				B.camst.ox = 0.0; B.camst.oz = 0.0
+	elif e is InputEventMouseButton:
+		if e.button_index == MOUSE_BUTTON_WHEEL_UP and e.pressed:
+			B.zoom(1.0 / 1.15)
+		elif e.button_index == MOUSE_BUTTON_WHEEL_DOWN and e.pressed:
+			B.zoom(1.15)
+		elif e.button_index == MOUSE_BUTTON_LEFT:
+			if e.pressed:
+				drag = {"start": e.position, "last": e.position, "moved": 0.0}
+			else:
+				if not drag.is_empty() and drag.moved < 6.0 and B.started:
+					var w = B.screen_to_world(e.position)
+					if w != null:
+						if B.aim_mode == "manual" and p.alive:
+							B.click_shot = w
+						else:
+							B.pick_target_at(w)
+				drag = {}
+		elif e.button_index == MOUSE_BUTTON_RIGHT and e.pressed:
+			var w2 = B.screen_to_world(e.position)
+			if w2 != null:
+				B.pick_target_at(w2)
+	elif e is InputEventMouseMotion:
+		B.mouse_w = B.screen_to_world(e.position)
+		if not drag.is_empty():
+			var d: Vector2 = e.position - drag.last
+			drag.last = e.position
+			drag.moved += d.length()
+			if drag.moved >= 6.0:
+				B.pan(d.x, d.y)
+
+
+func _toggle_pause() -> void:
+	if B.speed == 0.0:
+		B.set_speed(B.prev_speed if B.prev_speed > 0.0 else 1.0)
+	else:
+		B.prev_speed = B.speed
+		B.set_speed(0.0)
+
+
+func _on_pyro() -> void:
+	B.fx.use_pyro = btn.pyro.button_pressed
+	if not B.fx.use_pyro:
+		for n in get_tree().get_nodes_in_group("pyro"):
+			n.queue_free()
+
+func _on_sound() -> void:
+	B.sfx.enabled = btn.snd.button_pressed
+	btn.snd.text = "Sound on" if B.sfx.enabled else "Sound off"
+
+func _on_view(v) -> void:
+	B.set_view(v)
+	_set_seg("view", v)
+
+func _on_weather(w) -> void:
+	B.weather = w
+	B.apply_weather()
+	_set_seg("weather", w)
+	_update_brief()
+
+func _on_aim_brief(m) -> void:
+	B.aim_mode = m
+	on_aim()
+
+func _on_mag(m) -> void:
+	B.magazine = m
+	_set_seg("mag", m)
+
+func _on_scheme(sc) -> void:
+	B.set_scheme(sc)
+	_set_seg("scheme", sc)
+
+func _on_begin() -> void:
+	brief.visible = false
+	B.begin()

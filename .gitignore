@@ -1,0 +1,4 @@
+# Godot cache (rebuilt automatically when the project opens)
+.godot/
+/android/
+*.tmp

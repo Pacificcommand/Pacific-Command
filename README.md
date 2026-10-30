@@ -1,2 +1,69 @@
-# Pacific-Command
-A 2d Inde game where you as an officer take control of many different ships from WW2 and fight the Imperial Japanese Navy on the open ocean. Level up your officers and crew, manage ship supplies, call in allies, hunt down convoys/battle groups/subs and aircraft carriers
+# Pacific Command — combat sandbox (build 0.1)
+
+WWII Pacific naval game for PC, made in **Godot 4.7.2**. This first build is the
+combat sandbox from the design doc: one Fletcher-class destroyer (USS O'Bannon)
+against two Kagero-class destroyers.
+
+## How to open and play
+1. Start Godot 4.7.2. In the Project Manager choose **Import**, pick
+   `project.godot` in this folder, then **Import & Edit**.
+2. The first time, Godot spends a minute importing the ship models.
+3. Press **F5** (or the ▶ Play button at the top right) to run the game.
+
+## Controls
+| Key / mouse | Action |
+|---|---|
+| W / S | Engine telegraph up / down (Back, Stop, 1/3, 2/3, Std, Full, Flank) |
+| A / D | Rudder 5° left / right; Q centers the rudder |
+| M | Switch aim: Crew (automatic) or Manual (mouse) |
+| F | Crew aim: open / cease fire on the target |
+| Left click | Crew aim: pick a target. Manual aim: fire where you click |
+| Right click | Pick a target (both modes) |
+| Tab | Next target |
+| T | Fire torpedoes at the target (it must be abeam) |
+| Z | Lay a smoke screen |
+| V | Follow salvos on / off |
+| Space | Tactical pause |
+| 1 / 2 / 3 | Slow ¼× / normal / fast 3× |
+| Mouse wheel | Zoom; drag to look around; Esc re-centers |
+
+## What's in this build
+- Live 3D ships seen from above, built from the reference photos. Guns, torpedo
+  tubes, director and light AA turn to their targets.
+- Semi-realistic scale: 5-inch guns reach about 8 km, the enemy starts ~12 km away
+  beyond sight, and the briefing tells you where they were reported.
+- Gunnery: crew aim (solution improves with spotted salvos) or manual point and
+  click with a range / time-of-flight reticle and a lead marker.
+- Torpedoes (Mark 15 vs. Type 93 Long Lance), duds, wake warnings.
+- Module damage, holes and flooding, list and trim, fires, crew losses lowering
+  efficiency, rare magazine explosions (setting: Historical / Reduced / Off).
+- Weather: clear, overcast, fog, night (star shells, gun flashes, radar).
+- Effects: wakes, splashes, smoke, fires, oil slicks, floating debris.
+- Smoke, gun smoke, fire and flash sprites from the **Kenney Smoke Particles** pack.
+- Whitewater foam and water detail textures from the **Boujie Water Shader**.
+- Ship fires and shell / torpedo / magazine explosions from **PYROLUX Lite**
+  (switch them on and off with the "PYROLUX effects" button).
+- Placeholder sounds made in code. Put real `gun`, `boom`, `splash`, `torp`,
+  `alarm` .wav/.ogg files in `assets/sounds/` and they are used instead.
+
+## Project layout
+| Path | What it is |
+|---|---|
+| `scenes/battle.tscn` | Main scene (everything else is created by scripts) |
+| `scripts/data.gd` | Ship classes, telegraph, weather — numbers to tune |
+| `scripts/battle.gd` | Simulation: gunnery, torpedoes, damage, AI, camera |
+| `scripts/ship.gd` | One ship's state and its 3D model |
+| `scripts/hud.gd` | Instruments, markers, briefing, action report, input |
+| `scripts/fx.gd` | Particles and lights |
+| `scripts/sfx.gd` | Sounds |
+| `shaders/` | Sea and particle shaders |
+| `assets/models/` | Ship models (.glb) |
+
+Design doc: https://claude.ai/artifact/6DsTxwe8UHnRugVtDqbLH2
+
+## Third-party assets and licenses
+| Asset | License | Notes |
+|---|---|---|
+| Kenney Smoke Particles (`assets/fx/kenney/`) | CC0 | Free for any use, credit optional |
+| Boujie Water Shader textures (`assets/textures/boujie/`) | MIT | Keep `LICENSE.md` with the files |
+| PYROLUX Lite (`addons/pyrolux_fx/`) | Free to use in the game; **do not share or resell the addon files** | Fine inside exported game builds. Before sharing this project folder, delete `addons/pyrolux_fx/`; the game runs without it and falls back to the built-in effects. |
