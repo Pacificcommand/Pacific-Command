@@ -407,7 +407,7 @@ func _drop_bombs(sq: Dictionary, tgt: Ship, bomb: float) -> void:
 		if randf() < p:
 			hits += 1
 			B.fx.boom(w.x, 8.0, w.y, false)
-			B.sfx.play("boom", Vector2(w.x, w.y), B.cam.position, 0.7)
+			B.sfx.play("bomb", Vector2(w.x, w.y), B.cam.position, 0.8)
 			B.after(0.1 * i, func(): B.damage(tgt, lx, lz, bomb, "bomb", sq.home))
 		else:
 			var miss := tgt.to_world_xz(lx + randf_range(-60, 60), lz + randf_range(-50, 50) * (1.0 if randf() < 0.5 else -1.0))
@@ -440,6 +440,7 @@ func _drop_torps(sq: Dictionary, tgt: Ship, TT: Dictionary) -> void:
 
 
 func _strafe(sq: Dictionary, tgt: Ship) -> void:
+	B.sfx.play("mg", Vector2(tgt.x, tgt.z), B.cam.position, 0.6)
 	for i in sq.n:
 		var lx := randf_range(-tgt.T.L * 0.4, tgt.T.L * 0.4)
 		B.damage(tgt, lx, randf_range(-2, 2), 0.12, "strafe", null)
@@ -545,6 +546,7 @@ func _flak(dt: float) -> void:
 			var mp: Vector2 = s.to_world_xz(randf_range(-s.T.L * 0.3, s.T.L * 0.3), randf_range(-s.T.B * 0.3, s.T.B * 0.3))
 			var to := Vector3(tgt.x + randf_range(-60, 60), tgt.alt + randf_range(-15, 15), tgt.z + randf_range(-60, 60))
 			B.fx.tracer(Vector3(mp.x, 8.0, mp.y), to, Color(1.0, 0.8, 0.4) if s.team == "us" else Color(1.0, 0.55, 0.35), 1.2)
+			B.sfx.play("flak", mp, B.cam.position, 0.5)
 			if randf() < 0.5:
 				B.fx.smoke(to.x, to.y, to.z, 0, 0, randf_range(3, 5), 1.5, randf_range(3, 5), 0.6, Color(0.12, 0.12, 0.12), 0.1)
 

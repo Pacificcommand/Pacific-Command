@@ -1,4 +1,4 @@
-# Pacific Command (build 0.10)
+# Pacific Command (build 0.11)
 
 WWII Pacific naval game for PC, made in **Godot 4.7.2**.
 
@@ -144,8 +144,12 @@ All keys can be changed in Settings › Controls.
 - Whitewater foam and water detail textures from the **Boujie Water Shader**.
 - Ship fires and shell / torpedo / magazine explosions from **PYROLUX Lite**
   (switch them on and off with the "PYROLUX effects" button).
-- Placeholder sounds made in code. Put real `gun`, `boom`, `splash`, `torp`,
-  `alarm` .wav/.ogg files in `assets/sounds/` and they are used instead.
+- Sound and music, all synthesised by the game itself (no audio files, nothing to
+  license): gunfire by calibre, bursts, splashes, torpedoes, depth charges, sonar, flak,
+  engines, fire, sea and wind beds by weather, a radio chime for dispatches, and five
+  music tracks (title, operations map, battle, victory, defeat) that cross-fade as the
+  action changes. Built on first run (a few seconds) and cached. Real recordings can
+  replace any of them: see `assets/sounds/README.md`. Volumes in Settings.
 
 ## Project layout
 | Path | What it is |
@@ -156,7 +160,8 @@ All keys can be changed in Settings › Controls.
 | `scripts/ship.gd` | One ship's state and its 3D model |
 | `scripts/hud.gd` | Instruments, markers, briefing, action report, input |
 | `scripts/fx.gd` | Particles and lights |
-| `scripts/sfx.gd` | Sounds |
+| `scripts/audio.gd` | Autoload `Audio`: synthesised sounds and music, ambience loops, cross-fades |
+| `scripts/sfx.gd` | The battle's sound hooks (positions, weather, planes, fires, sonar) |
 | `shaders/` | Sea and particle shaders |
 | `assets/models/` | Ship models (.glb) |
 

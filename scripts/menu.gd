@@ -27,6 +27,10 @@ func _ready() -> void:
 			return
 	_build_scene()
 	_build_ui()
+	Audio.music("menu")
+	Audio.ambience("clear", 0.6)
+	Audio.loop("fire", 0.0)
+	Audio.loop("plane", 0.0)
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--menushot="):
 			if "--settings" in OS.get_cmdline_user_args():

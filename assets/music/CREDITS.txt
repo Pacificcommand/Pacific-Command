@@ -1,0 +1,8 @@
+Pacific Command - audio credits
+
+All sound effects and music currently in the game are generated at run time by the
+game's own code (scripts/audio.gd) and contain no third-party recordings or
+compositions. Copyright of that audio belongs to the game's owner.
+
+When a recording replaces a synthesised sound, add it here, one line per file:
+  file name | title | author | source URL | licence

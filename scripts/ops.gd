@@ -38,6 +38,10 @@ func _ready() -> void:
 		Career.take_command(Game.career, C.ship, C.name, int(C.day))
 	cam_lon = C.lon; cam_lat = C.lat
 	_build_ui()
+	Audio.music("map")
+	Audio.ambience("clear", 0.35)
+	Audio.loop("fire", 0.0)
+	Audio.loop("plane", 0.0)
 	_apply_result()
 	if not Game.last_result_letter.is_empty():
 		var lt: Dictionary = Game.last_result_letter
@@ -523,6 +527,7 @@ func _check_operations() -> void:
 
 func _show_card(kicker: String, title: String, text: String, button: String) -> void:
 	speed_i = 0
+	Audio.ui("radio", 0.7, "Radio")
 	_refresh_top()
 	card = Control.new()
 	card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

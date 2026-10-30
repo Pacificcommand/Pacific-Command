@@ -1,88 +1,74 @@
 class_name Sfx
 extends Node
-## Placeholder sound effects made in code (no audio files needed yet).
-## Replace these later with real recordings: put .wav or .ogg files in
-## res://assets/sounds/ named gun, boom, splash, torp, alarm and they are used instead.
+## The battle's sound hooks. All sounds live in the `Audio` autoload (scripts/audio.gd);
+## this node adds what the battle knows: positions, the weather, which ship is burning,
+## where the planes are, and the "Sound on/off" switch on the HUD.
 
-const RATE := 22050
-var streams := {}
-var players: Array = []
 var enabled := true
+var B                      # the Battle
+var _ping_t := 0.0
+var _drone := 0.0
 
 
-func _ready() -> void:
-	streams["gun"] = _make(0.9, 0.012, 3.5, 900.0, 0.95)
-	streams["boom"] = _make(2.4, 0.02, 1.5, 420.0, 1.0)
-	streams["splash"] = _make(0.8, 0.03, 4.0, 2600.0, 0.5)
-	streams["torp"] = _make(0.6, 0.01, 5.0, 300.0, 0.6)
-	streams["alarm"] = _tone(0.7, 520.0)
-	for nm in ["gun", "boom", "splash", "torp", "alarm"]:
-		for ext in ["wav", "ogg"]:
-			var path := "res://assets/sounds/%s.%s" % [nm, ext]
-			if ResourceLoader.exists(path):
-				streams[nm] = load(path)
-	for i in 12:
-		var p := AudioStreamPlayer.new()
-		p.bus = "Effects"
-		add_child(p)
-		players.append(p)
-
-
-## Noise burst with a fast attack and exponential decay, low-pass filtered.
-func _make(length: float, attack: float, decay: float, cutoff: float, gain: float) -> AudioStreamWAV:
-	var count := int(length * RATE)
-	var data := PackedByteArray()
-	data.resize(count * 2)
-	var lp := 0.0
-	var lp2 := 0.0
-	var k := 1.0 - exp(-TAU * cutoff / RATE)
-	var rumble := 0.0
-	for i in count:
-		var t := float(i) / RATE
-		var env := minf(1.0, t / attack) * exp(-t * decay)
-		var noise := randf() * 2.0 - 1.0
-		lp += (noise - lp) * k
-		lp2 += (lp - lp2) * k
-		rumble += ((randf() * 2.0 - 1.0) - rumble) * 0.004
-		var s := (lp2 * 2.2 + rumble * 6.0) * env * gain
-		var iv := int(clampf(s, -1.0, 1.0) * 32000.0)
-		data.encode_s16(i * 2, iv)
-	var w := AudioStreamWAV.new()
-	w.format = AudioStreamWAV.FORMAT_16_BITS
-	w.mix_rate = RATE
-	w.stereo = false
-	w.data = data
-	return w
-
-
-func _tone(length: float, freq: float) -> AudioStreamWAV:
-	var count := int(length * RATE)
-	var data := PackedByteArray()
-	data.resize(count * 2)
-	for i in count:
-		var t := float(i) / RATE
-		var env := minf(1.0, t / 0.02) * minf(1.0, (length - t) / 0.05)
-		var s := (1.0 if sin(TAU * freq * t) > 0.0 else -1.0) * 0.18 * env
-		data.encode_s16(i * 2, int(s * 32000.0))
-	var w := AudioStreamWAV.new()
-	w.format = AudioStreamWAV.FORMAT_16_BITS
-	w.mix_rate = RATE
-	w.data = data
-	return w
-
-
-## Play a sound at a world position; volume falls off with distance from the camera.
+## Play a named effect at a world position (x, z); volume falls off with camera distance.
 func play(nm: String, pos: Vector2, cam: Vector3, vol := 1.0) -> void:
-	if not enabled or not streams.has(nm):
+	if not enabled:
 		return
-	var d := Vector2(pos.x - cam.x, pos.y - cam.z).length() + cam.y * 0.4
-	var g := vol / (1.0 + d / 900.0)
-	if g < 0.03:
+	Audio.at(nm, pos, cam, vol)
+
+
+## Gun report by calibre: `sz` is the mount's size factor (1.0 = a 5-inch mount).
+func gun(sz: float, pos: Vector2, cam: Vector3) -> void:
+	var nm := "gun_small" if sz < 0.5 else ("gun_medium" if sz < 1.3 else "gun_large")
+	play(nm, pos, cam, 0.7 + 0.3 * minf(sz, 2.0))
+
+
+## Called every frame by the battle: ambience, fire crackle, engine drone, sonar pings.
+func step(dt: float) -> void:
+	if B == null or Audio.headless:
 		return
-	for p in players:
-		if not p.playing:
-			p.stream = streams[nm]
-			p.volume_db = linear_to_db(clampf(g, 0.0, 1.5))
-			p.pitch_scale = randf_range(0.92, 1.08)
-			p.play()
-			return
+	if not enabled:
+		Audio.silence_ambience()
+		return
+	Audio.ambience(B.weather)
+	var cam: Vector3 = B.cam.position
+	var p: Ship = B.player
+	# fire on the player's ship, or a burning ship close under the camera
+	var fire := 0.0
+	for s in B.ships:
+		if not s.alive or s.fires.is_empty():
+			continue
+		var d: float = Vector2(s.x - cam.x, s.z - cam.z).length() + cam.y * 0.4
+		fire = maxf(fire, minf(1.0, 0.25 * s.fires.size()) / (1.0 + d / 500.0))
+	Audio.loop("fire", fire * 0.8)
+	# nearest airborne squadron
+	var near := 1e9
+	if B.air:
+		for sq in B.air.sqs:
+			if sq.state in ["ready", "landing", "lost"]:
+				continue
+			var d: float = Vector2(sq.x - cam.x, sq.z - cam.z).length() + absf(sq.alt - cam.y) * 0.5
+			near = minf(near, d / maxf(1.0, sqrt(sq.n / 6.0)))
+	var goal := clampf(1.0 - near / 2200.0, 0.0, 1.0) * 0.5
+	_drone = move_toward(_drone, goal, dt * 0.5)
+	Audio.loop("plane", _drone)
+	# the player's sonar pings while hunting (or an escort pinging a submerged player)
+	if p and p.alive and p.sonar_range() > 0.0 and not p.is_sub() and not p.sonar_contacts.is_empty():
+		_ping_t -= dt
+		if _ping_t <= 0.0:
+			_ping_t = 3.5
+			Audio.ui("ping", 0.35)
+	elif p and p.is_sub() and p.submerged():
+		_ping_t -= dt
+		if _ping_t <= 0.0:
+			_ping_t = 6.0
+			for s in B.ships:
+				if s.team != p.team and s.alive and s.sonar_contacts.has(p.ship_name):
+					Audio.ui("ping", 0.5)
+					break
+
+
+func quiet() -> void:
+	Audio.silence_ambience()
+	Audio.loop("fire", 0.0)
+	Audio.loop("plane", 0.0)

@@ -109,6 +109,7 @@ func _button(text: String, cb: Callable, toggle := false) -> Button:
 	b.add_theme_color_override("font_pressed_color", C_BRASS_INK)
 	b.add_theme_color_override("font_hover_pressed_color", C_BRASS_INK)
 	b.add_theme_color_override("font_disabled_color", C_MUTED)
+	b.pressed.connect(func(): Audio.ui("click", 0.5))
 	b.pressed.connect(cb)
 	return b
 
@@ -452,6 +453,7 @@ func _update_brief() -> void:
 		var zone_name := ""
 		if War.ZONES.has(Game.mission.get("zone", "")):
 			zone_name = War.ZONES[Game.mission.zone].name
+		Audio.ui("radio", 0.7, "Radio")
 		lbl.brief_text.text = Story.dispatch(bf, int(Game.mission.get("day", 0)), B.player.ship_name, Missions.RANKS[clampi(Game.career.rank, 0, 8)], zone_name) + "\nConditions: %s." % W.name.to_lower()
 	else:
 		lbl.brief_text.text = "%s Conditions: %s." % [bf.get("text", ""), W.name.to_lower()]

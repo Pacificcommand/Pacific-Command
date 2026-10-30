@@ -73,6 +73,7 @@ func _ready() -> void:
 	randomize()
 	_build_world()
 	sfx = Sfx.new()
+	sfx.B = self
 	add_child(sfx)
 	ai = AI.new()
 	ai.B = self
@@ -731,6 +732,7 @@ func _add_ship(type_id: String, team: String, nm: String, x: float, z: float, h:
 
 func begin() -> void:
 	started = true
+	Audio.music("map")
 	if _spent > 0:
 		Game.career.reputation = maxi(0, Game.career.reputation - _spent)
 		Game.save_career()
@@ -930,6 +932,7 @@ func load_state(d: Dictionary) -> void:
 	hud.on_new_game()
 	hud.brief.visible = false
 	started = true
+	Audio.music("battle" if combat_t >= 0.0 else "map")
 	set_speed(0.0)
 	prev_speed = float(d.speed)
 	say("Battle resumed. Press %s or pick a time speed to continue." % Game.key_name("pause"))
@@ -955,6 +958,7 @@ func _process(delta: float) -> void:
 		s.update_visual(t)
 	_draw_shells()
 	fx.render(cam.position)
+	sfx.step(delta)
 	ocean_mat.set_shader_parameter("time_s", t)
 	hud.refresh()
 
@@ -1009,6 +1013,7 @@ func _settle() -> void:
 	if get_meta("settled", false):
 		return
 	set_meta("settled", true)
+	Audio.music("victory" if over == "won" else "defeat", "")
 	Game.last_result = {"over": over, "sunk": stats.sunk.duplicate(), "rescued": stats.get("rescued", 0), "player_alive": player.alive, "crew_lost": stats.start_crew - player.crew,
 		"flood": player.flood / maxf(1.0, player.flood_cap()), "mission": Game.mission.duplicate(true)}
 	Game.career.missions += 1
@@ -1261,7 +1266,7 @@ func step_charges(dt: float) -> void:
 		fx.boom(c.x, 1.0, c.z, not c.hh)
 		for i in (12 if not c.hh else 4):
 			fx.add(Fx.SPLASH, c.x + randf_range(-8, 8), 2.0, c.z + randf_range(-8, 8), 0, 0, 0, randf_range(5, 9), 12.0, 3.0, 1.0, Color(0.95, 0.98, 1.0), 1.0)
-		sfx.play("boom", Vector2(c.x, c.z), cam.position, 0.9 if not c.hh else 0.5)
+		sfx.play("dc" if not c.hh else "boom", Vector2(c.x, c.z), cam.position, 1.0 if not c.hh else 0.5)
 		if hit:
 			var l := hit.to_local_xz(c.x, c.z)
 			var d := U.hyp(hit.x - c.x, hit.z - c.z)
@@ -1444,11 +1449,12 @@ func _launch_shells(s: Ship, sv: Dictionary, ready: Array, aim: Vector2, sig_r: 
 			fx.light(Vector3(fp.x, muzzle_y + 2.0, fp.y), 520.0 * sz, Color(1.0, 0.7, 0.4), 5.0 * sz, 0.28)
 			for i in (3 if sz >= 0.5 else 1):
 				fx.smoke(fp.x + sin(wb) * 4.0 * sz, muzzle_y + 1.0, fp.y - cos(wb) * 4.0 * sz, sin(wb) * randf_range(4, 9) * sz, -cos(wb) * randf_range(4, 9) * sz, randf_range(2.5, 4) * sz, 1.8 * sz, randf_range(5, 8), 0.4 * maxf(sz, 0.5), Color(0.6, 0.56, 0.48), 0.3)
-			sfx.play("gun", fp, cam.position, 0.8 * maxf(sz, 0.35))
+			sfx.gun(sz, fp, cam.position)
 		)
 	s.last_fired = t
 	if combat_t < 0.0 and (s.is_player or s.team != player.team):
 		combat_t = t
+		Audio.music("battle")
 	var rk := 1.0 - (Career.mod("gun_reload") * 0.5 if s.is_player else 0.0)
 	for m in ready:
 		m.reload = g.reload / e * randf_range(0.95, 1.08) * rk
@@ -1788,7 +1794,7 @@ func magazine_boom(s: Ship, mx: float) -> void:
 	s.flood = s.T.displacement * 2.0
 	say("MAGAZINE EXPLOSION! The ship is breaking up!" if s.is_player else "%s has blown up! Magazine explosion!" % s.ship_name, "bad" if s.is_player else "good")
 	shake = maxf(shake, 3.0 if s.is_player else 1.0)
-	sfx.play("boom", w, cam.position, 1.6)
+	sfx.play("boom_big", w, cam.position, 1.6)
 
 
 # =====================================================================
@@ -1879,7 +1885,7 @@ func step_torps(dt: float) -> void:
 				fx.boom(tp.x, 2.0, tp.z, true)
 				for i in 20:
 					fx.add(Fx.SPLASH, tp.x + randf_range(-6, 6), 3.0, tp.z + randf_range(-6, 6), 0, 0, 0, randf_range(6, 10), 14.0, 3.5, 1.0, Color(0.95, 0.98, 1.0), 1.0)
-				sfx.play("boom", Vector2(tp.x, tp.z), cam.position, 1.2)
+				sfx.play("boom_big", Vector2(tp.x, tp.z), cam.position, 1.2)
 				if s.is_player:
 					shake = maxf(shake, 2.0)
 				if tp.team == "us":
@@ -1985,6 +1991,7 @@ func step_ship(s: Ship, dt: float) -> void:
 			s.sinking = 0.001
 			s.fire = false
 			say("Abandon ship! She is going down." if s.is_player else "%s is sinking!" % s.ship_name, "bad" if s.is_player else "good")
+			sfx.play("creak", Vector2(s.x, s.z), cam.position, 0.9)
 			if s.team != player.team:
 				stats.sunk.append(s.ship_name)
 				if s.last_hit_by == player:

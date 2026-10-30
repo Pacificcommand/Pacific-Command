@@ -72,6 +72,7 @@ static func button(text: String, cb: Callable, toggle := false, size := 13) -> B
 	b.text = text
 	b.toggle_mode = toggle
 	style_button(b, size)
+	b.pressed.connect(func(): Audio.ui("click", 0.5))
 	if cb.is_valid():
 		b.pressed.connect(cb)
 	return b

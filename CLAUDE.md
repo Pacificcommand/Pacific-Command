@@ -32,7 +32,9 @@ experience; explain in plain words, he tests by playing). Top-down 3D view of li
 | `scripts/battle.gd` | Simulation: missions (`_setup_*`), gunnery, torpedoes, damage, AI, camera, test flags |
 | `scripts/ship.gd` | One ship: state, geometry helpers, model sync (mounts rotate on glb nodes) |
 | `scripts/hud.gd` | All UI (built in code), overlay markers, briefing, action report, input |
-| `scripts/fx.gd` / `sfx.gd` | Particles (MultiMesh layers) and lights / placeholder sounds |
+| `scripts/fx.gd` | Particles (MultiMesh layers) and lights |
+| `scripts/audio.gd` | Autoload `Audio`: ALL sound and music, synthesised in code on first run and cached in user://audio_cache (bump CACHE_VERSION after changing a sound). `Audio.at/ui/loop/ambience/music`. Files in assets/sounds|music override by name (see assets/sounds/README.md). `--audiotest` builds the bank synchronously in headless |
+| `scripts/sfx.gd` | Battle sound hooks: gun by calibre, per-frame ambience/fire/plane drone/sonar pings |
 | `shaders/` | Ocean and particle shaders |
 | `assets/models/*.glb` | Ship models, built by `tools/ship_builder` |
 | `tools/ship_builder/` | Python (numpy) mesh builder: `geom.py` primitives; hand-built classes one file each (fletcher, kagero, pt_elco, daihatsu, merchant); `warship.py` parametric parts + `specs.py` (one spec dict per class, with its game DATA); `build_all.py` builds every .glb; `gen_data.py` writes `scripts/ship_types.gd` from specs.DATA; `preview.py NAME` renders /tmp/previews/NAME.png (top + oblique) to check against the photos |
