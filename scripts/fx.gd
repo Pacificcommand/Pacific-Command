@@ -223,6 +223,25 @@ func boom(x: float, y: float, z: float, big: bool) -> void:
 		smoke(x, y + 4.0, z, cos(a) * o, sin(a) * o, randf_range(5, 9) * (1.6 if big else 1.0), 5.0 if big else 3.0, randf_range(7, 12), 0.7, Color(0.16, 0.14, 0.13), 1.5)
 	debris(x, y, z, 26 if big else 6, 26.0 if big else 12.0)
 
+## Hit by a light gun (20-40 mm or machine gun): sparks, a puff of smoke, a few splinters.
+func small_hit(x: float, y: float, z: float, dmg: float) -> void:
+	var k := clampf(dmg * 3.0, 0.3, 1.0)
+	flash(x, y + 1.0, z, 2.5 * k, 6.0 * k, 0.15, Color(1.0, 0.8, 0.45))
+	add(FIRE, x, y + 1.0, z, 0, 0, 1.0, 1.5 * k, 2.0, 0.3, 0.9, Color(1, 0.7, 0.3), 5.0)
+	smoke(x, y + 1.0, z, randf_range(-1, 1), randf_range(-1, 1), 1.5 * k, 1.2, randf_range(3, 5), 0.5, Color(0.25, 0.23, 0.22), 0.8)
+	debris(x, y, z, int(3 * k) + 1, 8.0 * k)
+	if randf() < 0.3:
+		light(Vector3(x, y + 4.0, z), 60.0 * k, Color(1.0, 0.7, 0.35), 2.0, 0.12)
+
+
+## Splash from a light gun: small spout and a ring of foam.
+func small_splash(x: float, z: float, size: float) -> void:
+	add(SPLASH, x, 1.0, z, 0, 0, 0, 0.8 + size * 2.0, 2.0 * size + 0.5, 0.9, 0.8, Color(0.95, 0.98, 1.0), 1.0)
+	for i in 3:
+		var a := randf() * TAU
+		foam(x, z, cos(a) * 2.0, sin(a) * 2.0, randf_range(0.6, 1.2), 0.6, randf_range(3, 6), 0.6)
+
+
 func debris(x: float, y: float, z: float, count: int, speed: float) -> void:
 	for i in count:
 		var a := randf() * TAU

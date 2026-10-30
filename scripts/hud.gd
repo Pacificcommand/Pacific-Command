@@ -268,7 +268,8 @@ func _build_plates() -> void:
 	fv.add_child(_row([_caps("Solution"), _bar("sol", C_BRASS), lbl.sol]))
 	guns_box = HBoxContainer.new()
 	guns_box.add_theme_constant_override("separation", 3)
-	fv.add_child(_row([_caps("5-inch"), guns_box]))
+	lbl.gun_caps = _caps("Guns")
+	fv.add_child(_row([lbl.gun_caps, guns_box]))
 	lbl.torps = _label("5/5 · 5/5", 12)
 	fv.add_child(_row([_caps("Torpedoes"), lbl.torps]))
 	btn.fire = _button("Open fire (F)", func(): B.toggle_fire(), true)
@@ -339,6 +340,7 @@ func _build_brief() -> void:
 	lbl.brief_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.brief_text.custom_minimum_size.x = 520
 	v.add_child(lbl.brief_text)
+	v.add_child(_row([_caps("Mission"), _seg("mission", [["dd", "Destroyer action"], ["barges", "PT barge hunt"], ["convoy", "PT convoy attack"]], _on_mission)]))
 	v.add_child(_row([_caps("Conditions"), _seg("weather", [["clear", "Clear day"], ["overcast", "Overcast"], ["fog", "Fog"], ["night", "Night"]], _on_weather)]))
 	v.add_child(_row([_caps("Aim"), _seg("aim_b", [["auto", "Crew (auto)"], ["manual", "Manual (mouse)"]], _on_aim_brief)]))
 	v.add_child(_row([_caps("Magazines"), _seg("mag", [["historical", "Historical"], ["reduced", "Reduced"], ["off", "Off"]], _on_mag)]))
@@ -352,15 +354,13 @@ func _build_brief() -> void:
 
 func _update_brief() -> void:
 	var W: Dictionary = Data.WEATHER[B.weather]
-	var threat := "Moderate"
-	if B.weather == "night":
-		threat = "High (night action; Japanese crews are trained for it)"
-	elif B.weather == "fog":
-		threat = "Moderate (fog will hide both sides)"
+	var bf: Dictionary = B.brief
+	lbl.brief_title.text = bf.get("title", "")
+	var threat: String = bf.get("threat", "Moderate")
+	if B.weather == "fog":
+		threat += "; fog will hide both sides"
 	lbl.threat.text = "Threat assessment: %s" % threat
-	var p: Ship = B.player
-	var rp: Dictionary = B.report
-	lbl.brief_text.text = "Coastwatchers report two Japanese destroyers bearing %s from you, about %s away, steering %s at high speed. Expect Kagero-class ships armed with Long Lance torpedoes that outrange ours.\n\nYou command USS O'Bannon, a Fletcher-class destroyer with five 5-inch guns, ten torpedoes and SG radar. Find the enemy, stop the run, and bring your ship home. Conditions: %s." % [U.deg3(p.bearing_to(rp.x, rp.z)), U.yards(p.range_to(rp)), U.deg3(rp.h), W.name.to_lower()]
+	lbl.brief_text.text = "%s Conditions: %s." % [bf.get("text", ""), W.name.to_lower()]
 
 
 func _build_end() -> void:
@@ -385,13 +385,28 @@ func show_end() -> void:
 	var st: Dictionary = B.stats
 	var p: Ship = B.player
 	var lost: int = st.start_crew - p.crew
-	var won: bool = B.over == "won"
-	lbl.end_t.text = "Enemy force defeated" if won else "USS O'Bannon lost"
+	match B.over:
+		"won":
+			lbl.end_t.text = "Mission accomplished"
+		"escaped":
+			lbl.end_t.text = "The enemy got through"
+		_:
+			lbl.end_t.text = "%s lost" % p.ship_name
 	var sunk_txt: String = ", ".join(st.sunk) if not st.sunk.is_empty() else "none"
 	var acc: float = 100.0 * st.hits / maxf(1.0, _shells_fired())
-	lbl.end_p.text = "Battle time %s.\nEnemy ships sunk: %s.\nSalvos fired: %d, shell hits: %d (%.0f%%).\nTorpedoes fired: %d, torpedo hits: %d.\nCrew lost: %d of %d." % [_clock(B.t), sunk_txt, st.salvos, st.hits, acc, st.torps, st.torp_hits, lost, st.start_crew]
-	if won and p.alive:
-		lbl.end_p.text += "\n\nThe run is stopped and your ship is still afloat. Well done, Captain."
+	var txt := "Battle time %s.\nEnemy sunk: %s.\n" % [_clock(B.t), sunk_txt]
+	if not st.escaped.is_empty():
+		txt += "Got away: %s.\n" % ", ".join(st.escaped)
+	txt += "Bursts and salvos fired: %d, hits: %d (%.0f%%).\nTorpedoes fired: %d, torpedo hits: %d.\nCrew lost: %d of %d." % [st.salvos, st.hits, acc, st.torps, st.torp_hits, lost, st.start_crew]
+	var friends_lost := []
+	for s in B.ships:
+		if s.team == p.team and s != p and not s.alive:
+			friends_lost.append(s.ship_name)
+	if not friends_lost.is_empty():
+		txt += "\nFriendly boats lost: %s." % ", ".join(friends_lost)
+	if B.over == "won" and p.alive:
+		txt += "\n\nObjective destroyed and your boat is still afloat. Well done, Captain."
+	lbl.end_p.text = txt
 	endp.visible = true
 
 
@@ -413,9 +428,10 @@ func on_new_game() -> void:
 	for c in log_box.get_children():
 		c.queue_free()
 	_set_seg("weather", B.weather)
+	_set_seg("mission", B.scenario)
+	_set_seg("view", "close" if B.player.T.L < 40.0 else "ship")
 	_set_seg("mag", B.magazine)
 	_set_seg("scheme", B.scheme)
-	_set_seg("view", "ship")
 	btn.follow.set_pressed_no_signal(B.follow)
 	btn.slowf.set_pressed_no_signal(B.slow_follow)
 	btn.lead.set_pressed_no_signal(B.show_lead)
@@ -451,7 +467,7 @@ func refresh() -> void:
 	if p == null:
 		return
 	var W: Dictionary = Data.WEATHER[B.weather]
-	lbl.sub.text = "Fletcher-class destroyer · %s · Battle time %s" % [W.name, _clock(B.t)]
+	lbl.sub.text = "%s · %s · Battle time %s" % [p.T.name, W.name, _clock(B.t)]
 	for i in tele_btns.size():
 		tele_btns[i].set_pressed_no_signal(i == p.tele)
 	lbl.spd.text = "%.1f kn" % (p.v / Data.KN)
@@ -497,10 +513,16 @@ func refresh() -> void:
 		var m: Dictionary = p.mounts[gi]
 		c.color = Color(0.07, 0.07, 0.07) if m.hp <= 0.0 else (C_GREEN if m.reload <= 0.0 else C_BRASS)
 		gi += 1
-	var tparts := []
-	for tp in p.torps:
-		tparts.append("x" if tp.hp <= 0.0 else "%d/%d" % [tp.left, tp.n])
-	lbl.torps.text = " · ".join(tparts)
+	if not p.torps.is_empty() and p.torps[0].fixed:
+		var left := 0
+		for tp in p.torps:
+			left += tp.left if tp.hp > 0.0 else 0
+		lbl.torps.text = "%d of %d ready · fire ahead" % [left, p.torps.size()]
+	else:
+		var tparts := []
+		for tp in p.torps:
+			tparts.append("x" if tp.hp <= 0.0 else "%d/%d" % [tp.left, tp.n])
+		lbl.torps.text = " · ".join(tparts) if not tparts.is_empty() else "none"
 	btn.fire.disabled = B.aim_mode == "manual"
 	btn.fire.text = "Click to fire" if B.aim_mode == "manual" else ("Cease fire (F)" if p.fire else "Open fire (F)")
 	btn.fire.set_pressed_no_signal(p.fire and B.aim_mode != "manual")
@@ -575,7 +597,10 @@ func _p(x: float, z: float, y := 0.0) -> Vector2:
 	return B.cam.unproject_position(Vector3(x, y, z))
 
 
+var _edge_used: Array = []
+
 func _draw_overlay() -> void:
+	_edge_used.clear()
 	var p: Ship = B.player
 	if p == null:
 		return
@@ -584,7 +609,7 @@ func _draw_overlay() -> void:
 	var px_per_m: float = vs.y / (2.0 * tan(deg_to_rad(32.0) / 2.0) * B.camst.h)
 	# gun range ring when zoomed out
 	if px_per_m < 0.12 and p.alive:
-		_ring(Vector2(p.x, p.z), p.T.gun.range_max, Color(C_BRASS, 0.35), "5-inch gun range")
+		_ring(Vector2(p.x, p.z), p.max_range(), Color(C_BRASS, 0.35), "Gun range")
 		if p.T.radar > 0.0:
 			_ring(Vector2(p.x, p.z), p.T.radar, Color(C_GREEN, 0.25), "SG radar")
 	# own ship marker when zoomed far out
@@ -610,6 +635,14 @@ func _draw_overlay() -> void:
 	# ships
 	for s in B.ships:
 		if s == p or s.gone:
+			continue
+		if s.team == p.team:
+			# friendly ships: a blue ring and the name
+			var fp := _p(s.x, s.z, 3.0)
+			var fc := Color(0.55, 0.85, 1.0, 0.9) if s.alive else C_MUTED
+			var fr := maxf(8.0, s.T.L * 0.5 * px_per_m + 4.0)
+			overlay.draw_arc(fp, fr, 0, TAU, 24, fc, 1.2)
+			overlay.draw_string(font, fp + Vector2(fr + 4, 4), s.ship_name + ("" if s.alive else " · sinking"), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, fc)
 			continue
 		var known: bool = p.contact(s) or (not s.alive and s.spotted_once)
 		if not known:
@@ -661,7 +694,7 @@ func _draw_reticle(p: Ship, px_per_m: float, font: Font) -> void:
 			bearing += 1
 			if m.reload <= 0.0 and absf(U.ang_d(m.ang, rb)) < deg_to_rad(4.0):
 				ready += 1
-	var in_range: bool = R <= p.T.gun.range_max
+	var in_range: bool = R <= p.max_range()
 	var col := C_RED if not in_range or bearing == 0 else (Color(0.44, 0.81, 0.66) if ready > 0 else C_BRASS)
 	var spread := maxf(10.0, R * 0.007 / p.eff() * px_per_m * 2.0)
 	overlay.draw_arc(mp, spread, 0, TAU, 48, col, 1.6)
@@ -746,6 +779,11 @@ func _edge_arrow(target: Vector2, text: String, col: Color) -> void:
 	var tw = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
 	var tp := p - u * 22.0 - Vector2(tw / 2.0, -4)
 	tp.x = clampf(tp.x, 8.0, vs.x - tw - 8.0)
+	# stack labels that would overlap an earlier one
+	for r in _edge_used:
+		if absf(r.y - tp.y) < 14.0 and tp.x < r.x + r.z + 6.0 and tp.x + tw + 6.0 > r.x:
+			tp.y = r.y + 15.0 * (1.0 if u.y <= 0.0 else -1.0)
+	_edge_used.append(Vector3(tp.x, tp.y, tw))
 	overlay.draw_string(font, tp, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col)
 
 
@@ -835,6 +873,9 @@ func _on_sound() -> void:
 func _on_view(v) -> void:
 	B.set_view(v)
 	_set_seg("view", v)
+
+func _on_mission(m) -> void:
+	B.set_scenario(m)
 
 func _on_weather(w) -> void:
 	B.weather = w

@@ -6,6 +6,13 @@ extends Node3D
 
 var type_id := ""
 var T: Dictionary            # class data from Data.TYPES
+var gun: Dictionary          # main battery gun (Data.GUNS)
+var objective := false       # a mission objective (sink, capture or drive off)
+var escaped := false
+var route_h := 0.0           # course the AI steers when it has nothing else to do
+var station := Vector2.ZERO  # formation station behind the player (lx, lz)
+var torp_run := false
+var dest_dist := 0.0         # distance left to the AI ship's destination
 var team := "us"             # "us" or "ijn"
 var ship_name := ""
 var is_player := false
@@ -58,6 +65,10 @@ var ai_turn := 0.0
 var ai_state := "search"
 var side := 1.0              # which way the AI swings when attacking
 var spotted_once := false
+var bat_last := {}           # gun calibre -> time last fired
+var bat_busy := {}
+var weave_t := 10.0
+var evade_until := -1.0
 
 # visuals
 var model: Node3D
@@ -77,16 +88,19 @@ func setup(p_type: String, p_team: String, p_name: String, px: float, pz: float,
 	crew = T.crew
 	bob_phase = randf() * TAU
 	tele = 4
+	gun = Data.GUNS[T.gun]
 	for m in T.mounts:
-		mounts.append({"g": m.g, "x": m.x, "stow": m.stow, "arc": m.arc, "ang": m.stow, "reload": randf_range(0.0, 2.0), "hp": 3.0, "recoil": 0.0, "node": null})
+		var g: Dictionary = Data.GUNS[m.get("gun", T.gun)]
+		var hp := 3.0 if g.dmg >= 0.5 else 1.5
+		mounts.append({"g": m.g, "x": m.x, "stow": m.stow, "arc": Data.ARCS[m.arc], "ang": m.stow, "reload": randf_range(0.0, 2.0), "hp": hp, "recoil": 0.0, "node": null, "gun": g, "on": false, "bears": false})
 	for t in T.torps:
-		torps.append({"g": t.g, "x": t.x, "n": t.n, "ang": 0.0, "left": t.n, "hp": 2.0, "reload_t": 0.0, "node": null})
+		torps.append({"g": t.g, "x": t.x, "n": t.n, "ang": 0.0, "left": t.n, "hp": 2.0, "reload_t": 0.0, "node": null, "fixed": t.get("fixed", false)})
 	for i in T.aa.size():
 		aa_ang.append(0.0)
 	for md in T.modules:
 		modules.append({"label": md[0], "kind": md[1], "x": md[2], "hp": md[3], "max": md[3], "ref": null})
 	for m in mounts:
-		modules.append({"label": m.g, "kind": "mount", "x": m.x, "hp": 3.0, "max": 3.0, "ref": m})
+		modules.append({"label": m.g, "kind": "mount", "x": m.x, "hp": m.hp, "max": m.hp, "ref": m})
 	for t in torps:
 		modules.append({"label": t.g, "kind": "torp", "x": t.x, "hp": 2.0, "max": 2.0, "ref": t})
 	load_model(scheme)
@@ -130,7 +144,7 @@ func mod_health(kind: String) -> float:
 		if m.kind == kind:
 			hp += m.hp
 			mx += m.max
-	return hp / mx if mx > 0.0 else 0.0
+	return hp / mx if mx > 0.0 else 1.0   # no such module: counts as intact
 
 func max_kn() -> float:
 	var eng := mod_health("engine")
@@ -179,12 +193,29 @@ func rel_bearing(tx: float, tz: float) -> float:
 	return U.ang_d(h, bearing_to(tx, tz))
 
 static func mount_can_bear(m: Dictionary, rb: float) -> bool:
-	var d := absf(rad_to_deg(rb))
-	return d <= 150.0 if m.arc == "fwd" else d >= 30.0
+	return absf(U.ang_d(deg_to_rad(m.arc[0]), rb)) <= deg_to_rad(m.arc[1])
 
-func tof_for(R: float) -> float:
-	var g: Dictionary = T.gun
+## Nearest bearing inside the mount's arc (where it waits when the target is outside it).
+static func arc_clamp(m: Dictionary, rb: float) -> float:
+	var c := deg_to_rad(m.arc[0])
+	var hw := deg_to_rad(m.arc[1])
+	var d := U.ang_d(c, rb)
+	return c + clampf(d, -hw, hw)
+
+func tof_for(R: float, g = null) -> float:
+	if g == null:
+		g = gun
 	return R / (g.vel * (0.85 - 0.45 * clampf(R / g.range_max, 0.0, 1.0)))
+
+func max_range() -> float:
+	var r := 0.0
+	for m in mounts:
+		if m.hp > 0.0:
+			r = maxf(r, m.gun.range_max)
+	return r
+
+func role() -> String:
+	return T.get("role", "warship")
 
 func contact(o: Ship) -> bool:
 	return vis.get(o.ship_name, false) or radar.get(o.ship_name, false)
@@ -197,7 +228,10 @@ func update_visual(t: float) -> void:
 	var bob := sin(t * 0.7 + bob_phase) * 0.25
 	var swell_roll := sin(t * 0.55 + bob_phase) * deg_to_rad(1.2)
 	position = Vector3(x, -sink + bob, z)
-	var b := Basis(Vector3.UP, -h) * Basis(Vector3.RIGHT, -pitch) * Basis(Vector3.BACK, -(roll + swell_roll))
+	var trim := 0.0
+	if T.get("role", "") == "pt" and alive:
+		trim = deg_to_rad(4.5) * clampf(v / (35.0 * Data.KN), 0.0, 1.0)
+	var b := Basis(Vector3.UP, -h) * Basis(Vector3.RIGHT, -(pitch - trim)) * Basis(Vector3.BACK, -(roll + swell_roll))
 	transform.basis = b
 	visible = not gone
 	# guns, tubes, director and light AA turn on their pivots

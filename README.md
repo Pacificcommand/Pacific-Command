@@ -1,8 +1,16 @@
-# Pacific Command — combat sandbox (build 0.1)
+# Pacific Command — combat sandbox (build 0.2)
 
-WWII Pacific naval game for PC, made in **Godot 4.7.2**. This first build is the
-combat sandbox from the design doc: one Fletcher-class destroyer (USS O'Bannon)
-against two Kagero-class destroyers.
+WWII Pacific naval game for PC, made in **Godot 4.7.2**. Combat sandbox with three
+missions, picked on the briefing screen:
+
+- **Destroyer action:** USS O'Bannon (Fletcher class) against two Kagero-class destroyers.
+- **PT barge hunt:** you and two AI PT boats against a night run of Daihatsu barges
+  (four supply barges, two gun barges). Torpedoes run under barges, so it's a gun fight.
+- **PT convoy attack:** three PT boats against two cargo ships and a tanker with a
+  Kagero escort. PT torpedoes fire straight ahead: aim the boat, then press T.
+
+The other PT boats follow you in formation, attack the target you pick (or the nearest
+transport), hold their fire on torpedo approaches and make smoke as they withdraw.
 
 ## How to open and play
 1. Start Godot 4.7.2. In the Project Manager choose **Import**, pick
