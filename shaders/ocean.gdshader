@@ -61,10 +61,10 @@ void fragment() {
 	vec3 det = texture(detail_tex, p / 70.0 + wind_dir * t * 0.004).rgb;
 	col *= mix(1.0, 0.8 + 0.4 * dot(det, vec3(0.2, 0.3, 0.5)), lod(px, 0.02));
 	// whitecaps: patches of the whitewater texture where crests are high and the sea is rough
-	float capmask = smoothstep(0.78, 0.98, noise(p * 0.05 + t * 0.03) * 0.55 + crest * 0.5) * clamp(chop - 0.55, 0.0, 1.0);
+	float capmask = smoothstep(0.84, 1.0, noise(p * 0.05 + t * 0.03) * 0.55 + crest * 0.5) * clamp(chop - 0.55, 0.0, 1.0);
 	float wf = texture(foam_tex, p / 26.0 - wind_dir * t * 0.02).r;
 	float cap = smoothstep(0.6, 0.95, wf) * capmask * lod(px, 0.1);
-	col = mix(col, vec3(0.86, 0.9, 0.92), cap * 0.6);
+	col = mix(col, vec3(0.86, 0.9, 0.92), cap * 0.4);
 	ALBEDO = col;
 	ROUGHNESS = mix(0.18, 0.45, smoothstep(0.5, 6.0, px));
 	SPECULAR = spec;

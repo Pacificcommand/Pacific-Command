@@ -28,7 +28,7 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 | Left click | Crew aim: pick a target. Manual aim: fire where you click |
 | Right click | Pick a target (both modes) |
 | Tab | Next target |
-| T | Fire torpedoes at the target (it must be abeam) |
+| T | Torpedo aim: lanes follow the mouse, a lead marker shows where to aim, click to fire (T or Esc to cancel) |
 | Z | Lay a smoke screen |
 | V | Follow salvos on / off |
 | Space | Tactical pause |

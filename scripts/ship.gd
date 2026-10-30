@@ -214,6 +214,43 @@ func max_range() -> float:
 			r = maxf(r, m.gun.range_max)
 	return r
 
+## Torpedo speed in m/s as used in battle.
+func torp_speed() -> float:
+	return T.torp.speed_kn * Data.KN * Data.TORP_SPEED
+
+## Torpedoes still ready in working tubes.
+func torps_left() -> int:
+	var n := 0
+	for tp in torps:
+		if tp.hp > 0.0:
+			n += tp.left
+	return n
+
+## Where a torpedo fired now from (fx, fz) along a straight run meets the target: [point, run time].
+func torp_intercept(tgt, fx: float, fz: float) -> Array:
+	var spd := torp_speed()
+	var f := U.fwd(tgt.h)
+	var tt: float = U.hyp(tgt.x - fx, tgt.z - fz) / spd
+	for i in 6:
+		tt = U.hyp(tgt.x + f.x * tgt.v * tt - fx, tgt.z + f.y * tgt.v * tt - fz) / spd
+	return [Vector2(tgt.x + f.x * tgt.v * tt, tgt.z + f.y * tgt.v * tt), tt]
+
+## Which torpedo mounts can fire along compass bearing brg right now.
+## PT boat racks fire ahead but the Mark 13's gyro can be angled up to 30 degrees off the bow.
+func torp_mounts_for(brg: float) -> Array:
+	var rb := U.ang_d(h, brg)
+	var out := []
+	for i in torps.size():
+		var m: Dictionary = torps[i]
+		if m.hp <= 0.0 or m.left <= 0:
+			continue
+		if m.fixed:
+			if absf(rb) <= deg_to_rad(30.0):
+				out.append(i)
+		elif absf(rb) >= deg_to_rad(30.0) and absf(rb) <= deg_to_rad(150.0):
+			out.append(i)
+	return out
+
 func role() -> String:
 	return T.get("role", "warship")
 

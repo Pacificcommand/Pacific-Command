@@ -273,7 +273,7 @@ func _build_plates() -> void:
 	lbl.torps = _label("5/5 · 5/5", 12)
 	fv.add_child(_row([_caps("Torpedoes"), lbl.torps]))
 	btn.fire = _button("Open fire (F)", func(): B.toggle_fire(), true)
-	btn.torp = _button("Torpedoes (T)", func(): B.fire_torpedoes())
+	btn.torp = _button("Torpedo aim (T)", func(): B.fire_torpedoes(), true)
 	btn.smoke = _button("Lay smoke (Z)", func(): B.toggle_smoke(), true)
 	fv.add_child(_row([btn.fire, btn.torp, btn.smoke]))
 	br.add_child(fv)
@@ -281,7 +281,7 @@ func _build_plates() -> void:
 	var vp := _panel()
 	vp.add_child(_row([_caps("View"), _seg("view", [["close", "Close"], ["ship", "Ship"], ["wide", "Wide"], ["tac", "Tactical"]], _on_view)]))
 	brv.add_child(vp)
-	var keys := _label("W/S engines · A/D rudder · Q center · M crew/manual aim\nF fire · T torpedoes · Z smoke · Tab next target · V follow salvos\nSpace pause · 1/2/3 slow/normal/fast · wheel zoom · drag to look\nLeft-click: target (crew aim) or fire (manual) · right-click: target", 11, C_MUTED)
+	var keys := _label("W/S engines · A/D rudder · Q center · M crew/manual aim\nF fire · T torpedo aim · Z smoke · Tab next target · V follow salvos\nSpace pause · 1/2/3 slow/normal/fast · wheel zoom · drag to look\nLeft-click: target (crew aim) or fire (manual) · right-click: target", 11, C_MUTED)
 	var kp := _panel()
 	kp.add_child(keys)
 	brv.add_child(kp)
@@ -527,6 +527,7 @@ func refresh() -> void:
 	btn.fire.text = "Click to fire" if B.aim_mode == "manual" else ("Cease fire (F)" if p.fire else "Open fire (F)")
 	btn.fire.set_pressed_no_signal(p.fire and B.aim_mode != "manual")
 	btn.smoke.set_pressed_no_signal(p.smoke_on)
+	btn.torp.set_pressed_no_signal(B.torp_aim)
 	overlay.queue_redraw()
 
 
@@ -670,8 +671,10 @@ func _draw_overlay() -> void:
 			var f2 := U.fwd(tp.h)
 			var tail := _p(tp.x - f2.x * 35.0, tp.z - f2.y * 35.0)
 			overlay.draw_line(tail, tc, Color(C_INK, 0.55) if tp.team == "us" else Color(C_RED, 0.6), 1.5)
-	# manual aim reticle
-	if B.aim_mode == "manual" and B.mouse_w != null and p.alive and B.started:
+	# torpedo aiming fan and lead marker, or the manual gun reticle
+	if B.torp_aim and p.alive and B.started:
+		_draw_torp_aim(p, px_per_m, font)
+	elif B.aim_mode == "manual" and B.mouse_w != null and p.alive and B.started:
 		_draw_reticle(p, px_per_m, font)
 	# crew aim: show where the guns are pointing
 	if B.speed == 0.0 and B.started:
@@ -719,6 +722,82 @@ func _draw_reticle(p: Ship, px_per_m: float, font: Font) -> void:
 		overlay.draw_string(font, b + Vector2(-14, -12), "Lead", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, C_INK)
 
 
+## World of Warships-style torpedo aiming: lanes from the tubes along the mouse bearing,
+## and a lead marker showing where the target will be when the torpedoes get there.
+func _draw_torp_aim(p: Ship, px_per_m: float, font: Font) -> void:
+	var green := Color(0.44, 0.81, 0.66)
+	var vs := overlay.size
+	var tg: Ship = p.target if p.target and p.target.alive and p.contact(p.target) else null
+	var rng: float = p.T.torp.range
+	var spd := p.torp_speed()
+	# lead marker on the selected target
+	var lead = null
+	if tg:
+		var ip: Array = p.torp_intercept(tg, p.x, p.z)
+		lead = ip[0]
+		var a := _p(tg.x, tg.z)
+		var b := _p(lead.x, lead.y)
+		_dashed_line(a, b, Color(1.0, 0.85, 0.4, 0.7))
+		var half := maxf(9.0, tg.T.L * 0.5 * px_per_m)
+		# ghost outline of the target where it will be
+		var fwv := U.fwd(tg.h)
+		var bow := _p(lead.x + fwv.x * tg.T.L * 0.5, lead.y + fwv.y * tg.T.L * 0.5)
+		var stern := _p(lead.x - fwv.x * tg.T.L * 0.5, lead.y - fwv.y * tg.T.L * 0.5)
+		overlay.draw_line(stern, bow, Color(1.0, 0.85, 0.4, 0.9), maxf(3.0, tg.T.B * px_per_m))
+		overlay.draw_arc(b, half + 6.0, 0, TAU, 32, Color(1.0, 0.85, 0.4, 0.9), 1.5)
+		var far: bool = U.hyp(lead.x - p.x, lead.y - p.z) > rng
+		overlay.draw_string(font, b + Vector2(half + 10, -4), "Torpedo lead · %d s" % int(ip[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1.0, 0.85, 0.4))
+		if far:
+			overlay.draw_string(font, b + Vector2(half + 10, 12), "Beyond torpedo range", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, C_RED)
+		if not Rect2(Vector2.ZERO, vs).has_point(b):
+			_edge_arrow(b, "Torpedo lead", Color(1.0, 0.85, 0.4))
+	if B.mouse_w == null:
+		return
+	var mw: Vector2 = B.mouse_w
+	var brg := p.bearing_to(mw.x, mw.y)
+	var ok: Array = p.torp_mounts_for(brg)
+	var col := green if not ok.is_empty() else C_RED
+	# lanes: two from a PT boat's racks, or one mount's fan
+	var lanes := []
+	if ok.is_empty() or p.torps[ok[0]].fixed:
+		for sd in [-1.0, 1.0]:
+			lanes.append([p.to_world_xz(2.9, p.T.B * 0.4 * sd), brg + deg_to_rad(1.0) * sd])
+	else:
+		var m: Dictionary = p.torps[ok[0]]
+		var n: int = m.left
+		var mp := p.to_world_xz(m.x, 0.0)
+		for k in n:
+			lanes.append([mp, brg + (k - (n - 1) / 2.0) * deg_to_rad(1.4)])
+	var on_target := false
+	for ln in lanes:
+		var st: Vector2 = ln[0]
+		var a2: float = ln[1]
+		var en := st + Vector2(sin(a2), -cos(a2)) * rng
+		overlay.draw_line(_p(st.x, st.y), _p(en.x, en.y), Color(col, 0.18), 6.0)
+		_dashed_line(_p(st.x, st.y), _p(en.x, en.y), Color(col, 1.0), 2.2)
+		var ep := _p(en.x, en.y)
+		overlay.draw_line(ep + Vector2(-5, 0), ep + Vector2(5, 0), col, 2.0)
+		if lead != null and tg:
+			# does this lane pass through the target at the lead point?
+			var d := Vector2(sin(a2), -cos(a2))
+			var rel: Vector2 = lead - st
+			var along := rel.dot(d)
+			var across := absf(rel.x * d.y - rel.y * d.x)
+			if along > 0.0 and along < rng and across < tg.T.L * 0.45:
+				on_target = true
+	var mp2 := _p(mw.x, mw.y)
+	var txt := "TORPEDO AIM · bearing %s · %d ready" % [U.deg3(brg), p.torps_left()]
+	overlay.draw_string(font, mp2 + Vector2(16, -6), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
+	var tip := "Click to fire"
+	if ok.is_empty():
+		tip = "Turn the boat: racks angle only 30° off the bow" if p.torps[0].fixed else "Mounts fire off the beam only"
+	elif on_target:
+		tip = "ON TARGET · click to fire"
+	elif tg:
+		tip = "Line the lanes up with the lead marker"
+	overlay.draw_string(font, mp2 + Vector2(16, 10), tip, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, green if on_target else (col if ok.is_empty() else C_INK))
+
+
 func _bracket(c: Vector2, half: float, col: Color, thick: bool) -> void:
 	var l := half * 0.4
 	var w := 2.0 if thick else 1.3
@@ -746,7 +825,7 @@ func _dashed_circle(c: Vector2, rr: float, col: Color) -> void:
 			overlay.draw_line(c + Vector2(cos(a0), sin(a0)) * rr, c + Vector2(cos(a1), sin(a1)) * rr, col, 1.4)
 
 
-func _dashed_line(a: Vector2, b: Vector2, col: Color) -> void:
+func _dashed_line(a: Vector2, b: Vector2, col: Color, w := 1.2) -> void:
 	var d := b - a
 	var ln := d.length()
 	if ln < 1.0:
@@ -754,7 +833,7 @@ func _dashed_line(a: Vector2, b: Vector2, col: Color) -> void:
 	var u := d / ln
 	var s := 0.0
 	while s < ln:
-		overlay.draw_line(a + u * s, a + u * minf(ln, s + 5.0), col, 1.2)
+		overlay.draw_line(a + u * s, a + u * minf(ln, s + 5.0), col, w)
 		s += 10.0
 
 
@@ -820,7 +899,10 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_2: B.set_speed(1.0)
 			KEY_3: B.set_speed(3.0)
 			KEY_ESCAPE:
-				B.camst.ox = 0.0; B.camst.oz = 0.0
+				if B.torp_aim:
+					B.torp_aim = false
+				else:
+					B.camst.ox = 0.0; B.camst.oz = 0.0
 	elif e is InputEventMouseButton:
 		if e.button_index == MOUSE_BUTTON_WHEEL_UP and e.pressed:
 			B.zoom(1.0 / 1.15)
@@ -833,7 +915,9 @@ func _unhandled_input(e: InputEvent) -> void:
 				if not drag.is_empty() and drag.moved < 6.0 and B.started:
 					var w = B.screen_to_world(e.position)
 					if w != null:
-						if B.aim_mode == "manual" and p.alive:
+						if B.torp_aim and p.alive:
+							B.torp_click(w)
+						elif B.aim_mode == "manual" and p.alive:
 							B.click_shot = w
 						else:
 							B.pick_target_at(w)

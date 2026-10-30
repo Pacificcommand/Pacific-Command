@@ -35,6 +35,8 @@ var report := {}               # where the enemy was last reported
 var stats := {"salvos": 0, "shells": 0, "hits": 0, "torps": 0, "torp_hits": 0, "sunk": [], "start_crew": 0}
 var mouse_w = null             # world point under the mouse (Vector2) or null
 var click_shot = null          # manual-aim click waiting to be fired
+var torp_aim := false
+var combat_t := -1.0           # when shooting started; friendly boats hold station until then          # torpedo aiming mode (T): mouse sets the bearing, click fires
 var vis_timer := 0.0
 var _hit_msg_t := {}           # throttle for "hits on X" messages
 var _under_msg := false
@@ -132,6 +134,12 @@ func _test_args() -> void:
 		print("ran ", _test.run, "s: t=", t, " player crew ", player.crew, " flood ", player.flood, " salvos ", stats.salvos, " hits ", stats.hits, " sunk ", stats.sunk)
 		for s in ships:
 			print("  ", s.ship_name, " alive=", s.alive, " crew=", s.crew, " flood=", int(s.flood), " fires=", s.fires.size(), " range=", int(player.range_to(s)), " vis=", player.vis.get(s.ship_name, false), " radar=", player.radar.get(s.ship_name, false))
+	if _test.has("torpaim"):
+		torp_aim = true
+		if player.target:
+			var ip: Array = player.torp_intercept(player.target, player.x, player.z)
+			player.h = player.bearing_to(ip[0].x, ip[0].y) - deg_to_rad(float(_test.torpaim))
+			mouse_w = ip[0]
 	if _test.has("train"):
 		hud.brief.visible = false
 		player.h = 0.0
@@ -218,6 +226,7 @@ func new_game() -> void:
 	_hit_msg_t.clear()
 	_under_msg = false
 	stats = {"salvos": 0, "shells": 0, "hits": 0, "torps": 0, "torp_hits": 0, "sunk": [], "escaped": [], "start_crew": 0}
+	combat_t = -1.0
 	match scenario:
 		"barges":
 			_setup_barges()
@@ -642,6 +651,8 @@ func _launch_shells(s: Ship, sv: Dictionary, ready: Array, aim: Vector2, sig_r: 
 			sfx.play("gun", fp, cam.position, 0.8 * maxf(sz, 0.35))
 		)
 	s.last_fired = t
+	if combat_t < 0.0 and (s.is_player or s.team != player.team):
+		combat_t = t
 	for m in ready:
 		m.reload = g.reload / e * randf_range(0.95, 1.08)
 
@@ -700,7 +711,12 @@ func land_shell(sh: Dictionary) -> void:
 		var l := hit.to_local_xz(sh.tx, sh.tz)
 		var dmg: float = sh.get("dmg", 1.0)
 		var deck := 2.5 if hit.T.L < 40.0 else 6.0
-		if dmg >= 0.5:
+		if dmg >= 0.5 and hit.T.L < 40.0:
+			# a heavy shell on a small boat: a sharp blast, not a destroyer-sized cloud
+			fx.small_hit(sh.tx, deck, sh.tz, 0.35)
+			fx.pyro_explosion(Vector3(sh.tx, deck, sh.tz), 2.5, 2.5)
+			sfx.play("boom", Vector2(sh.tx, sh.tz), cam.position, 0.5)
+		elif dmg >= 0.5:
 			fx.boom(sh.tx, deck, sh.tz, false)
 			sfx.play("boom", Vector2(sh.tx, sh.tz), cam.position, 0.5)
 		else:
@@ -875,46 +891,47 @@ func magazine_boom(s: Ship, mx: float) -> void:
 # =====================================================================
 
 func launch_torps(s: Ship, tgt: Ship, only_mount := -1) -> int:
-	var TT: Dictionary = s.T.torp
-	var spd: float = TT.speed_kn * Data.KN
-	var e := s.eff()
-	var R := s.range_to(tgt)
-	var f := U.fwd(tgt.h)
-	var tt := R / spd
-	for i in 4:
-		var px: float = tgt.x + f.x * tgt.v * tt
-		var pz: float = tgt.z + f.y * tgt.v * tt
-		tt = U.hyp(px - s.x, pz - s.z) / spd
-	var brg := s.bearing_to(tgt.x + f.x * tgt.v * tt, tgt.z + f.y * tgt.v * tt)
+	# AI: aim at the intercept point
+	var ip: Array = s.torp_intercept(tgt, s.x, s.z)
+	var p: Vector2 = ip[0]
+	var brg := s.bearing_to(p.x, p.y)
 	var rb := U.ang_d(s.h, brg)
+	var ok: Array = s.torp_mounts_for(brg)
+	if only_mount >= 0:
+		ok = ok.filter(func(i): return i == only_mount)
+	# AI PT boats only fire when the bow is nearly on the mark
+	if not ok.is_empty() and s.torps[ok[0]].fixed and absf(rb) > deg_to_rad(12.0):
+		return 0
+	return fire_torps_along(s, brg, ok)
+
+
+## Fire torpedoes along a compass bearing from the given mounts.
+## Fixed racks (PT boats) fire two at a time, one from each side; trainable mounts fire one
+## mount's full load in a fan.
+func fire_torps_along(s: Ship, brg: float, mounts: Array) -> int:
+	if mounts.is_empty():
+		return 0
+	var TT: Dictionary = s.T.torp
+	var spd := s.torp_speed()
+	var e := s.eff()
 	var fired := 0
-	var fixed_fired := 0
-	for idx in s.torps.size():
-		if only_mount >= 0 and idx != only_mount:
-			continue
-		var m: Dictionary = s.torps[idx]
-		if m.hp <= 0.0 or m.left <= 0:
-			continue
-		if m.fixed:
-			# PT boat roll-off racks fire ahead: the boat itself is aimed. Two at a time.
-			if absf(rb) > deg_to_rad(12.0) or fixed_fired >= 2:
-				continue
-			fixed_fired += 1
-		elif absf(rb) < deg_to_rad(30.0) or absf(rb) > deg_to_rad(150.0):
-			continue
-		m.ang = 0.0 if m.fixed else rb
+	var fixed: bool = s.torps[mounts[0]].fixed
+	var use: Array = mounts.slice(0, 2) if fixed else mounts.slice(0, 1)
+	for j in use.size():
+		var m: Dictionary = s.torps[use[j]]
+		m.ang = 0.0 if m.fixed else U.ang_d(s.h, brg)
 		var count: int = m.left
-		var spread := deg_to_rad(1.4 if not m.fixed else 2.5)
+		var spread := deg_to_rad(2.0 if m.fixed else 1.4)
 		for k in count:
 			var off: float = (k - (count - 1) / 2.0) * spread
+			var lz := 0.0
 			if m.fixed:
-				off = spread * (-1.0 if fixed_fired == 1 else 1.0)
-			var a: float = brg + off + U.gauss() * deg_to_rad(0.6) / e
-			var lz: float = 0.0
-			if m.fixed:
-				lz = (s.T.B * 0.4) * (1.0 if fixed_fired == 1 else -1.0)
+				var sd := -1.0 if j == 0 else 1.0
+				off = spread * 0.5 * sd
+				lz = s.T.B * 0.4 * sd
+			var a: float = brg + off + U.gauss() * deg_to_rad(0.5) / e
 			var mp := s.to_world_xz(m.x, lz)
-			after(k * 0.6 + (fixed_fired - 1) * 0.4, func():
+			after(k * 0.6 + j * 0.35, func():
 				torps.append({"x": mp.x + sin(a) * 6.0, "z": mp.y - cos(a) * 6.0, "h": a, "v": spd, "left": TT.range, "team": s.team, "owner": s, "dud": randf() < TT.dud, "warned": false, "depth": 3.0})
 				sfx.play("torp", mp, cam.position, 0.4)
 			)
@@ -922,6 +939,8 @@ func launch_torps(s: Ship, tgt: Ship, only_mount := -1) -> int:
 		fired += count
 	if s.is_player:
 		stats.torps += fired
+	if combat_t < 0.0 and fired > 0 and (s.is_player or s.team != player.team):
+		combat_t = t
 	return fired
 
 
@@ -1216,6 +1235,9 @@ func _ai_pick_target(s: Ship) -> Ship:
 	if s.team == player.team and player.alive and player.target and player.target.alive and s.contact(player.target) \
 			and (player.target.objective or player.fire or t - player.last_fired < 10.0):
 		return player.target
+	# friendly boats follow the player's lead: they hold station until the shooting starts
+	if s.team == player.team and player.alive and combat_t < 0.0:
+		return null
 	var best: Ship = null
 	var bd := 1e9
 	var prefer_obj := s.role() == "pt" and s.team == player.team
@@ -1321,7 +1343,7 @@ func _ai_pt(s: Ship, tgt: Ship) -> float:
 		# torpedo run: point the boat at the intercept point and fire at about 1,500 m
 		s.ai_state = "torpedo run"
 		s.tele = 6
-		var spd: float = s.T.torp.speed_kn * Data.KN
+		var spd: float = s.torp_speed()
 		var f := U.fwd(tgt.h)
 		var tt := R / spd
 		for i in 3:
@@ -1501,26 +1523,34 @@ func set_aim(mode: String) -> void:
 	hud.on_aim()
 
 func fire_torpedoes() -> void:
+	# T toggles torpedo aiming: the mouse picks the bearing, a click fires
 	if not player.alive:
 		return
-	var tg: Ship = player.target
-	if tg == null or not tg.alive or not player.contact(tg):
-		say("No torpedo target. Select a contact first.")
+	if player.torps.is_empty() or player.torps_left() == 0:
+		say("No torpedoes left.")
+		torp_aim = false
 		return
-	var n := launch_torps(player, tg)
-	if n > 0:
-		say("Torpedoes away: %d fish running. Run time about %d seconds." % [n, int(player.range_to(tg) / (player.T.torp.speed_kn * Data.KN))])
-	else:
-		var left := 0
-		for tp in player.torps:
-			left += tp.left if tp.hp > 0.0 else 0
-		var fixed = not player.torps.is_empty() and player.torps[0].fixed
-		if left == 0:
-			say("No torpedoes left.")
-		elif fixed:
-			say("Torpedoes fire straight ahead. Point the boat at the target's path and press T again.")
+	torp_aim = not torp_aim
+	if torp_aim:
+		say("Torpedo aim. Point the fan at the lead marker and click to fire. T or Esc to cancel.")
+
+
+## Fire at the bearing the player picked in torpedo aim mode.
+func torp_click(w: Vector2) -> void:
+	var brg := player.bearing_to(w.x, w.y)
+	var ok: Array = player.torp_mounts_for(brg)
+	if ok.is_empty():
+		if not player.torps.is_empty() and player.torps[0].fixed:
+			say("Torpedoes can only be angled 30 degrees off the bow. Turn toward the target.")
 		else:
-			say("Torpedo mounts cannot bear. Turn to bring the target abeam.")
+			say("No loaded torpedo mount bears that way. Torpedoes fire off the beam.")
+		return
+	var n := fire_torps_along(player, brg, ok)
+	if n > 0:
+		say("Torpedoes away: %d fish running on bearing %s." % [n, U.deg3(brg)])
+	if player.torps_left() == 0:
+		torp_aim = false
+
 
 func toggle_smoke() -> void:
 	player.smoke_on = not player.smoke_on

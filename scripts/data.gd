@@ -4,6 +4,8 @@ class_name Data
 ## design doc: gun, radar and spotting ranges are about half of real life.
 
 const KN := 0.5144   # meters per second in one knot
+## Torpedoes run this much faster than their real speed, to match the shortened battle distances.
+const TORP_SPEED := 1.6
 const YD := 0.9144   # meters in one yard
 
 ## Guns. range_max in meters (half of real, see the design doc), reload in seconds per burst,
