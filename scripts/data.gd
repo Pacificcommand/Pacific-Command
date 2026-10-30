@@ -11,7 +11,7 @@ const YD := 0.9144   # meters in one yard
 ## Guns. range_max in meters (half of real, see the design doc), reload in seconds per burst,
 ## per_mount = shells per burst, dmg = damage per hit (5-inch shell = 1.0), size = flash/tracer size.
 const GUNS := {
-	"us5in38": {"cal": "5-inch/38", "vel": 790.0, "reload": 4.2, "range_max": 8000.0, "per_mount": 1, "dmg": 1.0, "apex": 0.05, "size": 1.0},
+	"us5in38": {"cal": "5-inch/38", "vel": 790.0, "reload": 4.2, "range_max": 8800.0, "per_mount": 1, "dmg": 1.0, "apex": 0.05, "size": 1.0},
 	"jp127": {"cal": "12.7 cm", "vel": 910.0, "reload": 5.5, "range_max": 9000.0, "per_mount": 2, "dmg": 1.1, "apex": 0.05, "size": 1.0},
 	"bofors40": {"cal": "40 mm Bofors", "vel": 880.0, "reload": 1.3, "range_max": 2600.0, "per_mount": 2, "dmg": 0.32, "apex": 0.02, "size": 0.45},
 	"m4_37": {"cal": "37 mm", "vel": 610.0, "reload": 1.4, "range_max": 2000.0, "per_mount": 1, "dmg": 0.26, "apex": 0.025, "size": 0.4},
@@ -23,8 +23,8 @@ const GUNS := {
 	"jp8cm": {"cal": "8 cm", "vel": 600.0, "reload": 6.0, "range_max": 5000.0, "per_mount": 1, "dmg": 0.55, "apex": 0.04, "size": 0.7},
 	# cruiser, battleship and escort guns (build 0.5). dmg is relative to a 5-inch shell; pen = how well
 	# the shell gets through heavy armour (1.0 = 8-inch).
-	"us5in38tw": {"cal": "5-inch/38 twin", "vel": 790.0, "reload": 4.2, "range_max": 8000.0, "per_mount": 2, "dmg": 1.0, "apex": 0.05, "size": 1.0},
-	"us5in25": {"cal": "5-inch/25", "vel": 660.0, "reload": 4.5, "range_max": 6500.0, "per_mount": 1, "dmg": 0.9, "apex": 0.05, "size": 0.9},
+	"us5in38tw": {"cal": "5-inch/38 twin", "vel": 790.0, "reload": 4.2, "range_max": 8800.0, "per_mount": 2, "dmg": 1.0, "apex": 0.05, "size": 1.0},
+	"us5in25": {"cal": "5-inch/25", "vel": 660.0, "reload": 4.5, "range_max": 7000.0, "per_mount": 1, "dmg": 0.9, "apex": 0.05, "size": 0.9},
 	"us3in50": {"cal": "3-inch/50", "vel": 820.0, "reload": 3.5, "range_max": 6000.0, "per_mount": 1, "dmg": 0.45, "apex": 0.04, "size": 0.7},
 	"us6in47": {"cal": "6-inch/47", "vel": 810.0, "reload": 6.5, "range_max": 11500.0, "per_mount": 3, "dmg": 1.8, "apex": 0.06, "size": 1.3, "pen": 0.6},
 	"us8in55": {"cal": "8-inch/55", "vel": 760.0, "reload": 12.0, "range_max": 14000.0, "per_mount": 3, "dmg": 3.6, "apex": 0.07, "size": 1.7, "pen": 1.0},

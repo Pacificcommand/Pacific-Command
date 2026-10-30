@@ -114,6 +114,7 @@ func apply_quality() -> void:
 # godot --path . -- --weather=clear --start --close=2500 --run=60 --shot=out.png --quit
 var _test := {}
 var _dbg := {}
+var _sec_msg_t := -99.0
 
 func _test_args() -> void:
 	for a in OS.get_cmdline_user_args():
@@ -1369,6 +1370,8 @@ func update_visibility() -> void:
 
 func fire_salvo(s: Ship, tgt: Ship, ready: Array, g: Dictionary) -> void:
 	var R := s.range_to(tgt)
+	if s.is_player:
+		_dbg["salvo " + g.cal] = _dbg.get("salvo " + g.cal, 0) + 1
 	var tof := s.tof_for(R, g)
 	var seen: bool = s.vis.get(tgt.ship_name, false)
 	var W: Dictionary = Data.WEATHER[weather]
@@ -2279,16 +2282,27 @@ func step_fire_control(s: Ship, dt: float) -> void:
 	var f := U.fwd(tgt.h) if tgt else Vector2.ZERO
 	var rb_main = null
 	var batteries := {}
+	var bat_tgt := {}       # calibre -> the ship that battery shoots at
 	for m in s.mounts:
 		if m.hp <= 0.0:
 			continue
 		var g: Dictionary = m.gun
+		# secondary and light batteries take the nearest enemy in their own range when the
+		# main target is beyond it: the 5-inch and Bofors open up on destroyers closing in
+		var bt: Ship = tgt
+		var bt_contact := has_contact
+		if not manual and g != s.gun and (tgt == null or R > g.range_max):
+			bt = _secondary_target(s, g.range_max)
+			bt_contact = bt != null
+		bat_tgt[g.cal] = bt
 		var rbm = null
 		if manual:
 			rbm = s.rel_bearing(mouse_w.x, mouse_w.y) if mouse_w != null else null
-		elif has_contact:
-			var tof := s.tof_for(R, g)
-			rbm = s.rel_bearing(tgt.x + f.x * tgt.v * tof, tgt.z + f.y * tgt.v * tof)
+		elif bt_contact:
+			var Rb := s.range_to(bt)
+			var fb := U.fwd(bt.h)
+			var tof := s.tof_for(Rb, g)
+			rbm = s.rel_bearing(bt.x + fb.x * bt.v * tof, bt.z + fb.y * bt.v * tof)
 		if g == s.gun:
 			rb_main = rbm
 		var want: float = m.stow
@@ -2333,12 +2347,15 @@ func step_fire_control(s: Ship, dt: float) -> void:
 			if not any_fired:
 				say("No guns bear on that bearing." if not any_bear else ("Out of gun range." if not any_range else "Guns still training or loading."))
 		return
-	if not (s.fire and has_contact):
+	if not s.fire:
 		return
 	for cal in batteries:
 		var list: Array = batteries[cal]
 		var g: Dictionary = list[0].gun
-		if R > g.range_max or s.bat_busy.get(cal, false):
+		var bt: Ship = bat_tgt.get(cal)
+		if bt == null or (bt == tgt and not has_contact):
+			continue
+		if s.range_to(bt) > g.range_max or s.bat_busy.get(cal, false):
 			continue
 		var ready := []
 		var bearing_n := 0
@@ -2352,8 +2369,25 @@ func step_fire_control(s: Ship, dt: float) -> void:
 		if ready.size() == bearing_n or t - s.bat_last.get(cal, -99.0) > g.reload * 2.2:
 			s.bat_busy[cal] = true
 			s.bat_last[cal] = t
-			fire_salvo(s, tgt, ready, g)
+			if s.is_player and bt != tgt and t - _sec_msg_t > 40.0:
+				_sec_msg_t = t
+				say("%s battery engaging %s, %s." % [g.cal, bt.ship_name, U.yards(s.range_to(bt))])
+			fire_salvo(s, bt, ready, g)
 			after(minf(0.8, g.reload * 0.5), func(): s.bat_busy[cal] = false)
+
+
+## Nearest enemy surface ship in contact within `rng`, for a battery whose main target is out of reach.
+func _secondary_target(s: Ship, rng: float) -> Ship:
+	var best: Ship = null
+	var bd := rng
+	for o in ships:
+		if o.team == s.team or not o.alive or o.escaped or o.submerged() or o.T.get("ground", false):
+			continue
+		var d := s.range_to(o)
+		if d < bd and s.contact(o):
+			bd = d
+			best = o
+	return best
 
 
 # =====================================================================
