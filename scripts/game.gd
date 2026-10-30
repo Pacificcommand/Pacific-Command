@@ -7,7 +7,7 @@ signal graphics_changed
 const CFG := "user://settings.cfg"
 const SAVE_DIR := "user://saves"
 const SLOTS := 5
-const VERSION := "0.8"
+const VERSION := "0.9"
 
 ## Graphics and sound settings with their defaults.
 var settings := {
@@ -40,6 +40,10 @@ var keys := {}                 # action -> keycode
 const CAREER_FILE := "user://career.json"
 var career := {"rank": 3, "reputation": 900, "xp": 0, "year": 1943, "missions": 0, "won": 0}
 
+## True while a campaign battle is being fought or set up (career modifiers apply).
+func campaign_active() -> bool:
+	return not mission.is_empty() and not campaign.is_empty()
+
 ## Campaign (operations map) state, saved with the career. Empty = no campaign started.
 const CAMPAIGN_FILE := "user://campaign.json"
 var campaign := {}
@@ -69,9 +73,16 @@ func load_career() -> void:
 		var f := FileAccess.open(CAREER_FILE, FileAccess.READ)
 		var d = JSON.parse_string(f.get_as_text())
 		if d is Dictionary:
-			for k in career:
-				if d.has(k):
-					career[k] = int(d[k]) if career[k] is int else d[k]
+			for k in d:
+				career[k] = d[k]
+			for k in ["rank", "reputation", "xp", "year", "missions", "won", "supply", "spent_points", "pause_uses"]:
+				if career.has(k):
+					career[k] = int(career[k])
+	# older saves: fill in the career systems' fields
+	var fresh := Career.fresh()
+	for k in fresh:
+		if not career.has(k):
+			career[k] = fresh[k]
 
 
 func load_campaign() -> void:

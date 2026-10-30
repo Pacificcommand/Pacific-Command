@@ -57,6 +57,8 @@ var ai: AI
 var air: Air
 var terrain: Terrain
 var support: Array = []        # support ship types bought with reputation for this battle
+var tally := {}                # what the player's ship and officers did, for the career (see Career.apply_battle)
+var pause_uses := 0
 var _spent := 0
 var hud
 ## Camera: x/z where it looks, h height now, th wanted height. focus = "player" or "target" (the
@@ -287,6 +289,9 @@ func new_game() -> void:
 	_torp_warn_t = -99.0
 	_under_msg = false
 	stats = {"salvos": 0, "shells": 0, "hits": 0, "torps": 0, "torp_hits": 0, "sunk": [], "escaped": [], "start_crew": 0, "rescued": 0}
+	tally = {"salvos": 0, "hits": 0, "torps": 0, "torp_hits": 0, "kills": 0, "combat_min": 0.0, "underway_min": 0.0, "fires_out": 0, "holes_fixed": 0, "contacts": 0,
+		"damage_done": 0.0, "sorties": 0, "air_hits": 0, "air_kills": 0, "big_kill": false, "took_command": 0}
+	pause_uses = 0
 	combat_t = -1.0
 	ai.reset()
 	air.reset()
@@ -330,6 +335,7 @@ func new_game() -> void:
 				_setup_dd()
 	player.is_player = true
 	player.leader_flag = true
+	_apply_career_ship()
 	_add_support()
 	for s in ships:
 		air.setup_ship(s)
@@ -450,6 +456,49 @@ func _setup_convoy() -> void:
 	report = {"x": cx + randf_range(-700, 700), "z": cz + randf_range(-700, 700), "h": ch, "v": 9.0 * Data.KN, "r": 2000.0, "t": 0.0, "active": true}
 	brief = {"title": "Convoy attack", "threat": "High (a destroyer escort)",
 		"text": "Search radar has a small convoy bearing %s, about %s away, course %s at 9 knots: two cargo ships and a tanker, with one Kagero-class destroyer screening them.\n\nYou lead three Elco PT boats from %s. Each boat carries four Mark 13 torpedoes that fire straight ahead, so you aim the whole boat: get inside about 2,000 yards, point at the target and press T. Then turn away and lay smoke before the destroyer finds you. Sink the merchant ships." % [U.deg3(U.bearing(0, 0, report.x, report.z)), U.yards(U.hyp(report.x, report.z)), U.deg3(ch), player.ship_name]}
+
+
+## In a campaign the player's ship carries its crew and unrepaired damage from the last battle,
+## and its refits (radar, torpedo fixes...).
+func _apply_career_ship() -> void:
+	if not Game.campaign_active():
+		return
+	var cs: Dictionary = Career.ship(Game.career)
+	if cs.is_empty() or cs.type != player.type_id:
+		return
+	player.ship_name = cs.name
+	player.name = cs.name.replace(" ", "_").replace("'", "")
+	player.crew = mini(player.crew, int(cs.crew))
+	for m in player.modules:
+		if cs.damage.has(m.label):
+			m.hp = minf(m.hp, float(cs.damage[m.label]))
+			if m.ref != null:
+				m.ref.hp = m.hp
+	if Career.mod("radar") > 0.0:
+		player.T = player.T.duplicate()
+		player.T.radar = player.T.radar * (1.0 + Career.mod("radar")) if player.T.radar > 0.0 else 5000.0
+	if Career.mod("torp_dud") > 0.0 and not player.T.torp.is_empty():
+		player.T = player.T.duplicate()
+		player.T.torp = player.T.torp.duplicate()
+		player.T.torp.dud = player.T.torp.dud * (1.0 - Career.mod("torp_dud"))
+	show_lead = Career.DIFFICULTY.get(Game.career.difficulty, Career.DIFFICULTY.officer).lead
+	magazine = Game.career.get("magazine", "historical")
+
+
+## Save the player's ship state for the campaign after a battle.
+func _store_career_ship() -> void:
+	if not Game.campaign_active():
+		return
+	var cs: Dictionary = Career.ship(Game.career)
+	if cs.is_empty() or cs.type != player.type_id:
+		return
+	cs.crew = player.crew if player.alive else 0
+	var dmg := {}
+	for m in player.modules:
+		if m.hp < m.max - 0.01:
+			dmg[m.label] = m.hp
+	cs.damage = dmg
+	cs.flood = player.flood / maxf(1.0, player.flood_cap()) if player.alive else 1.0
 
 
 ## Support ships bought with reputation take station astern of the player's group.
@@ -746,6 +795,16 @@ func say(txt: String, kind := "") -> void:
 
 
 func set_speed(v: float) -> void:
+	if v == 0.0 and started and over == "" and Game.campaign_active():
+		var lim: int = Career.DIFFICULTY.get(Game.career.get("difficulty", "officer"), Career.DIFFICULTY.officer).pause
+		if lim == 0:
+			say("Tactical pause is off at this difficulty.")
+			return
+		if lim > 0 and pause_uses >= lim:
+			say("No tactical pauses left this battle.")
+			return
+		if speed > 0.0:
+			pause_uses += 1
 	speed = v
 	if hud:
 		hud.on_speed(v)
@@ -934,6 +993,10 @@ func _step(dt: float) -> void:
 		report.r = minf(report.r + dt * 4.0, 5000.0)
 	shake = maxf(0.0, shake - dt * 1.5)
 	_flush_hit_reports()
+	if player.alive:
+		tally.underway_min += dt / 60.0
+		if combat_t >= 0.0 and over == "":
+			tally.combat_min += dt / 60.0
 	_check_end()
 
 
@@ -958,8 +1021,19 @@ func _settle() -> void:
 		gained = int(tons / 800.0)
 	else:
 		gained = -int(level * 20)
+	var diff: Dictionary = Career.DIFFICULTY.get(Game.career.get("difficulty", "officer"), Career.DIFFICULTY.officer)
+	if gained < 0:
+		gained = int(gained * diff.rep_loss)
 	Game.career.reputation = maxi(0, Game.career.reputation + gained)
 	stats.rep_gained = gained
+	stats.career_lines = []
+	if Game.campaign_active():
+		tally.crew_loss_frac = clampf(float(stats.start_crew - player.crew) / maxf(1.0, float(stats.start_crew)), 0.0, 1.0)
+		tally.saved = 1 if player.alive and player.flood > player.flood_cap() * 0.5 else 0
+		tally.summary = "%s: %s. %s" % [brief.get("title", "Battle"), {"won": "mission accomplished", "escaped": "the enemy got through", "lost_convoy": "mission failed"}.get(over, "ship lost"),
+			("Sunk %s." % ", ".join(stats.sunk)) if not stats.sunk.is_empty() else ""]
+		stats.career_lines = Career.apply_battle(Game.career, tally, over, level, int(Game.mission.get("day", 0)))
+		_store_career_ship()
 	Game.save_career()
 
 
@@ -1276,6 +1350,12 @@ func fire_salvo(s: Ship, tgt: Ship, ready: Array, g: Dictionary) -> void:
 	var vis_pen := (1.25 if W.night and tgt.illum <= 0.0 else 1.0) if seen else 1.7
 	var e := s.eff()
 	var skill: float = s.T.get("gunnery", 1.0)   # crew training: barge and merchant gunners were not navy-trained
+	if s.is_player:
+		skill *= 1.0 + Career.mod("gun_spread") * 0.6
+		if W.night:
+			skill *= 1.0 + Career.mod("night_gun") * 0.5
+		if R > g.range_max * 0.6:
+			skill *= 1.0 + Career.mod("long_gun") * 0.5
 	var sig_r: float = R * (0.006 + 0.024 * (1.0 - s.q)) * dir_ok * vis_pen / (e * skill)
 	var sig_d: float = R * 0.0025 * dir_ok * vis_pen / (e * skill)
 	# aim where the target will be when the shells arrive
@@ -1354,8 +1434,9 @@ func _launch_shells(s: Ship, sv: Dictionary, ready: Array, aim: Vector2, sig_r: 
 	s.last_fired = t
 	if combat_t < 0.0 and (s.is_player or s.team != player.team):
 		combat_t = t
+	var rk := 1.0 - (Career.mod("gun_reload") * 0.5 if s.is_player else 0.0)
 	for m in ready:
-		m.reload = g.reload / e * randf_range(0.95, 1.08)
+		m.reload = g.reload / e * randf_range(0.95, 1.08) * rk
 
 
 func _follow_salvo(sv: Dictionary) -> void:
@@ -1425,6 +1506,8 @@ func land_shell(sh: Dictionary) -> void:
 		damage(hit, l.x, l.y, dmg, "shell", sv.shooter, sh.get("pen", dmg * 0.3))
 		if sv.shooter.is_player:
 			stats.hits += 1
+			tally.hits += 1
+			tally.damage_done += dmg
 	elif terrain.is_land(sh.tx, sh.tz):
 		var gy := terrain.height_at(sh.tx, sh.tz)
 		fx.boom(sh.tx, gy + 2.0, sh.tz, false)
@@ -1450,7 +1533,7 @@ func land_shell(sh: Dictionary) -> void:
 		# watching the fall of shot (or ranging it by radar) improves the solution
 		if sv.tgt and not sv.manual and s.contact(sv.tgt):
 			var straddle: bool = sv.short > 0 and sv.over > 0
-			s.q = clampf(s.q + (0.28 if straddle else 0.16) * s.eff(), 0.0, 0.95)
+			s.q = clampf(s.q + (0.28 if straddle else 0.16) * s.eff() * (1.0 + (Career.mod("solution") if s.is_player else 0.0)), 0.0, 0.95)
 		# misses are shown by the splashes; hits speak for themselves in damage()
 		if camst.salvo == sv:
 			camst.hold = 2.0
@@ -1465,6 +1548,8 @@ func land_shell(sh: Dictionary) -> void:
 func damage(s: Ship, lx: float, lz: float, dmg: float, kind: String, shooter: Ship = null, pen := -1.0) -> void:
 	if not s.alive:
 		return
+	if shooter != null:
+		s.last_hit_by = shooter
 	# armour: a shell that cannot get through the belt only scratches the ship
 	var ar := s.armor()
 	if kind != "torpedo" and ar > 0.0:
@@ -1744,6 +1829,7 @@ func fire_torps_along(s: Ship, brg: float, mounts: Array) -> int:
 		fired += count
 	if s.is_player:
 		stats.torps += fired
+		tally.torps += fired
 	if combat_t < 0.0 and fired > 0 and (s.is_player or s.team != player.team):
 		combat_t = t
 	return fired
@@ -1783,6 +1869,9 @@ func step_torps(dt: float) -> void:
 					shake = maxf(shake, 2.0)
 				if tp.team == "us":
 					stats.torp_hits += 1
+					if tp.owner == player:
+						tally.torp_hits += 1
+						tally.damage_done += 8.0
 				damage(s, l.x, l.y, 1.0, "torpedo", tp.owner)
 				break
 		# warn the player about wakes the lookouts can see
@@ -1826,7 +1915,7 @@ func step_ship(s: Ship, dt: float) -> void:
 		return
 	if s.alive:
 		var target_v: float = Data.TELE[s.tele].kn * Data.KN
-		var mx := s.max_kn() * Data.KN
+		var mx := s.max_kn() * Data.KN * (1.0 + (Career.mod("speed") if s.is_player else 0.0))
 		var want := clampf(target_v, -mx * 0.4, mx)
 		s.v += clampf(want - s.v, -0.4 * dt, 0.25 * dt)
 		if t > s.rud_jam_until:
@@ -1842,8 +1931,11 @@ func step_ship(s: Ship, dt: float) -> void:
 			inflow += rate
 			sd += rate * hl.side
 			fw += rate * clampf(hl.lx / 50.0, -1.0, 1.0)
-			hl.fix = minf(0.92, hl.fix + dt * 0.012 * e / maxf(1.0, hl.rate / 4.0))
-		var pump := 1.6 * e * pow(TT.displacement / 2500.0, 0.7)
+			var was_fixed: bool = hl.fix >= 0.9
+			hl.fix = minf(0.92, hl.fix + dt * 0.012 * e * (1.0 + (Career.mod("dc_rate") if s.is_player else 0.0)) / maxf(1.0, hl.rate / 4.0))
+			if s.is_player and not was_fixed and hl.fix >= 0.9:
+				tally.holes_fixed += 1
+		var pump := 1.6 * e * pow(TT.displacement / 2500.0, 0.7) * (1.0 + (Career.mod("pump") if s.is_player else 0.0))
 		s.flood = maxf(0.0, s.flood + (inflow - pump) * dt)
 		s.flood_side = lerpf(s.flood_side, sd / inflow if inflow > 0.0 else s.flood_side * 0.99, dt * 0.2)
 		s.flood_fwd = lerpf(s.flood_fwd, fw / inflow if inflow > 0.0 else s.flood_fwd * 0.99, dt * 0.2)
@@ -1867,6 +1959,7 @@ func step_ship(s: Ship, dt: float) -> void:
 		s.fires = s.fires.filter(func(f): return f.int > 0.03)
 		if s.is_player and nf > s.fires.size():
 			say("Fire extinguished.", "good")
+			tally.fires_out += nf - s.fires.size()
 		var cap := s.flood_cap()
 		var fl := s.flood / cap
 		s.roll = lerpf(s.roll, deg_to_rad(clampf(s.flood_side * fl * 26.0, -40.0, 40.0)), dt * 0.4)
@@ -1879,6 +1972,10 @@ func step_ship(s: Ship, dt: float) -> void:
 			say("Abandon ship! She is going down." if s.is_player else "%s is sinking!" % s.ship_name, "bad" if s.is_player else "good")
 			if s.team != player.team:
 				stats.sunk.append(s.ship_name)
+				if s.last_hit_by == player:
+					tally.kills += 1
+					if s.cls() in ["bb", "cv"]:
+						tally.big_kill = true
 	else:
 		s.sinking += dt
 		var fast := 3.0 if s.mag_blown else 1.0

@@ -34,6 +34,8 @@ func _ready() -> void:
 	if Game.campaign.is_empty():
 		Game.campaign = new_campaign(0, "fletcher", "USS O'Bannon")
 	C = Game.campaign
+	if Career.ship(Game.career).is_empty() or Career.ship(Game.career).type != C.ship:
+		Career.take_command(Game.career, C.ship, C.name, int(C.day))
 	cam_lon = C.lon; cam_lat = C.lat
 	_build_ui()
 	_apply_result()
@@ -54,6 +56,10 @@ func _test_shot(path: String) -> void:
 			_close_card()
 			speed_i = 3
 	speed_i = 0
+	if "--career" in OS.get_cmdline_user_args():
+		add_child(CareerPanel.new())
+		for i in 10:
+			await get_tree().process_frame
 	await get_tree().process_frame
 	print("contacts ", C.contacts.size(), " day ", C.day, " ops ", C.done_ops)
 	if "--engage" in OS.get_cmdline_user_args() and not C.contacts.is_empty():
@@ -172,10 +178,18 @@ func _refresh_side() -> void:
 	for c in side.get_children():
 		c.queue_free()
 	side.add_child(UI.label("OPERATIONS", 11, UI.BRASS))
+	side.add_child(UI.row([UI.button("Career", func(): add_child(CareerPanel.new())), UI.label("%d skill point%s to spend" % [Career.skill_points_left(Game.career), "" if Career.skill_points_left(Game.career) == 1 else "s"], 12, UI.BRASS if Career.skill_points_left(Game.career) > 0 else UI.MUTED)]))
 	var port := _port_here()
 	if port != "":
 		side.add_child(UI.label("In port: %s" % port, 16))
-		side.add_child(UI.wrap("Repairs and resupply are made here. Request a new command and refits in the career build.", 330, 12, UI.MUTED))
+		var cs := Career.ship(Game.career)
+		var repair_days := _repair_days(cs)
+		if repair_days > 0:
+			var rb := UI.button("Repair (%d day%s in the yard)" % [repair_days, "" if repair_days == 1 else "s"], func(): _repair(repair_days))
+			side.add_child(rb)
+		else:
+			side.add_child(UI.label("Ship in good order, crew at full strength.", 12, UI.GREEN))
+		side.add_child(UI.row([UI.button("Request a new command", _request_command), UI.button("Refit (%d supply)" % Game.career.get("supply", 0), _refit_menu)]))
 	var sel = _contact(selected)
 	if sel != null:
 		var d := War.dist_nm(C.lon, C.lat, sel.lon, sel.lat)
@@ -201,6 +215,115 @@ func _refresh_side() -> void:
 		side.add_child(b)
 	if C.contacts.is_empty():
 		side.add_child(UI.label("No contacts reported yet.", 12, UI.MUTED))
+
+
+## Days in the yard to make good the ship's damage and bring the crew up to strength.
+func _repair_days(cs: Dictionary) -> int:
+	if cs.is_empty():
+		return 0
+	var T: Dictionary = Data.TYPES[cs.type]
+	var miss := 0.0
+	for k in cs.damage:
+		miss += 1.0 - float(cs.damage[k]) / 4.0
+	var crew_miss: float = 1.0 - float(cs.crew) / float(T.crew)
+	var days := int(ceil(miss * 2.0 + crew_miss * 6.0 + cs.get("flood", 0.0) * 4.0))
+	return days
+
+
+func _repair(days: int) -> void:
+	var cs := Career.ship(Game.career)
+	var T: Dictionary = Data.TYPES[cs.type]
+	# replacements are green: training is diluted by the share of new men
+	var frac: float = 1.0 - float(cs.crew) / float(T.crew)
+	cs.training = cs.training * (1.0 - frac * 0.7)
+	cs.crew = int(T.crew)
+	cs.damage = {}
+	cs.flood = 0.0
+	C.day += days
+	_log("%s repaired and brought up to strength: %d day%s in the yard." % [cs.name, days, "" if days == 1 else "s"])
+	_save()
+	_refresh_side()
+	_refresh_top()
+
+
+func _request_command() -> void:
+	var c: Dictionary = Game.career
+	var year := War.year_of(int(C.day))
+	var avail := Career.available_commands(c, year)
+	card = Control.new()
+	card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	card.add_child(UI.backdrop(0.5))
+	var p := UI.panel(20)
+	p.custom_minimum_size.x = 640
+	var v := UI.column(8)
+	v.add_child(UI.label("REQUEST A COMMAND · %s" % Missions.RANKS[clampi(c.rank, 0, 8)], 11, UI.BRASS))
+	v.add_child(UI.wrap("Your current ship goes into reserve with her crew, exactly as she is; you can ask for her back later. Officers come with you. A new ship means a new, green crew.", 600, 12, UI.MUTED))
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 4)
+	for tid in avail:
+		var T: Dictionary = Data.TYPES[tid]
+		var names: Array = Career.SHIP_NAMES.get(tid, ["USS " + T.name])
+		var nm: String = names[0]
+		for cand in names:
+			if not c.ships.has("%s|%s" % [tid, cand]):
+				nm = cand
+				break
+		var same: bool = c.current == "%s|%s" % [tid, nm]
+		var b := UI.button("%s · %s%s" % [nm, T.name, " (current)" if same else ""], (func(t2, n2): Career.take_command(c, t2, n2, int(C.day)); C.ship = t2; C.name = n2; _log("Took command of %s (%s)." % [n2, Data.TYPES[t2].name]); _close_card(); _save(); _refresh_side(); _refresh_top()).bind(tid, nm))
+		b.disabled = same
+		b.add_theme_font_size_override("font_size", 12)
+		grid.add_child(b)
+	for key in c.ships:
+		if key != c.current:
+			var o: Dictionary = c.ships[key]
+			var b2 := UI.button("%s · %s (reserve, crew %s)" % [o.name, Data.TYPES[o.type].name, Career.training_label(o.training)], (func(k2): c.current = k2; C.ship = c.ships[k2].type; C.name = c.ships[k2].name; _log("Back aboard %s." % C.name); _close_card(); _save(); _refresh_side(); _refresh_top()).bind(key))
+			b2.add_theme_font_size_override("font_size", 12)
+			grid.add_child(b2)
+	v.add_child(grid)
+	v.add_child(UI.row([UI.button("Cancel", _close_card)]))
+	p.add_child(v)
+	card.add_child(p)
+	UI.center(p)
+	add_child(card)
+
+
+func _refit_menu() -> void:
+	var c: Dictionary = Game.career
+	var year := War.year_of(int(C.day))
+	var cs := Career.ship(c)
+	card = Control.new()
+	card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	card.add_child(UI.backdrop(0.5))
+	var p := UI.panel(20)
+	p.custom_minimum_size.x = 700
+	var v := UI.column(6)
+	v.add_child(UI.label("REFIT · %s · %d supply points" % [cs.name, c.get("supply", 0)], 11, UI.BRASS))
+	v.add_child(UI.wrap("Refits follow the real timeline: SG radar in 1942, fixed torpedoes and proximity fuzes in 1943. A ship in the yard misses what happens meanwhile.", 660, 12, UI.MUTED))
+	for id in Career.refits_for(c, year):
+		var r: Array = Career.REFITS[id]
+		var row := UI.row([], 8)
+		var b := UI.button("%d supply · %d day%s" % [r[2], r[4], "" if r[4] == 1 else "s"], (func(rid):
+			var rr: Array = Career.REFITS[rid]
+			c.supply -= rr[2]
+			cs.refits.append(rid)
+			C.day += rr[4]
+			_log("%s refitted: %s (%d days)." % [cs.name, rr[0], rr[4]])
+			_close_card(); _save(); _refresh_side(); _refresh_top()).bind(id))
+		b.disabled = c.get("supply", 0) < r[2]
+		b.custom_minimum_size.x = 150
+		row.add_child(b)
+		var col := UI.column(0)
+		col.add_child(UI.label("%s · %s" % [r[0], r[1]], 13))
+		col.add_child(UI.label(r[6], 11, UI.MUTED))
+		row.add_child(col)
+		v.add_child(row)
+	v.add_child(UI.row([UI.button("Close", _close_card)]))
+	p.add_child(v)
+	card.add_child(p)
+	UI.center(p)
+	add_child(card)
 
 
 func _log(txt: String) -> void:
@@ -464,10 +587,71 @@ func _apply_result() -> void:
 			C.lost += 1
 			C.shift -= 3.0
 			_log("Mission failed%s." % ((": %s lost" % C.name) if not r.get("player_alive", true) else ""))
+			if not r.get("player_alive", true):
+				_ship_lost()
 	# a battle takes the rest of the day
 	C.day += 0.3
 	_save()
 	_refresh_side()
+
+
+## The player's ship was sunk: Ironman ends the career; otherwise you survive, wait for a new
+## command in port, and the ship is struck from the list.
+func _ship_lost() -> void:
+	var c: Dictionary = Game.career
+	var diff: Dictionary = Career.DIFFICULTY.get(c.get("difficulty", "officer"), Career.DIFFICULTY.officer)
+	var lost_name: String = C.name
+	c.ships.erase(c.current)
+	c.current = ""
+	if diff.ironman:
+		_log("%s was lost with all hands. The career ends here." % lost_name)
+		Game.campaign = {}
+		Game.save_campaign()
+		_offer_end("Your ship was lost", "%s went down and the career ends with her (Ironman). Start a new campaign from the main menu." % lost_name)
+		return
+	# survivors are picked up and taken to the nearest friendly base
+	var best := ""
+	var bd := 1e9
+	for nm in War.BASES:
+		var b: Dictionary = War.BASES[nm]
+		if b.side == "us" and b.from >= 0 and C.day >= b.from:
+			var d := War.dist_nm(C.lon, C.lat, b.lon, b.lat)
+			if d < bd:
+				bd = d; best = nm
+	if best != "":
+		C.lon = War.BASES[best].lon; C.lat = War.BASES[best].lat
+	C.day += 10.0
+	c.reputation = maxi(0, c.reputation - 150)
+	var year := War.year_of(int(C.day))
+	var avail := Career.available_commands(c, year)
+	var tid: String = avail[0] if not avail.is_empty() else "fletcher"
+	for t in avail:
+		if t == C.ship:
+			tid = t
+	var names: Array = Career.SHIP_NAMES.get(tid, ["USS Replacement"])
+	var nm2: String = names[0]
+	for cand in names:
+		if not c.ships.has("%s|%s" % [tid, cand]):
+			nm2 = cand
+			break
+	Career.take_command(c, tid, nm2, int(C.day))
+	C.ship = tid; C.name = nm2
+	_log("Survivors of %s landed at %s. After ten days you are given %s." % [lost_name, best, nm2])
+
+
+func _offer_end(title: String, text: String) -> void:
+	card = Control.new()
+	card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	card.add_child(UI.backdrop(0.6))
+	var p := UI.panel(22)
+	var v := UI.column(8)
+	v.add_child(UI.label(title, 26))
+	v.add_child(UI.wrap(text, 520))
+	v.add_child(UI.big_button("Main menu", func(): get_tree().change_scene_to_file("res://scenes/menu.tscn")))
+	p.add_child(v)
+	card.add_child(p)
+	UI.center(p)
+	add_child(card)
 
 
 func _save() -> void:

@@ -1,4 +1,4 @@
-# Pacific Command (build 0.8)
+# Pacific Command (build 0.9)
 
 WWII Pacific naval game for PC, made in **Godot 4.7.2**.
 
@@ -78,6 +78,15 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 All keys can be changed in Settings › Controls.
 
 ## What's in this build
+- Career: seven named officers who earn XP from their own jobs and level up (each
+  level adds 3% in their department), can be wounded or killed; crew training (green
+  to elite) and morale per ship, crews stay with their ship, former ships are frozen
+  in reserve; captain XP (a cut of everything) drives rank and gives skill points for
+  per-ship-type skills; refits bought with supply points at a base following the real
+  timeline (SG radar 1942, fixed torpedoes 1943...), taking yard time; repairs take
+  days; medals (Navy Cross, Silver Star, Bronze Star, Purple Heart); difficulty
+  (Ensign, Officer, Veteran, Ironman) chosen with a new campaign. Career screen from
+  the map and the pause menu.
 - The operations map (scripts/ops.gd, scripts/war.gd): 18 sea zones with historical
   ownership dates, 21 bases, 23 operations on the 1941-45 timeline, contacts generated
   from zone activity, time compression, campaign saved to user://campaign.json.

@@ -489,6 +489,8 @@ func show_end() -> void:
 		txt += "Survivors rescued: %d.\n" % st.rescued
 	var rep: int = st.get("rep_gained", 0)
 	txt += "Reputation %s%d (now %d).\n" % ["+" if rep >= 0 else "", rep, Game.career.reputation]
+	for ln in st.get("career_lines", []):
+		txt += "\n" + ln
 	txt += "Bursts and salvos fired: %d, hits: %d (%.0f%%).\nTorpedoes fired: %d, torpedo hits: %d.\nCrew lost: %d of %d." % [st.salvos, st.hits, acc, st.torps, st.torp_hits, lost, st.start_crew]
 	var friends_lost := []
 	for s in B.ships:
@@ -500,7 +502,10 @@ func show_end() -> void:
 		txt += "\n\nObjective destroyed and your boat is still afloat. Well done, Captain."
 	lbl.end_p.text = txt
 	btn.to_map.visible = not Game.mission.is_empty()
-	btn.fight_again.visible = Game.mission.is_empty()
+	var diff: Dictionary = Career.DIFFICULTY.get(Game.career.get("difficulty", "officer"), Career.DIFFICULTY.officer)
+	btn.fight_again.visible = Game.mission.is_empty() or (diff.retry and B.over != "won")
+	if not Game.mission.is_empty() and diff.retry and B.over != "won":
+		btn.fight_again.text = "Retry (Ensign difficulty)"
 	endp.visible = true
 
 
@@ -1147,6 +1152,8 @@ func open_pause() -> void:
 	v.add_child(sv)
 	v.add_child(UI.big_button("Load battle", _pause_load))
 	v.add_child(UI.big_button("Settings", func(): pausep.add_child(SettingsPanel.new())))
+	if not Game.mission.is_empty():
+		v.add_child(UI.big_button("Career", func(): pausep.add_child(CareerPanel.new())))
 	v.add_child(UI.big_button("New battle (briefing)", func(): close_pause(); B.new_game()))
 	if not Game.mission.is_empty():
 		v.add_child(UI.big_button("Abandon battle (back to the map)", func(): Game.last_result = {"over": "abandoned", "mission": Game.mission.duplicate(true)}; get_tree().change_scene_to_file("res://scenes/ops.tscn")))

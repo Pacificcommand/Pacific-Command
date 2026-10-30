@@ -79,6 +79,7 @@ var escort_group := ""       # set when this ship screens a convoy
 var protect := false         # a friendly ship the mission is about (convoy escort)
 var rescued := false         # survivors picked up (rafts)
 var aground := false
+var last_hit_by: Ship = null
 var tactic := ""             # current solo tactic
 var tactic_until := 0.0
 var zig := 0.0
@@ -161,7 +162,10 @@ func _collect_parts(n: Node) -> void:
 
 ## Crew efficiency: fewer sailors means slower loading, aiming and repairs.
 func eff() -> float:
-	return 0.35 + 0.65 * clampf(float(crew) / float(T.crew), 0.0, 1.0)
+	var e := 0.35 + 0.65 * clampf(float(crew) / float(T.crew), 0.0, 1.0)
+	if is_player:
+		e *= Career.crew_factor()
+	return e
 
 func mod_health(kind: String) -> float:
 	var hp := 0.0

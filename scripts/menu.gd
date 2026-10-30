@@ -11,6 +11,9 @@ var buttons: VBoxContainer
 func _ready() -> void:
 	# command-line test runs (see CLAUDE.md) go straight to the battle
 	for a in OS.get_cmdline_user_args():
+		if a == "--careertest":
+			_career_test()
+			return
 		if a.begins_with("--ops"):
 			if Game.campaign.is_empty():
 				Game.campaign = load("res://scripts/ops.gd").new_campaign(240, "fletcher", "USS O'Bannon")
@@ -129,12 +132,26 @@ func _build_ui() -> void:
 
 
 func _process(delta: float) -> void:
+	if ocean_mat == null:
+		return
 	t += delta
 	if ship:
 		ship.rotation.y += delta * 0.03
 		ship.position.y = sin(t * 0.7) * 0.25
 		ship.rotation.z = sin(t * 0.55) * deg_to_rad(1.2)
 	ocean_mat.set_shader_parameter("time_s", t)
+
+
+## Headless check of the career rules (godot --headless --path . -- --careertest).
+func _career_test() -> void:
+	var c := Career.fresh("veteran")
+	Career.take_command(c, "fletcher", "USS O'Bannon", 240)
+	var t := {"salvos": 30, "hits": 9, "torps": 5, "torp_hits": 1, "kills": 2, "combat_min": 12.0, "underway_min": 20.0, "fires_out": 2, "holes_fixed": 3, "contacts": 4, "damage_done": 40.0, "crew_loss_frac": 0.2, "saved": 0, "big_kill": false, "summary": "test"}
+	for i in 8:
+		var lines := Career.apply_battle(c, t, "won", 3, 240 + i)
+		print(i, " xp ", c.xp, " rank ", c.rank, " level ", Career.level_for(c.xp), " ", lines)
+	print("gunnery officer level ", Career.officer_level(Career.officer(c, "Gunnery officer").xp), " crew ", Career.training_label(Career.ship(c).training), " medals ", c.medals.size(), " supply ", c.supply)
+	get_tree().quit()
 
 
 func _on_new() -> void:
@@ -185,10 +202,30 @@ func _on_campaign() -> void:
 		ship_btns.append(b2)
 		grid.add_child(b2)
 	v.add_child(grid)
-	v.add_child(UI.wrap("The career build will tie commands to rank; for now any ship can be chosen. A new campaign replaces the saved one.", 560, 12, UI.MUTED))
+	v.add_child(UI.label("Difficulty", 16))
+	var diff := ["officer"]
+	var drow := UI.row([], 4)
+	var dbtns := []
+	for did in ["ensign", "officer", "veteran", "ironman"]:
+		var db := UI.button(Career.DIFFICULTY[did].name, func(): pass, true)
+		db.pressed.connect(func(): diff[0] = did; for o in dbtns: o.set_pressed_no_signal(o == db))
+		db.set_pressed_no_signal(did == "officer")
+		dbtns.append(db)
+		drow.add_child(db)
+	v.add_child(drow)
+	v.add_child(UI.wrap("Ensign: retry lost battles, half reputation losses. Officer: the war goes on. Veteran: five tactical pauses a battle, no lead marker, officers can die, you can be wounded. Ironman: no pause, and the career ends if your ship sinks. Your first command sets your starting rank; a new campaign replaces the saved one.", 560, 12, UI.MUTED))
 	v.add_child(UI.row([UI.big_button("Begin", func():
 		Game.campaign = load("res://scripts/ops.gd").new_campaign(start[0], ship[0], ship[1])
+		Game.career = Career.fresh(diff[0])
+		# starting rank fits the first command
+		for u in Career.UNLOCKS:
+			if u[0] == ship[0]:
+				Game.career.rank = u[1]
+				Game.career.xp = Career.RANK_XP[u[1]]
+		Game.career.reputation = 300 + Game.career.rank * 150
 		Game.career.year = War.year_of(start[0])
+		Career.take_command(Game.career, ship[0], ship[1], start[0])
+		Game.save_career()
 		Game.save_campaign()
 		get_tree().change_scene_to_file("res://scenes/ops.tscn")), UI.button("Cancel", func(): panel.queue_free())]))
 	p.add_child(v)
