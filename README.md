@@ -1,4 +1,4 @@
-# Pacific Command — combat sandbox (build 0.2)
+# Pacific Command — combat sandbox (build 0.3)
 
 WWII Pacific naval game for PC, made in **Godot 4.7.2**. Combat sandbox with three
 missions, picked on the briefing screen:
@@ -31,11 +31,23 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 | T | Torpedo aim: lanes follow the mouse, a lead marker shows where to aim, click to fire (T or Esc to cancel) |
 | Z | Lay a smoke screen |
 | V | Follow salvos on / off |
+| C | Camera on the enemy target / back on your own ship |
 | Space | Tactical pause |
 | 1 / 2 / 3 | Slow ¼× / normal / fast 3× |
-| Mouse wheel | Zoom; drag to look around; Esc re-centers |
+| Mouse wheel | Zoom; drag to look around (the camera unlocks); Esc locks it back on the ship |
 
 ## What's in this build
+- Enemy AI that fights as a fleet: destroyer divisions keep formation, run in for
+  torpedo attacks, break away under smoke and come back; a convoy escort screens its
+  charges and drives off attackers; lone ships mix tactics (open range, zigzag, cross
+  your bow, work for a torpedo shot, hide in smoke, pull back when hurt).
+- Japanese destroyer character: faster and more agile than a Fletcher, lighter guns,
+  Long Lance torpedoes fired from long range at night before you see them, then a
+  high-speed turn away. They avoid gun duels while they still have torpedoes.
+- Hit reports say what broke: "Hit aft: Mount 54 knocked out; flooding aft, starboard
+  side". Misses and routine firing are no longer reported.
+- Camera: "Camera on" picker (own ship / enemy target, key C); the camera stays locked
+  on the chosen ship until you drag the view, Esc locks it back.
 - Live 3D ships seen from above, built from the reference photos. Guns, torpedo
   tubes, director and light AA turn to their targets.
 - Semi-realistic scale: 5-inch guns reach about 8 km, the enemy starts ~12 km away

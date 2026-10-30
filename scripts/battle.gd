@@ -38,7 +38,8 @@ var click_shot = null          # manual-aim click waiting to be fired
 var torp_aim := false
 var combat_t := -1.0           # when shooting started; friendly boats hold station until then          # torpedo aiming mode (T): mouse sets the bearing, click fires
 var vis_timer := 0.0
-var _hit_msg_t := {}           # throttle for "hits on X" messages
+var _hit_msg_t := {}           # throttle for "no serious damage" messages
+var _torp_warn_t := -99.0      # throttle for torpedo wake warnings
 var _under_msg := false
 var autopilot := false         # test option: the AI also drives the player's ship
 
@@ -50,8 +51,11 @@ var ocean: MeshInstance3D
 var ocean_mat: ShaderMaterial
 var fx: Fx
 var sfx: Sfx
+var ai: AI
 var hud
-var camst := {"x": 0.0, "z": 0.0, "h": 420.0, "th": 420.0, "ox": 0.0, "oz": 0.0, "salvo": null, "hold": 0.0, "impact": null}
+## Camera: x/z where it looks, h height now, th wanted height. focus = "player" or "target" (the
+## ship it tracks); free = true after the player drags the view, until Esc or a view button.
+var camst := {"x": 0.0, "z": 0.0, "h": 420.0, "th": 420.0, "ox": 0.0, "oz": 0.0, "salvo": null, "hold": 0.0, "impact": null, "focus": "player", "free": false}
 const VIEWS := {"close": 160.0, "ship": 420.0, "wide": 2200.0, "tac": 9000.0}
 const FOV := 32.0
 
@@ -62,6 +66,8 @@ func _ready() -> void:
 	_build_world()
 	sfx = Sfx.new()
 	add_child(sfx)
+	ai = AI.new()
+	ai.B = self
 	hud = load("res://scripts/hud.gd").new()
 	add_child(hud)
 	new_game()
@@ -106,6 +112,10 @@ func _test_args() -> void:
 	if _test.has("view"):
 		set_view(_test.view)
 		camst.h = camst.th
+	if _test.has("cam"):
+		set_focus(_test.cam)
+		var fs := focus_ship()
+		camst.x = fs.x; camst.z = fs.z
 	if _test.has("run"):
 		# fast-forward the simulation before the first frame
 		var n := int(float(_test.run) / 0.05)
@@ -224,9 +234,11 @@ func new_game() -> void:
 	t = 0.0; salvo_n = 0; over = ""; shake = 0.0; started = false
 	click_shot = null
 	_hit_msg_t.clear()
+	_torp_warn_t = -99.0
 	_under_msg = false
 	stats = {"salvos": 0, "shells": 0, "hits": 0, "torps": 0, "torp_hits": 0, "sunk": [], "escaped": [], "start_crew": 0}
 	combat_t = -1.0
+	ai.reset()
 	match scenario:
 		"barges":
 			_setup_barges()
@@ -238,6 +250,7 @@ func new_game() -> void:
 	stats.start_crew = player.crew
 	player.target = null
 	camst.x = player.x; camst.z = player.z; camst.ox = 0.0; camst.oz = 0.0; camst.salvo = null
+	camst.focus = "player"; camst.free = false
 	set_view("close" if player.T.L < 40.0 else "ship")
 	camst.h = camst.th
 	apply_weather()
@@ -261,6 +274,9 @@ func _setup_dd() -> void:
 	for e in [a, b]:
 		e.tele = 5
 		e.objective = true
+		e.group = "DesDiv 11"
+	a.leader_flag = true
+	b.fstation = Vector2(-600.0, 250.0)
 	a.side = 1.0; b.side = -1.0
 	report = {"x": ex + randf_range(-900, 900), "z": ez + randf_range(-900, 900), "h": eh + deg_to_rad(randf_range(-8, 8)), "v": 30.0 * Data.KN, "r": 2500.0, "t": 0.0, "active": true}
 	brief = {"title": "Intercept the Tokyo Express", "threat": "High (night action; Japanese crews are trained for it)" if weather == "night" else "Moderate",
@@ -333,6 +349,7 @@ func _setup_convoy() -> void:
 	esc.route_h = ch
 	esc.tele = 2
 	esc.side = 1.0
+	esc.escort_group = "convoy"
 	report = {"x": cx + randf_range(-700, 700), "z": cz + randf_range(-700, 700), "h": ch, "v": 9.0 * Data.KN, "r": 2000.0, "t": 0.0, "active": true}
 	brief = {"title": "Convoy attack", "threat": "High (a destroyer escort)",
 		"text": "Search radar has a small convoy bearing %s, about %s away, course %s at 9 knots: two cargo ships and a tanker, with one Kagero-class destroyer screening them.\n\nYou lead three Elco PT boats from %s. Each boat carries four Mark 13 torpedoes that fire straight ahead, so you aim the whole boat: get inside about 2,000 yards, point at the target and press T. Then turn away and lay smoke before the destroyer finds you. Sink the merchant ships." % [U.deg3(U.bearing(0, 0, report.x, report.z)), U.yards(U.hyp(report.x, report.z)), U.deg3(ch), player.ship_name]}
@@ -368,6 +385,8 @@ func after(d: float, fn: Callable) -> void:
 
 
 func say(txt: String, kind := "") -> void:
+	if _test.has("trace"):
+		print("  [%d] %s" % [int(t), txt])
 	if hud:
 		hud.log_msg(txt, kind)
 
@@ -380,8 +399,34 @@ func set_speed(v: float) -> void:
 
 func set_view(mode: String) -> void:
 	camst.th = VIEWS[mode]
-	if mode != "tac":
-		camst.ox = 0.0; camst.oz = 0.0
+	camst.ox = 0.0; camst.oz = 0.0
+	camst.free = false
+	camst.salvo = null
+
+
+## Which ship the camera tracks: "player" (own ship) or "target" (the selected enemy).
+func set_focus(which: String) -> void:
+	if which == "target" and (player.target == null or not player.target.alive):
+		say("No enemy target selected. Right-click a contact or press Tab.")
+		which = "player"
+	camst.focus = which
+	camst.free = false
+	camst.ox = 0.0; camst.oz = 0.0
+	camst.salvo = null
+	if hud:
+		hud.on_focus()
+
+
+## The ship the camera is tracking right now.
+func focus_ship() -> Ship:
+	if camst.focus == "target":
+		var tg: Ship = player.target
+		if tg and not tg.gone and (tg.alive or tg.sink < 12.0):
+			return tg
+		camst.focus = "player"
+		if hud:
+			hud.on_focus()
+	return player
 
 
 func mag_chance() -> float:
@@ -721,7 +766,7 @@ func land_shell(sh: Dictionary) -> void:
 			sfx.play("boom", Vector2(sh.tx, sh.tz), cam.position, 0.5)
 		else:
 			fx.small_hit(sh.tx, deck, sh.tz, dmg)
-		damage(hit, l.x, l.y, dmg, "shell")
+		damage(hit, l.x, l.y, dmg, "shell", sv.shooter)
 		if sv.shooter.is_player:
 			stats.hits += 1
 	else:
@@ -744,13 +789,7 @@ func land_shell(sh: Dictionary) -> void:
 		if sv.tgt and not sv.manual and s.contact(sv.tgt):
 			var straddle: bool = sv.short > 0 and sv.over > 0
 			s.q = clampf(s.q + (0.28 if straddle else 0.16) * s.eff(), 0.0, 0.95)
-		# only hits are worth a message; misses are shown by the splashes
-		if (s.is_player or s.team == "us") and sv.hits > 0 and sv.tgt:
-			var key: String = sv.tgt.ship_name
-			if t - _hit_msg_t.get(key, -99.0) > 5.0:
-				_hit_msg_t[key] = t
-				var who := "" if s.is_player else s.ship_name + ": "
-				say("%sHits on %s (%s)." % [who, key, sv.gun.cal], "good")
+		# misses are shown by the splashes; hits speak for themselves in damage()
 		if camst.salvo == sv:
 			camst.hold = 2.0
 
@@ -759,7 +798,9 @@ func land_shell(sh: Dictionary) -> void:
 # damage
 # =====================================================================
 
-func damage(s: Ship, lx: float, lz: float, dmg: float, kind: String) -> void:
+## Apply one hit at ship coordinates (lx, lz). dmg: 5-inch shell = 1.0. kind: "shell" or "torpedo".
+## Builds one message that says what the hit did ("Hit aft: Mount 54 knocked out; fire aft").
+func damage(s: Ship, lx: float, lz: float, dmg: float, kind: String, shooter: Ship = null) -> void:
 	if not s.alive:
 		return
 	var isp := s.is_player
@@ -779,24 +820,22 @@ func damage(s: Ship, lx: float, lz: float, dmg: float, kind: String) -> void:
 	s.crew = maxi(0, s.crew - crew_loss)
 	var seen_by_player: bool = player.contact(s)
 	var reach := 14.0 if kind == "torpedo" else (2.5 if small else 7.0)
+	var what: Array = []   # what this hit did, in words
 	if best and bd < reach:
 		var before: float = best.hp
 		best.hp = maxf(0.0, best.hp - dmg * (4.0 if kind == "torpedo" else 1.0))
 		if best.hp <= 0.0 and before > 0.0:
-			var what := ""
 			match best.kind:
-				"mount": what = "%s knocked out" % _pretty(best.label)
-				"torp": what = "%s wrecked" % _pretty(best.label)
-				"bridge": what = "Bridge hit, steering from aft conn"
-				"director": what = "Gun director destroyed, guns in local control"
-				"engine": what = "%s out of action" % best.label
-				"steering": what = "Steering gear destroyed, rudder jammed"
-				"magazine": what = "%s flooded to prevent explosion" % best.label
-				"fuel": what = "Gas tanks holed"
-				"cargo": what = "%s wrecked" % best.label
-				"oil": what = "%s ruptured, oil burning" % best.label
-			if isp or seen_by_player:
-				say(("" if isp else s.ship_name + ": ") + what + ".", "bad" if isp else "good")
+				"mount": what.append("%s knocked out" % _pretty(best.label))
+				"torp": what.append("%s wrecked" % _pretty(best.label))
+				"bridge": what.append("bridge wrecked, conning from aft")
+				"director": what.append("gun director destroyed, guns in local control")
+				"engine": what.append("%s out of action" % best.label.to_lower())
+				"steering": what.append("steering gear destroyed, rudder jammed")
+				"magazine": what.append("%s flooded to prevent an explosion" % best.label.to_lower())
+				"fuel": what.append("gas tanks holed")
+				"cargo": what.append("%s wrecked" % best.label.to_lower())
+				"oil": what.append("%s ruptured, oil burning" % best.label.to_lower())
 			if best.kind == "steering":
 				s.rud_jam_until = 1e9
 			if best.kind == "torp" and best.ref.left > 0 and randf() < 0.18:
@@ -812,30 +851,74 @@ func damage(s: Ship, lx: float, lz: float, dmg: float, kind: String) -> void:
 					add_fire(s, mx, 0.0, 1.0)
 				)
 				best.ref.left = 0
+		elif best.hp > 0.0 and before > best.hp and dmg >= 0.5:
+			# damaged, still working
+			match best.kind:
+				"mount": what.append("%s damaged" % _pretty(best.label))
+				"bridge": what.append("bridge damaged")
+				"director": what.append("director hit")
+				"engine": what.append("%s hit, losing steam" % best.label.to_lower())
+				"torp": what.append("%s damaged" % _pretty(best.label))
 		if best.kind == "steering" and best.hp > 0.0 and randf() < 0.3:
 			s.rud_jam_until = t + 20.0
-			if isp:
-				say("Rudder jammed! Repair party to steering.", "bad")
-		if best.kind == "bridge" and isp:
-			say("Hit on the bridge.", "bad")
+			what.append("rudder jammed")
 		# gasoline on PT boats and oil in tankers catch fire easily
 		if best.kind == "fuel" and randf() < 0.5 * minf(1.0, dmg * 3.0):
-			add_fire(s, best.x, 0.0, 1.0)
-			if isp or seen_by_player:
-				say(("Gas tanks hit, fire aft!" if isp else s.ship_name + ": gasoline fire!"), "bad" if isp else "good")
+			var f1 := add_fire(s, best.x, 0.0, 1.0)
+			what.append("gasoline fire" + ("" if f1 == "" else " " + f1))
 		if best.kind == "oil" and randf() < 0.6 * minf(1.0, dmg * 2.0):
-			add_fire(s, best.x, 0.0, 1.2)
+			var f2 := add_fire(s, best.x, 0.0, 1.2)
+			if f2 != "":
+				what.append("oil fire " + f2)
 		if best.kind == "magazine" and randf() < (0.12 if kind == "torpedo" else 0.035) * (mag_chance() if isp else 1.0):
 			magazine_boom(s, best.x)
 			return
 	# shell holes near the waterline and torpedo hits let the sea in
 	if kind == "torpedo":
-		add_hole(s, lx, 1.0 if lz >= 0.0 else -1.0, 30.0)
-		s.flood += s.T.displacement * 0.07
+		# a big hole: the first rush of water comes in at once, then it keeps flooding until patched
+		what.append(add_hole(s, lx, 1.0 if lz >= 0.0 else -1.0, 12.0 * clampf(s.T.displacement / 2500.0, 0.4, 3.0)))
+		s.flood += s.T.displacement * 0.10
 	elif randf() < 0.45 * minf(1.0, dmg * 1.5):
-		add_hole(s, lx, 1.0 if lz >= 0.0 else -1.0, randf_range(1.0, 3.0) * dmg * (0.12 if small else 1.0))
+		var hole := add_hole(s, lx, 1.0 if lz >= 0.0 else -1.0, randf_range(1.0, 3.0) * dmg * (0.12 if small else 1.0))
+		if dmg >= 0.5 or small:
+			what.append(hole)   # light shells only nick a big hull; not worth a report
 	if randf() < (0.8 if kind == "torpedo" else 0.4 * minf(1.0, dmg * 2.0) * (0.3 if light_vs_big else 1.0)):
-		add_fire(s, lx, lz, 0.8 if kind == "torpedo" else 0.4)
+		var f3 := add_fire(s, lx, lz, 0.8 if kind == "torpedo" else 0.4)
+		if f3 != "":
+			what.append("fire started " + f3)
+	_hit_report(s, lx, what, dmg, kind, seen_by_player, shooter != null and shooter.is_player)
+
+
+## One message per hit that mattered. Hits that did nothing are summed up now and then,
+## and only for the player's own shooting or hits on the player's ship.
+func _hit_report(s: Ship, lx: float, what: Array, dmg: float, kind: String, seen: bool, mine: bool) -> void:
+	var isp := s.is_player
+	if not isp and not seen:
+		return
+	var where := "forward" if lx > s.T.L * 0.15 else ("aft" if lx < -s.T.L * 0.15 else "amidships")
+	var head := "Torpedo hit" if kind == "torpedo" else "Hit"
+	var who := "" if isp else s.ship_name + ": "
+	var tone := "bad" if isp else "good"
+	if not what.is_empty():
+		var txt: String = "%s%s %s: %s." % [who, head, where, "; ".join(what)]
+		say(txt[0].to_upper() + txt.substr(1), tone)
+		if isp and kind == "torpedo":
+			shake = maxf(shake, 2.0)
+		return
+	# nothing important broke: one line every few seconds so the log stays readable
+	if not (isp or mine):
+		return
+	var key: String = s.ship_name
+	var gap := 6.0 if dmg >= 0.5 else 10.0
+	if t - _hit_msg_t.get(key, -99.0) < gap:
+		return
+	_hit_msg_t[key] = t
+	if dmg >= 0.5:
+		say("%s%s %s, no serious damage." % [who, head, where], tone)
+	elif isp:
+		say("Under light gunfire %s, no serious damage." % where, tone)
+	else:
+		say("%shit by our light guns %s." % [who, where], tone)
 
 
 func _pretty(label: String) -> String:
@@ -850,22 +933,22 @@ func _pretty(label: String) -> String:
 	return out
 
 
-func add_hole(s: Ship, lx: float, side: float, rate: float) -> void:
+## Opens a hole; returns words for the hit report ("flooding forward, starboard side").
+func add_hole(s: Ship, lx: float, side: float, rate: float) -> String:
 	s.holes.append({"lx": lx, "side": side, "rate": rate, "fix": 0.0})
-	if s.is_player:
-		var where := "forward" if lx > s.T.L * 0.15 else ("aft" if lx < -s.T.L * 0.15 else "amidships")
-		say("Flooding %s, %s side." % [where, "starboard" if side > 0.0 else "port"], "bad")
+	var where := "forward" if lx > s.T.L * 0.15 else ("aft" if lx < -s.T.L * 0.15 else "amidships")
+	return "flooding %s, %s side" % [where, "starboard" if side > 0.0 else "port"]
 
 
-func add_fire(s: Ship, lx: float, lz: float, intensity: float) -> void:
+## Starts (or feeds) a fire; returns where it started for the hit report, "" if it only grew.
+func add_fire(s: Ship, lx: float, lz: float, intensity: float) -> String:
 	var span := 8.0 if s.T.L > 50.0 else 3.0
 	for f in s.fires:
 		if absf(f.lx - lx) < span:
 			f.int = minf(1.5, f.int + intensity * 0.6)
-			return
+			return ""
 	s.fires.append({"lx": lx, "lz": clampf(lz, -s.T.B * 0.25, s.T.B * 0.25), "int": intensity})
-	if not s.is_player and player.contact(s):
-		say("%s: fire started %s." % [s.ship_name, "forward" if lx > s.T.L * 0.15 else ("aft" if lx < -s.T.L * 0.15 else "amidships")], "good")
+	return "forward" if lx > s.T.L * 0.15 else ("aft" if lx < -s.T.L * 0.15 else "amidships")
 
 
 func magazine_boom(s: Ship, mx: float) -> void:
@@ -974,12 +1057,11 @@ func step_torps(dt: float) -> void:
 				for i in 20:
 					fx.add(Fx.SPLASH, tp.x + randf_range(-6, 6), 3.0, tp.z + randf_range(-6, 6), 0, 0, 0, randf_range(6, 10), 14.0, 3.5, 1.0, Color(0.95, 0.98, 1.0), 1.0)
 				sfx.play("boom", Vector2(tp.x, tp.z), cam.position, 1.2)
-				say("TORPEDO HIT! Heavy flooding!" if s.is_player else "Torpedo hit on %s!" % s.ship_name, "bad" if s.is_player else "good")
 				if s.is_player:
 					shake = maxf(shake, 2.0)
 				if tp.team == "us":
 					stats.torp_hits += 1
-				damage(s, l.x, l.y, 1.0, "torpedo")
+				damage(s, l.x, l.y, 1.0, "torpedo", tp.owner)
 				break
 		# warn the player about wakes the lookouts can see
 		if not tp.warned and tp.team != player.team and player.alive:
@@ -988,8 +1070,10 @@ func step_torps(dt: float) -> void:
 			var see := 500.0 if W.night else (600.0 if weather == "fog" else 1400.0)
 			if dist < see:
 				tp.warned = true
-				say("Torpedo wakes! Bearing %s." % U.deg3(player.bearing_to(tp.x, tp.z)), "bad")
-				sfx.play("alarm", Vector2(player.x, player.z), cam.position, 0.6)
+				if t - _torp_warn_t > 4.0:
+					_torp_warn_t = t
+					say("Torpedo wakes! Bearing %s." % U.deg3(player.bearing_to(tp.x, tp.z)), "bad")
+					sfx.play("alarm", Vector2(player.x, player.z), cam.position, 0.6)
 		if tp.left <= 0.0:
 			tp.dead = true
 	for tp in torps:
@@ -1211,180 +1295,7 @@ func step_ai(s: Ship, dt: float) -> void:
 	if s.ai_turn > 0.0:
 		return
 	s.ai_turn = 0.5
-	var tgt := _ai_pick_target(s)
-	var want := s.h
-	match s.role():
-		"barge", "merchant":
-			want = _ai_transport(s, tgt)
-		"pt":
-			want = _ai_pt(s, tgt)
-		_:
-			want = _ai_warship(s, tgt)
-	s.torp_cd -= 0.5
-	# larger ships turn toward torpedo wakes they can see, to comb them
-	if s.T.L > 40.0:
-		for tp in torps:
-			if tp.team != s.team and U.hyp(tp.x - s.x, tp.z - s.z) < 900.0:
-				want = tp.h
-				break
-	s.rud_cmd = clampf(rad_to_deg(U.ang_d(s.h, want)) * 1.5, -35.0, 35.0)
-
-
-## Who this ship should fight: friendlies support the player's target; others take the nearest contact.
-func _ai_pick_target(s: Ship) -> Ship:
-	if s.team == player.team and player.alive and player.target and player.target.alive and s.contact(player.target) \
-			and (player.target.objective or player.fire or t - player.last_fired < 10.0):
-		return player.target
-	# friendly boats follow the player's lead: they hold station until the shooting starts
-	if s.team == player.team and player.alive and combat_t < 0.0:
-		return null
-	var best: Ship = null
-	var bd := 1e9
-	var prefer_obj := s.role() == "pt" and s.team == player.team
-	for o in ships:
-		if o.team == s.team or not o.alive or o.escaped:
-			continue
-		var d := s.range_to(o)
-		if prefer_obj and not o.objective:
-			d += 2500.0   # go for the transports, not the escort
-		# a ship that just fired nearby gives itself away even if unseen
-		var noticed: bool = s.contact(o) or (t - o.last_fired < 4.0 and d < 7000.0 * clampf(o.gun.size, 0.3, 1.0))
-		if noticed and d < bd:
-			bd = d; best = o
-	return best
-
-
-func _ai_warship(s: Ship, tgt: Ship) -> float:
-	var hurt = s.eff() < 0.55 or s.flood > s.T.displacement * 0.18
-	if tgt == null:
-		s.ai_state = "search"
-		s.fire = false
-		if s.route_h != 0.0 or s.dest_dist > 0.0:
-			s.tele = 3
-			return s.route_h
-		s.tele = 5
-		var near: Ship = null
-		var bd := 1e9
-		for o in ships:
-			if o.team != s.team and o.alive and s.range_to(o) < bd:
-				bd = s.range_to(o); near = o
-		return s.bearing_to(near.x, near.z) + s.side * deg_to_rad(8.0) if near else s.h
-	var R := s.range_to(tgt)
-	var to_t := s.bearing_to(tgt.x, tgt.z)
-	s.target = tgt
-	if hurt:
-		s.ai_state = "retreat"
-		s.tele = 6
-		return fposmod(to_t + PI, TAU)
-	s.ai_state = "attack"
-	s.fire = true
-	s.tele = 6
-	var want := to_t if R > 4500.0 else to_t + s.side * deg_to_rad(70.0)
-	if R < 1500.0 and tgt.T.L < 40.0:
-		want = to_t + s.side * deg_to_rad(90.0)   # small fast boats: keep them on the beam
-	if s.torp_cd <= 0.0 and R < 7000.0 and tgt.T.get("draft", 4.0) > 2.0 and not s.torps.is_empty():
-		var rb := absf(rad_to_deg(s.rel_bearing(tgt.x, tgt.z)))
-		if rb > 40.0 and rb < 140.0:
-			var nt := launch_torps(s, tgt)
-			if nt > 0:
-				s.torp_cd = 40.0
-				if player.contact(s):
-					say("%s is launching torpedoes!" % s.ship_name, "bad")
-	# star shells to light the target at night
-	if Data.WEATHER[weather].night and R < 4000.0 and s.T.L > 60.0:
-		s.star_cd -= 0.5
-		if s.star_cd <= 0.0:
-			s.star_cd = 26.0
-			star_shell(tgt.x + randf_range(-400, 400), tgt.z + randf_range(-400, 400))
-	return want
-
-
-## PT boats: close at speed, rake the target from the beam, weave, and make torpedo runs on ships worth a torpedo.
-func _ai_pt(s: Ship, tgt: Ship) -> float:
-	if tgt == null:
-		s.fire = false
-		s.torp_run = false
-		if s.team == player.team and player.alive:
-			# keep station on the player
-			var st := player.to_world_xz(s.station.x, s.station.y)
-			var d := U.hyp(st.x - s.x, st.y - s.z)
-			var ahead := player.to_local_xz(s.x, s.z).x > s.station.x
-			if d < 25.0:
-				s.tele = player.tele
-				return player.h
-			s.tele = clampi(player.tele + (0 if ahead else (2 if d > 150.0 else 1)), 1, 6)
-			if ahead and d < 120.0:
-				s.tele = maxi(1, player.tele - 1)
-			return s.bearing_to(st.x, st.y)
-		s.tele = 3
-		return s.h
-	s.target = tgt
-	var R := s.range_to(tgt)
-	var to_t := s.bearing_to(tgt.x, tgt.z)
-	var torps_left := 0
-	for tp in s.torps:
-		if tp.hp > 0.0:
-			torps_left += tp.left
-	var worth: bool = tgt.T.get("draft", 4.0) > 2.0 and torps_left > 0
-	# hold fire on the approach to a torpedo target: gun flashes give the boat away
-	s.fire = not worth or R < 700.0 or t < s.evade_until
-	s.weave_t -= 0.5
-	if s.weave_t <= 0.0:
-		s.weave_t = randf_range(15.0, 30.0)
-		s.side = -s.side
-	if t < s.evade_until:
-		s.ai_state = "evade"
-		s.tele = 6
-		if s.T.smoke and R < 2500.0:
-			s.smoke_on = true
-		return fposmod(to_t + PI + s.side * deg_to_rad(35.0), TAU)
-	s.smoke_on = false
-	if worth and R < 2600.0:
-		# torpedo run: point the boat at the intercept point and fire at about 1,500 m
-		s.ai_state = "torpedo run"
-		s.tele = 6
-		var spd: float = s.torp_speed()
-		var f := U.fwd(tgt.h)
-		var tt := R / spd
-		for i in 3:
-			tt = U.hyp(tgt.x + f.x * tgt.v * tt - s.x, tgt.z + f.y * tgt.v * tt - s.z) / spd
-		var brg := s.bearing_to(tgt.x + f.x * tgt.v * tt, tgt.z + f.y * tgt.v * tt)
-		if R < 1700.0 and absf(U.ang_d(s.h, brg)) < deg_to_rad(10.0):
-			var n := launch_torps(s, tgt)
-			if n > 0:
-				s.evade_until = t + 25.0
-				if player.contact(tgt) or s.team == player.team:
-					say("%s: torpedoes away at %s!" % [s.ship_name, tgt.ship_name], "good" if s.team == player.team else "bad")
-		return brg
-	# PT boats fought barges at a few hundred yards; bigger ships from a little farther off
-	var stand := 600.0 if tgt.T.L < 40.0 else 1000.0
-	if R > stand + 300.0:
-		s.ai_state = "closing"
-		s.tele = 6
-		return to_t + s.side * deg_to_rad(10.0)
-	# strafing run: keep the target on the beam at close range, weaving
-	s.ai_state = "strafing"
-	s.tele = 5
-	var off := 70.0 if R > stand * 0.6 else 115.0
-	return to_t + s.side * deg_to_rad(off)
-
-
-## Barges and merchant ships: keep to their route; turn away from attackers and run.
-func _ai_transport(s: Ship, tgt: Ship) -> float:
-	if tgt and s.range_to(tgt) < 3000.0:
-		s.ai_state = "evading"
-		s.target = tgt
-		s.fire = true
-		s.tele = 6
-		var away := s.bearing_to(tgt.x, tgt.z) + PI
-		# turn away, but not so far that they abandon the run
-		var d := clampf(U.ang_d(s.route_h, away), deg_to_rad(-70.0), deg_to_rad(70.0))
-		return s.route_h + d
-	s.ai_state = "underway"
-	s.fire = tgt != null
-	s.target = tgt
-	s.tele = 2
-	return s.route_h
+	ai.step(s)
 
 
 func star_shell(x: float, z: float) -> void:
@@ -1600,8 +1511,11 @@ func screen_to_world(sp: Vector2):
 
 
 func _update_camera(delta: float) -> void:
-	var tx: float = player.x + camst.ox
-	var tz: float = player.z + camst.oz
+	var fs := focus_ship()
+	var tx: float = fs.x + camst.ox
+	var tz: float = fs.z + camst.oz
+	if camst.free:
+		tx = camst.ox; tz = camst.oz   # dragged: ox/oz hold an absolute point on the sea
 	var sv = camst.salvo
 	if sv != null:
 		var live := []
@@ -1651,8 +1565,18 @@ func zoom(factor: float) -> void:
 	camst.salvo = null
 
 
+## Dragging the view unlocks the camera from the ship it was tracking; Esc or a view button locks it again.
 func pan(dx_px: float, dz_px: float) -> void:
 	var k = 2.0 * tan(deg_to_rad(FOV) / 2.0) * camst.h / get_viewport().get_visible_rect().size.y
+	if not camst.free:
+		camst.free = true
+		camst.ox = camst.x; camst.oz = camst.z
 	camst.ox -= dx_px * k
 	camst.oz -= dz_px * k
 	camst.salvo = null
+
+
+## Esc: lock the camera back on the ship it was tracking.
+func recenter() -> void:
+	camst.free = false
+	camst.ox = 0.0; camst.oz = 0.0

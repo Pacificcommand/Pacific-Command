@@ -28,12 +28,14 @@ const ARCS := {"fwd": [0.0, 150.0], "aft": [180.0, 150.0], "port": [-90.0, 135.0
 
 ## Ship classes. Positions along the hull (x) are meters from amidships, + is forward.
 ## Modules: [label, kind, x position, hit points]
+## cls = fleet role (pt, dd, de, cl, ca, bb, cv, cve, ss, merchant, barge); doctrine = how the AI
+## fights the ship ("ijn_dd": Japanese destroyer tactics, torpedo first, avoid gun duels).
 const TYPES := {
 	"fletcher": {
 		"name": "Fletcher class", "nation": "us",
 		"models": {"m21": "res://assets/models/fletcher_m21.glb", "m22": "res://assets/models/fletcher_m22.glb"},
 		"L": 114.8, "B": 12.0, "max_kn": 36.0, "turn": 3.2, "crew": 329, "displacement": 2500.0,
-		"gun": "us5in38", "role": "warship", "size_vis": 1.0, "draft": 3.8,
+		"gun": "us5in38", "role": "warship", "cls": "dd", "size_vis": 1.0, "draft": 3.8,
 		"mounts": [
 			{"g": "Mount51", "x": 40.5, "stow": 0.0, "arc": "fwd"},
 			{"g": "Mount52", "x": 31.0, "stow": 0.0, "arc": "fwd"},
@@ -52,8 +54,8 @@ const TYPES := {
 	"kagero": {
 		"name": "Kagero class", "nation": "ijn",
 		"models": {"m21": "res://assets/models/kagero.glb", "m22": "res://assets/models/kagero.glb"},
-		"L": 118.5, "B": 10.8, "max_kn": 35.0, "turn": 3.0, "crew": 239, "displacement": 2500.0,
-		"gun": "jp127", "role": "warship", "size_vis": 1.0, "draft": 3.8,
+		"L": 118.5, "B": 10.8, "max_kn": 35.5, "turn": 3.6, "crew": 239, "displacement": 2500.0,
+		"gun": "jp127", "role": "warship", "cls": "dd", "doctrine": "ijn_dd", "size_vis": 1.0, "draft": 3.8,
 		"mounts": [
 			{"g": "Mount1", "x": 39.0, "stow": 0.0, "arc": "fwd"},
 			{"g": "Mount2", "x": -30.0, "stow": PI, "arc": "aft"},
@@ -61,7 +63,7 @@ const TYPES := {
 		],
 		"torps": [{"g": "Torpedo1", "x": 1.0, "n": 4}, {"g": "Torpedo2", "x": -17.5, "n": 4}],
 		"torp": {"name": "Type 93", "speed_kn": 48.0, "range": 8000.0, "dud": 0.03, "flood": 330.0},
-		"aa": ["AA1", "AA2"], "radar": 0.0, "smoke": false, "night_eye": 1.5,
+		"aa": ["AA1", "AA2"], "radar": 0.0, "smoke": true, "night_eye": 1.5,
 		"funnels": [9.8, -7.1], "funnel_top": 18.0,
 		"modules": [["Bridge", "bridge", 26.0, 4.0], ["Director", "director", 26.0, 2.0], ["Forward boilers", "engine", 8.0, 4.0], ["Aft engines", "engine", -8.0, 4.0],
 			["Steering", "steering", -55.0, 3.0], ["Forward magazine", "magazine", 36.0, 4.0], ["Aft magazine", "magazine", -35.0, 4.0]],
@@ -70,7 +72,7 @@ const TYPES := {
 		"name": "Elco 80-ft PT boat", "nation": "us",
 		"models": {"m21": "res://assets/models/pt_elco.glb", "m22": "res://assets/models/pt_elco.glb"},
 		"L": 24.4, "B": 6.3, "max_kn": 40.0, "turn": 11.0, "crew": 11, "displacement": 56.0,
-		"gun": "bofors40", "role": "pt", "size_vis": 0.5, "draft": 1.6,
+		"gun": "bofors40", "role": "pt", "cls": "pt", "size_vis": 0.5, "draft": 1.6,
 		"mounts": [
 			{"g": "Gun37", "x": 8.6, "stow": 0.0, "arc": "fwd", "gun": "m4_37"},
 			{"g": "Oerlikon", "x": 6.3, "stow": 0.0, "arc": "fwd", "gun": "oerlikon20"},
@@ -90,7 +92,7 @@ const TYPES := {
 		"name": "Daihatsu landing barge", "nation": "ijn",
 		"models": {"m21": "res://assets/models/daihatsu.glb", "m22": "res://assets/models/daihatsu.glb"},
 		"L": 14.9, "B": 3.35, "max_kn": 8.0, "turn": 7.0, "crew": 14, "displacement": 20.0,
-		"gun": "jp77", "role": "barge", "gunnery": 0.5, "size_vis": 0.45, "draft": 0.8,
+		"gun": "jp77", "role": "barge", "cls": "barge", "gunnery": 0.5, "size_vis": 0.45, "draft": 0.8,
 		"mounts": [{"g": "MG1", "x": -6.6, "stow": PI, "arc": "all", "gun": "jp77"}, {"g": "MG2", "x": 4.8, "stow": 0.0, "arc": "all", "gun": "jp77"}],
 		"torps": [], "torp": {}, "aa": [], "radar": 0.0, "smoke": false, "night_eye": 1.3, "funnels": [], "funnel_top": 2.0,
 		"modules": [["Engine", "engine", -4.6, 1.5], ["Steering", "steering", -6.6, 1.0], ["Cargo", "cargo", 0.5, 2.0]],
@@ -99,7 +101,7 @@ const TYPES := {
 		"name": "Armed Daihatsu (gun barge)", "nation": "ijn",
 		"models": {"m21": "res://assets/models/daihatsu.glb", "m22": "res://assets/models/daihatsu.glb"},
 		"L": 14.9, "B": 3.35, "max_kn": 8.0, "turn": 7.0, "crew": 16, "displacement": 22.0,
-		"gun": "jp25", "role": "barge", "gunnery": 0.6, "size_vis": 0.45, "draft": 0.8,
+		"gun": "jp25", "role": "barge", "cls": "barge", "gunnery": 0.6, "size_vis": 0.45, "draft": 0.8,
 		"mounts": [{"g": "MG1", "x": -6.6, "stow": PI, "arc": "all", "gun": "jp13"}, {"g": "MG2", "x": 4.8, "stow": 0.0, "arc": "all", "gun": "jp25"}],
 		"torps": [], "torp": {}, "aa": [], "radar": 0.0, "smoke": false, "night_eye": 1.3, "funnels": [], "funnel_top": 2.0,
 		"modules": [["Engine", "engine", -4.6, 1.5], ["Steering", "steering", -6.6, 1.0], ["Ammunition", "magazine", 1.0, 1.5]],
@@ -108,7 +110,7 @@ const TYPES := {
 		"name": "Cargo ship (maru)", "nation": "ijn",
 		"models": {"m21": "res://assets/models/cargo_maru.glb", "m22": "res://assets/models/cargo_maru.glb"},
 		"L": 110.0, "B": 15.2, "max_kn": 12.0, "turn": 1.4, "crew": 60, "displacement": 8000.0,
-		"gun": "jp8cm", "role": "merchant", "gunnery": 0.6, "size_vis": 1.3, "draft": 6.5,
+		"gun": "jp8cm", "role": "merchant", "cls": "merchant", "gunnery": 0.6, "size_vis": 1.3, "draft": 6.5,
 		"mounts": [{"g": "Gun1", "x": -51.5, "stow": PI, "arc": "aft", "gun": "jp8cm"}, {"g": "AA1", "x": 9.5, "stow": 0.0, "arc": "all", "gun": "jp13"}],
 		"torps": [], "torp": {}, "aa": [], "radar": 0.0, "smoke": false, "night_eye": 1.0, "funnels": [-3.5], "funnel_top": 19.0,
 		"modules": [["Bridge", "bridge", 9.5, 4.0], ["Engine room", "engine", -6.0, 5.0], ["Steering", "steering", -53.0, 3.0],
@@ -118,7 +120,7 @@ const TYPES := {
 		"name": "Oil tanker (maru)", "nation": "ijn",
 		"models": {"m21": "res://assets/models/tanker_maru.glb", "m22": "res://assets/models/tanker_maru.glb"},
 		"L": 125.0, "B": 16.4, "max_kn": 11.0, "turn": 1.2, "crew": 50, "displacement": 10000.0,
-		"gun": "jp8cm", "role": "merchant", "gunnery": 0.6, "size_vis": 1.3, "draft": 7.5,
+		"gun": "jp8cm", "role": "merchant", "cls": "merchant", "gunnery": 0.6, "size_vis": 1.3, "draft": 7.5,
 		"mounts": [{"g": "Gun1", "x": -59.0, "stow": PI, "arc": "aft", "gun": "jp8cm"}, {"g": "AA1", "x": 5.5, "stow": 0.0, "arc": "all", "gun": "jp13"}],
 		"torps": [], "torp": {}, "aa": [], "radar": 0.0, "smoke": false, "night_eye": 1.0, "funnels": [-53.5], "funnel_top": 20.0,
 		"modules": [["Bridge", "bridge", 5.0, 4.0], ["Engine room", "engine", -52.0, 5.0], ["Steering", "steering", -60.0, 3.0],

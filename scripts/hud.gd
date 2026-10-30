@@ -279,9 +279,13 @@ func _build_plates() -> void:
 	br.add_child(fv)
 	brv.add_child(br)
 	var vp := _panel()
-	vp.add_child(_row([_caps("View"), _seg("view", [["close", "Close"], ["ship", "Ship"], ["wide", "Wide"], ["tac", "Tactical"]], _on_view)]))
+	var vpv := VBoxContainer.new()
+	vpv.add_theme_constant_override("separation", 4)
+	vpv.add_child(_row([_caps("View"), _seg("view", [["close", "Close"], ["ship", "Ship"], ["wide", "Wide"], ["tac", "Tactical"]], _on_view)]))
+	vpv.add_child(_row([_caps("Camera on"), _seg("cam", [["player", "Own ship"], ["target", "Enemy target (C)"]], _on_focus)]))
+	vp.add_child(vpv)
 	brv.add_child(vp)
-	var keys := _label("W/S engines · A/D rudder · Q center · M crew/manual aim\nF fire · T torpedo aim · Z smoke · Tab next target · V follow salvos\nSpace pause · 1/2/3 slow/normal/fast · wheel zoom · drag to look\nLeft-click: target (crew aim) or fire (manual) · right-click: target", 11, C_MUTED)
+	var keys := _label("W/S engines · A/D rudder · Q center · M crew/manual aim\nF fire · T torpedo aim · Z smoke · Tab next target · V follow salvos\nC camera on target · Space pause · 1/2/3 slow/normal/fast\nWheel zoom · drag to look around (Esc locks the camera back on)\nLeft-click: target (crew aim) or fire (manual) · right-click: target", 11, C_MUTED)
 	var kp := _panel()
 	kp.add_child(keys)
 	brv.add_child(kp)
@@ -430,6 +434,7 @@ func on_new_game() -> void:
 	_set_seg("weather", B.weather)
 	_set_seg("mission", B.scenario)
 	_set_seg("view", "close" if B.player.T.L < 40.0 else "ship")
+	_set_seg("cam", "player")
 	_set_seg("mag", B.magazine)
 	_set_seg("scheme", B.scheme)
 	btn.follow.set_pressed_no_signal(B.follow)
@@ -456,6 +461,10 @@ func on_speed(v: float) -> void:
 func on_aim() -> void:
 	_set_seg("aim", B.aim_mode)
 	_set_seg("aim_b", B.aim_mode)
+
+
+func on_focus() -> void:
+	_set_seg("cam", B.camst.focus)
 
 
 # =====================================================================
@@ -898,11 +907,12 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_1: B.set_speed(0.25)
 			KEY_2: B.set_speed(1.0)
 			KEY_3: B.set_speed(3.0)
+			KEY_C: B.set_focus("player" if B.camst.focus == "target" else "target")
 			KEY_ESCAPE:
 				if B.torp_aim:
 					B.torp_aim = false
 				else:
-					B.camst.ox = 0.0; B.camst.oz = 0.0
+					B.recenter()
 	elif e is InputEventMouseButton:
 		if e.button_index == MOUSE_BUTTON_WHEEL_UP and e.pressed:
 			B.zoom(1.0 / 1.15)
@@ -957,6 +967,9 @@ func _on_sound() -> void:
 func _on_view(v) -> void:
 	B.set_view(v)
 	_set_seg("view", v)
+
+func _on_focus(v) -> void:
+	B.set_focus(v)
 
 func _on_mission(m) -> void:
 	B.set_scenario(m)

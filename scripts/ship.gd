@@ -70,6 +70,18 @@ var bat_busy := {}
 var weave_t := 10.0
 var evade_until := -1.0
 
+# fleet and tactics (see ai.gd)
+var group := ""              # fleet this ship sails with ("" = on her own)
+var leader_flag := false     # named leader of the group in the mission setup
+var fstation := Vector2.ZERO # station on the leader (lx, lz)
+var detached := false        # left the formation (damaged)
+var escort_group := ""       # set when this ship screens a convoy
+var tactic := ""             # current solo tactic
+var tactic_until := 0.0
+var zig := 0.0
+var zig_t := 0.0
+var ai_note := ""
+
 # visuals
 var model: Node3D
 var parts := {}              # group name -> Node3D
@@ -253,6 +265,14 @@ func torp_mounts_for(brg: float) -> Array:
 
 func role() -> String:
 	return T.get("role", "warship")
+
+## Ship class for fleet roles: pt, dd, de, cl, ca, bb, cv, cve, ss, merchant, barge.
+func cls() -> String:
+	return T.get("cls", "dd")
+
+## How the AI fights this ship: "usn" or "ijn_dd" (Japanese destroyer doctrine).
+func doctrine() -> String:
+	return T.get("doctrine", "usn")
 
 func contact(o: Ship) -> bool:
 	return vis.get(o.ship_name, false) or radar.get(o.ship_name, false)
