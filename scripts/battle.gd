@@ -289,6 +289,7 @@ func new_game() -> void:
 	_torp_warn_t = -99.0
 	_under_msg = false
 	stats = {"salvos": 0, "shells": 0, "hits": 0, "torps": 0, "torp_hits": 0, "sunk": [], "escaped": [], "start_crew": 0, "rescued": 0}
+	log_lines.clear()
 	tally = {"salvos": 0, "hits": 0, "torps": 0, "torp_hits": 0, "kills": 0, "combat_min": 0.0, "underway_min": 0.0, "fires_out": 0, "holes_fixed": 0, "contacts": 0,
 		"damage_done": 0.0, "sorties": 0, "air_hits": 0, "air_kills": 0, "big_kill": false, "took_command": 0}
 	pause_uses = 0
@@ -787,9 +788,12 @@ func after(d: float, fn: Callable) -> void:
 	events.append([t + d, fn])
 
 
+var log_lines: Array = []       # [clock, text] for the after-action report
+
 func say(txt: String, kind := "") -> void:
 	if _test.has("trace"):
 		print("  [%d] %s" % [int(t), txt])
+	log_lines.append(["%02d:%02d" % [int(t) / 60, int(t) % 60], txt])
 	if hud:
 		hud.log_msg(txt, kind)
 
@@ -1032,7 +1036,18 @@ func _settle() -> void:
 		tally.saved = 1 if player.alive and player.flood > player.flood_cap() * 0.5 else 0
 		tally.summary = "%s: %s. %s" % [brief.get("title", "Battle"), {"won": "mission accomplished", "escaped": "the enemy got through", "lost_convoy": "mission failed"}.get(over, "ship lost"),
 			("Sunk %s." % ", ".join(stats.sunk)) if not stats.sunk.is_empty() else ""]
-		stats.career_lines = Career.apply_battle(Game.career, tally, over, level, int(Game.mission.get("day", 0)))
+		var day := int(Game.mission.get("day", 0))
+		stats.career_lines = Career.apply_battle(Game.career, tally, over, level, day)
+		var aar := Story.after_action(brief, stats, log_lines, day, player.ship_name, over if player.alive else "lost", stats.start_crew, player.crew, t)
+		stats.aar = aar
+		Game.career.log[Game.career.log.size() - 1].aar = aar
+		var letter := Story.letter(Game.career, over if player.alive else "lost", stats.career_lines, day, player.ship_name, stats.sunk, stats.start_crew - player.crew)
+		if not letter.is_empty():
+			Game.career.mail = Game.career.get("mail", [])
+			Game.career.mail.append(letter)
+			if Game.career.mail.size() > 40:
+				Game.career.mail.pop_front()
+			Game.last_result_letter = letter
 		_store_career_ship()
 	Game.save_career()
 

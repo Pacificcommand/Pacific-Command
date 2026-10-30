@@ -30,6 +30,8 @@ var pausep: Control = null
 var air_plate: PanelContainer
 var sub_row: HBoxContainer
 var support_row: HBoxContainer
+var mission_row: HBoxContainer
+var cond_row: HBoxContainer
 var asw_row: HBoxContainer
 var ship_row: HBoxContainer
 var _pause_prev := 1.0
@@ -387,7 +389,8 @@ func _build_brief() -> void:
 	lbl.brief_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.brief_text.custom_minimum_size.x = 520
 	v.add_child(lbl.brief_text)
-	v.add_child(_row([_caps("Mission"), _seg("mission", [["dd", "Destroyers"], ["barges", "PT barge hunt"], ["convoy", "PT convoy"], ["cruisers", "Cruiser night action"], ["bbs", "Battleship action"], ["fleet", "Fleet action"], ["carriers", "Carrier strike"], ["subpatrol", "Submarine patrol"], ["subhunt", "Submarine hunt"], ["escort", "Convoy escort"], ["bombard", "Shore bombardment"], ["rescue", "Rescue"]], _on_mission)]))
+	mission_row = _row([_caps("Mission"), _seg("mission", [["dd", "Destroyers"], ["barges", "PT barge hunt"], ["convoy", "PT convoy"], ["cruisers", "Cruiser night action"], ["bbs", "Battleship action"], ["fleet", "Fleet action"], ["carriers", "Carrier strike"], ["subpatrol", "Submarine patrol"], ["subhunt", "Submarine hunt"], ["escort", "Convoy escort"], ["bombard", "Shore bombardment"], ["rescue", "Rescue"]], _on_mission)])
+	v.add_child(mission_row)
 	ship_row = HBoxContainer.new()
 	ship_row.add_theme_constant_override("separation", 2)
 	v.add_child(_row([_caps("Your ship"), ship_row]))
@@ -398,7 +401,8 @@ func _build_brief() -> void:
 	sup_box.add_child(lbl.rep)
 	sup_box.add_child(support_row)
 	v.add_child(_row([_caps("Support"), sup_box]))
-	v.add_child(_row([_caps("Conditions"), _seg("weather", [["clear", "Clear day"], ["overcast", "Overcast"], ["fog", "Fog"], ["night", "Night"]], _on_weather)]))
+	cond_row = _row([_caps("Conditions"), _seg("weather", [["clear", "Clear day"], ["overcast", "Overcast"], ["fog", "Fog"], ["night", "Night"]], _on_weather)])
+	v.add_child(cond_row)
 	v.add_child(_row([_caps("Aim"), _seg("aim_b", [["auto", "Crew (auto)"], ["manual", "Manual (mouse)"]], _on_aim_brief)]))
 	v.add_child(_row([_caps("Magazines"), _seg("mag", [["historical", "Historical"], ["reduced", "Reduced"], ["off", "Off"]], _on_mag)]))
 	v.add_child(_row([_caps("Paint"), _seg("scheme", [["m21", "Measure 21"], ["m22", "Measure 22"]], _on_scheme)]))
@@ -444,7 +448,13 @@ func _update_brief() -> void:
 	if B.weather == "fog":
 		threat += "; fog will hide both sides"
 	lbl.threat.text = "Threat assessment: %s" % threat
-	lbl.brief_text.text = "%s Conditions: %s." % [bf.get("text", ""), W.name.to_lower()]
+	if not Game.mission.is_empty():
+		var zone_name := ""
+		if War.ZONES.has(Game.mission.get("zone", "")):
+			zone_name = War.ZONES[Game.mission.zone].name
+		lbl.brief_text.text = Story.dispatch(bf, int(Game.mission.get("day", 0)), B.player.ship_name, Missions.RANKS[clampi(Game.career.rank, 0, 8)], zone_name) + "\nConditions: %s." % W.name.to_lower()
+	else:
+		lbl.brief_text.text = "%s Conditions: %s." % [bf.get("text", ""), W.name.to_lower()]
 
 
 func _build_end() -> void:
@@ -461,7 +471,8 @@ func _build_end() -> void:
 	v.add_child(lbl.end_p)
 	btn.fight_again = _button("Fight again", func(): B.new_game())
 	btn.to_map = _button("Return to the map", func(): get_tree().change_scene_to_file("res://scenes/ops.tscn"))
-	v.add_child(_row([btn.fight_again, btn.to_map, _button("Keep watching", func(): endp.visible = false)]))
+	btn.aar = _button("After-action report", _show_aar)
+	v.add_child(_row([btn.fight_again, btn.to_map, btn.aar, _button("Keep watching", func(): endp.visible = false)]))
 	endp.add_child(v)
 	_place(endp, "c")
 	endp.visible = false
@@ -502,11 +513,31 @@ func show_end() -> void:
 		txt += "\n\nObjective destroyed and your boat is still afloat. Well done, Captain."
 	lbl.end_p.text = txt
 	btn.to_map.visible = not Game.mission.is_empty()
+	btn.aar.visible = st.has("aar")
 	var diff: Dictionary = Career.DIFFICULTY.get(Game.career.get("difficulty", "officer"), Career.DIFFICULTY.officer)
 	btn.fight_again.visible = Game.mission.is_empty() or (diff.retry and B.over != "won")
 	if not Game.mission.is_empty() and diff.retry and B.over != "won":
 		btn.fight_again.text = "Retry (Ensign difficulty)"
 	endp.visible = true
+
+
+func _show_aar() -> void:
+	var panel := Control.new()
+	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	panel.add_child(UI.backdrop(0.6))
+	var p := UI.panel(20)
+	var v := UI.column(8)
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(760, 560)
+	var l := UI.label(B.stats.get("aar", ""), 13)
+	l.add_theme_font_override("font", ThemeDB.fallback_font)
+	sc.add_child(l)
+	v.add_child(sc)
+	v.add_child(UI.row([UI.button("Close", func(): panel.queue_free())]))
+	p.add_child(v)
+	panel.add_child(p)
+	UI.center(p)
+	root.add_child(panel)
 
 
 func _shells_fired() -> float:
@@ -529,6 +560,8 @@ func on_new_game() -> void:
 		c.queue_free()
 	_set_seg("weather", B.weather)
 	_set_seg("mission", B.scenario)
+	mission_row.visible = Game.mission.is_empty()
+	cond_row.visible = Game.mission.is_empty()
 	for c in ship_row.get_children():
 		c.queue_free()
 	var choices: Array = B.brief.get("ships", [])

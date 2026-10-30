@@ -1,4 +1,4 @@
-# Pacific Command (build 0.9)
+# Pacific Command (build 0.10)
 
 WWII Pacific naval game for PC, made in **Godot 4.7.2**.
 
@@ -78,6 +78,10 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 All keys can be changed in Settings › Controls.
 
 ## What's in this build
+- Story layer: campaign briefings arrive as naval dispatches; newsreel cards for the
+  war's big days (Doolittle Raid, Midway, Yamamoto, Iwo Jima, the surrender...);
+  letters home and diary entries from your officers after battles (Mail on the map);
+  after-action reports written like the originals, kept with the ship's log.
 - Career: seven named officers who earn XP from their own jobs and level up (each
   level adds 3% in their department), can be wounded or killed; crew training (green
   to elite) and morale per ship, crews stay with their ship, former ships are frozen

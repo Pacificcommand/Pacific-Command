@@ -7,7 +7,7 @@ signal graphics_changed
 const CFG := "user://settings.cfg"
 const SAVE_DIR := "user://saves"
 const SLOTS := 5
-const VERSION := "0.9"
+const VERSION := "0.10"
 
 ## Graphics and sound settings with their defaults.
 var settings := {
@@ -51,6 +51,7 @@ var campaign := {}
 ## Empty for sandbox battles. last_result carries the outcome back to the map.
 var mission := {}
 var last_result := {}
+var last_result_letter := {}
 
 var pending_load := -1         # save slot the battle scene should load when it opens
 var start_scenario := "dd"     # mission the battle scene should set up

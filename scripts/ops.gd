@@ -39,6 +39,10 @@ func _ready() -> void:
 	cam_lon = C.lon; cam_lat = C.lat
 	_build_ui()
 	_apply_result()
+	if not Game.last_result_letter.is_empty():
+		var lt: Dictionary = Game.last_result_letter
+		Game.last_result_letter = {}
+		_show_card(("LETTER HOME · " if lt.kind == "letter" else "DIARY · ") + War.date_str(int(lt.day)), lt.title, lt.text, "Continue")
 	speed_i = 0
 	_refresh_top()
 	_log("Operations map. Click the sea to set a course; sail to a contact and engage it.")
@@ -178,7 +182,7 @@ func _refresh_side() -> void:
 	for c in side.get_children():
 		c.queue_free()
 	side.add_child(UI.label("OPERATIONS", 11, UI.BRASS))
-	side.add_child(UI.row([UI.button("Career", func(): add_child(CareerPanel.new())), UI.label("%d skill point%s to spend" % [Career.skill_points_left(Game.career), "" if Career.skill_points_left(Game.career) == 1 else "s"], 12, UI.BRASS if Career.skill_points_left(Game.career) > 0 else UI.MUTED)]))
+	side.add_child(UI.row([UI.button("Career", func(): add_child(CareerPanel.new())), UI.button("Mail (%d)" % Game.career.get("mail", []).size(), _show_mail), UI.label("%d skill point%s to spend" % [Career.skill_points_left(Game.career), "" if Career.skill_points_left(Game.career) == 1 else "s"], 12, UI.BRASS if Career.skill_points_left(Game.career) > 0 else UI.MUTED)]))
 	var port := _port_here()
 	if port != "":
 		side.add_child(UI.label("In port: %s" % port, 16))
@@ -215,6 +219,15 @@ func _refresh_side() -> void:
 		side.add_child(b)
 	if C.contacts.is_empty():
 		side.add_child(UI.label("No contacts reported yet.", 12, UI.MUTED))
+
+
+func _show_mail() -> void:
+	var mail: Array = Game.career.get("mail", [])
+	if mail.is_empty():
+		_log("No letters yet. They arrive after battles.")
+		return
+	var lt: Dictionary = mail[mail.size() - 1]
+	_show_card(("LETTER HOME · " if lt.kind == "letter" else "DIARY · ") + War.date_str(int(lt.day)), lt.title, lt.text, "Close")
 
 
 ## Days in the yard to make good the ship's damage and bring the crew up to strength.
@@ -488,6 +501,17 @@ func _contact(id: String):
 
 ## Historical operations arrive on their day (nudged by the player's shift) and are offered once.
 func _check_operations() -> void:
+	# newsreel cards for the war's big days
+	C.done_events = C.get("done_events", [])
+	for ev in Story.EVENTS:
+		if C.done_events.has(ev.title):
+			continue
+		if C.day >= ev.day:
+			C.done_events.append(ev.title)
+			if C.day - ev.day < 20.0:
+				_show_card("NEWSREEL · %s" % War.date_str(ev.day), ev.title, ev.text, "Continue")
+				_log("News: %s." % ev.title)
+				return
 	for op in War.OPERATIONS:
 		if C.done_ops.has(op.name):
 			continue
@@ -495,6 +519,25 @@ func _check_operations() -> void:
 			C.done_ops.append(op.name)
 			_offer_operation(op)
 			return
+
+
+func _show_card(kicker: String, title: String, text: String, button: String) -> void:
+	speed_i = 0
+	_refresh_top()
+	card = Control.new()
+	card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	card.add_child(UI.backdrop(0.45))
+	var p := UI.panel(22)
+	p.custom_minimum_size.x = 560
+	var v := UI.column(8)
+	v.add_child(UI.label(kicker, 11, UI.BRASS))
+	v.add_child(UI.label(title, 26))
+	v.add_child(UI.wrap(text, 520))
+	v.add_child(UI.big_button(button, _close_card))
+	p.add_child(v)
+	card.add_child(p)
+	UI.center(p)
+	add_child(card)
 
 
 func _offer_operation(op: Dictionary) -> void:

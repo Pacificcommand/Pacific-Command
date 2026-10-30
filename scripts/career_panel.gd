@@ -141,8 +141,29 @@ func _medals_tab() -> Control:
 	var log: Array = c.get("log", [])
 	for i in range(log.size() - 1, maxi(-1, log.size() - 25), -1):
 		var e: Dictionary = log[i]
-		v.add_child(UI.wrap("%s  %s" % [War.date_str(int(e.day)), e.text], 740, 12))
+		var row := UI.row([], 8)
+		row.add_child(UI.wrap("%s  %s" % [War.date_str(int(e.day)), e.text], 600, 12))
+		if e.has("aar"):
+			row.add_child(UI.button("Report", (func(txt): _show_text(txt)).bind(e.aar)))
+		v.add_child(row)
 	return v
+
+
+func _show_text(txt: String) -> void:
+	var panel := Control.new()
+	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	panel.add_child(UI.backdrop(0.6))
+	var p := UI.panel(20)
+	var v := UI.column(8)
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(760, 560)
+	sc.add_child(UI.label(txt, 13))
+	v.add_child(sc)
+	v.add_child(UI.row([UI.button("Close", func(): panel.queue_free())]))
+	p.add_child(v)
+	panel.add_child(p)
+	UI.center(p)
+	add_child(panel)
 
 
 func _rebuild() -> void:
