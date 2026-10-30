@@ -35,6 +35,12 @@ func _ready() -> void:
 		if a.begins_with("--menushot="):
 			if "--settings" in OS.get_cmdline_user_args():
 				_on_settings()
+			if "--encyclopedia" in OS.get_cmdline_user_args():
+				var ep := EncyclopediaPanel.new()
+				ui.add_child(ep)
+				for c in OS.get_cmdline_user_args():
+					if c.begins_with("--cat="):
+						ep.call_deferred("_pick_cat", int(c.split("=")[1]))
 			_shot.call_deferred(a.split("=")[1])
 
 
@@ -119,6 +125,7 @@ func _build_ui() -> void:
 	var lb := UI.big_button("Load battle", _on_load)
 	lb.disabled = not any_save
 	buttons.add_child(lb)
+	buttons.add_child(UI.big_button("Encyclopedia", func(): ui.add_child(EncyclopediaPanel.new())))
 	buttons.add_child(UI.big_button("Settings", _on_settings))
 	buttons.add_child(UI.big_button("Quit", func(): get_tree().quit()))
 	v.add_child(buttons)

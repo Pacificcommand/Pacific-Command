@@ -1189,6 +1189,7 @@ func open_pause() -> void:
 	v.add_child(UI.big_button("Settings", func(): pausep.add_child(SettingsPanel.new())))
 	if not Game.mission.is_empty():
 		v.add_child(UI.big_button("Career", func(): pausep.add_child(CareerPanel.new())))
+	v.add_child(UI.big_button("Encyclopedia", func(): pausep.add_child(EncyclopediaPanel.new())))
 	v.add_child(UI.big_button("New battle (briefing)", func(): close_pause(); B.new_game()))
 	if not Game.mission.is_empty():
 		v.add_child(UI.big_button("Abandon battle (back to the map)", func(): Game.last_result = {"over": "abandoned", "mission": Game.mission.duplicate(true)}; get_tree().change_scene_to_file("res://scenes/ops.tscn")))

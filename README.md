@@ -1,4 +1,4 @@
-# Pacific Command (build 0.11)
+# Pacific Command (build 0.12)
 
 WWII Pacific naval game for PC, made in **Godot 4.7.2**.
 
@@ -164,6 +164,12 @@ All keys can be changed in Settings › Controls.
 | `scripts/sfx.gd` | The battle's sound hooks (positions, weather, planes, fires, sonar) |
 | `shaders/` | Sea and particle shaders |
 | `assets/models/` | Ship models (.glb) |
+
+## Encyclopedia
+From the main menu, the pause menu or the operations map: the real history of every ship
+class in the game (with a turning 3D model and the game's figures), the aircraft, the
+weapons and gear (guns, the Long Lance, radar, sonar, the torpedo scandal) and 25 battles
+of the Pacific war from Pearl Harbor to Tokyo Bay.
 
 ## Windows build and Steam
 `Project > Export > Windows Desktop` (or `tools\export_windows.bat`) makes a single

@@ -187,7 +187,7 @@ func _refresh_side() -> void:
 	for c in side.get_children():
 		c.queue_free()
 	side.add_child(UI.label("OPERATIONS", 11, UI.BRASS))
-	side.add_child(UI.row([UI.button("Career", func(): add_child(CareerPanel.new())), UI.button("Mail (%d)" % Game.career.get("mail", []).size(), _show_mail), UI.label("%d skill point%s to spend" % [Career.skill_points_left(Game.career), "" if Career.skill_points_left(Game.career) == 1 else "s"], 12, UI.BRASS if Career.skill_points_left(Game.career) > 0 else UI.MUTED)]))
+	side.add_child(UI.row([UI.button("Career", func(): add_child(CareerPanel.new())), UI.button("Encyclopedia", func(): add_child(EncyclopediaPanel.new())), UI.button("Mail (%d)" % Game.career.get("mail", []).size(), _show_mail), UI.label("%d skill point%s to spend" % [Career.skill_points_left(Game.career), "" if Career.skill_points_left(Game.career) == 1 else "s"], 12, UI.BRASS if Career.skill_points_left(Game.career) > 0 else UI.MUTED)]))
 	var port := _port_here()
 	if port != "":
 		side.add_child(UI.label("In port: %s" % port, 16))

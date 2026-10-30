@@ -24,6 +24,7 @@ experience; explain in plain words, he tests by playing). Top-down 3D view of li
 | `scenes/ops.tscn` + `scripts/ops.gd` | Operations map: campaign state (`Game.campaign`), sailing, contacts, operations cards, engage -> battle (`Game.mission`), results back (`Game.last_result`) |
 | `scripts/war.gd` | War data: zones (jp/us dates), bases, OPERATIONS timeline, owner/activity by day, date helpers (day 0 = 7 Dec 1941) |
 | `scripts/career.gd` + `career_panel.gd` | Career rules: officers, crew training, captain XP/rank/skills, refits, medals, difficulty; `Career.mod(key)` gives the battle its modifiers; the career screen |
+| `scripts/encyclopedia.gd` + `encyclopedia_panel.gd` | In-game encyclopedia: real history of every ship class (SHIPS by type_id), BATTLES, AIRCRAFT, WEAPONS; the panel (menu, pause, map) shows the article with a turning 3D model and the game's figures from Data.TYPES. Test: `--menushot=x.png --encyclopedia --cat=0..4` |
 | `scripts/story.gd` | Story layer: dispatch briefings, EVENTS newsreel cards, letters/diaries, after-action reports |
 | `scripts/missions.gd` | Mission plans (convoy escort, shore bombardment, rescue), threat rating, reputation rewards, rank caps, support-ship catalogue; `build()` turns a plan into a battle (the operations map uses it) |
 | `scripts/terrain.gd` | Islands: `height_at(x, z)` for grounding, shore targets and shells on the beach |
