@@ -7,7 +7,7 @@ signal graphics_changed
 const CFG := "user://settings.cfg"
 const SAVE_DIR := "user://saves"
 const SLOTS := 5
-const VERSION := "0.5"
+const VERSION := "0.6"
 
 ## Graphics and sound settings with their defaults.
 var settings := {
@@ -29,6 +29,9 @@ const ACTIONS := [
 	["smoke", "Lay smoke", KEY_Z], ["next_target", "Next target", KEY_TAB],
 	["follow", "Follow salvos", KEY_V], ["camera", "Camera: own ship / target", KEY_C], ["recenter", "Lock camera back on", KEY_HOME],
 	["pause", "Tactical pause", KEY_SPACE], ["slow", "Slow ¼×", KEY_1], ["normal", "Normal speed", KEY_2], ["fast", "Fast 3×", KEY_3],
+	["strike", "Launch air strike", KEY_L],
+	["dive", "Submarine: dive (periscope depth, then deep)", KEY_X], ["surface", "Submarine: come up", KEY_E],
+	["charges", "Drop depth charges", KEY_G], ["hedgehog", "Fire hedgehog", KEY_H],
 	["menu", "Pause menu", KEY_ESCAPE],
 ]
 var keys := {}                 # action -> keycode

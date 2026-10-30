@@ -82,6 +82,16 @@ var zig := 0.0
 var zig_t := 0.0
 var ai_note := ""
 
+# submarines and anti-submarine war
+var depth := 0               # 0 surfaced, 1 periscope depth, 2 deep
+var depth_m := 0.0           # metres below the surface now (visual and for depth charges)
+var battery := 1.0           # submerged power left, 0..1
+var sonar_contacts := {}     # ship name -> {x, z, t, depth} last sonar fix (shared by the team)
+var dc_left := 0             # depth charges left
+var dc_cd := 0.0             # seconds until the next pattern can be dropped
+var hh_cd := 0.0             # hedgehog reload
+var asw_state := ""          # for the HUD / trace
+
 # visuals
 var model: Node3D
 var parts := {}              # group name -> Node3D
@@ -111,6 +121,7 @@ func setup(p_type: String, p_team: String, p_name: String, px: float, pz: float,
 		aa_ang.append(0.0)
 	for md in T.modules:
 		modules.append({"label": md[0], "kind": md[1], "x": md[2], "hp": md[3], "max": md[3], "ref": null})
+	dc_left = int(T.get("depth_charges", 0))
 	for m in mounts:
 		modules.append({"label": m.g, "kind": "mount", "x": m.x, "hp": m.hp, "max": m.hp, "ref": m})
 	for t in torps:
@@ -161,7 +172,22 @@ func mod_health(kind: String) -> float:
 func max_kn() -> float:
 	var eng := mod_health("engine")
 	var fl := clampf(flood / (T.displacement * 0.36), 0.0, 1.0)
-	return T.max_kn * (0.15 + 0.85 * eng) * (1.0 - 0.65 * fl)
+	var top: float = T.max_kn
+	if is_sub() and depth > 0:
+		top = T.get("dive_kn", 8.0) * (0.3 + 0.7 * clampf(battery * 4.0, 0.0, 1.0))
+	return top * (0.15 + 0.85 * eng) * (1.0 - 0.65 * fl)
+
+func is_sub() -> bool:
+	return T.get("sub", false)
+
+func submerged() -> bool:
+	return is_sub() and depth > 0
+
+## Sonar range of this ship's set (0 = none). Destroyers and escorts carry one.
+func sonar_range() -> float:
+	if T.has("sonar"):
+		return T.sonar
+	return 1800.0 if cls() in ["dd", "de"] else 0.0
 
 func flood_cap() -> float:
 	return T.displacement * 0.36
@@ -268,6 +294,20 @@ func torp_mounts_for(brg: float) -> Array:
 func role() -> String:
 	return T.get("role", "warship")
 
+## Anti-aircraft strength: light automatic guns count most, dual-purpose guns a little.
+func aa_power() -> float:
+	var pwr := 0.0
+	for m in mounts:
+		if m.hp <= 0.0:
+			continue
+		var g: Dictionary = m.gun
+		if g.dmg < 0.5:
+			pwr += g.per_mount * g.dmg / g.reload * 4.0
+		elif g.cal.begins_with("5-inch") or g.cal.begins_with("12.7") or g.cal.begins_with("10 cm") or g.cal.begins_with("3-inch"):
+			pwr += g.per_mount * 0.25
+	pwr += 0.15 * T.aa.size()
+	return pwr * eff()
+
 ## Armour: how much shell a hit must carry to do real damage (0 = unarmoured, 1 = 8-inch belt, 3+ = battleship).
 func armor() -> float:
 	if T.has("armor"):
@@ -292,7 +332,9 @@ func update_visual(t: float) -> void:
 	# gentle swell, plus list, trim and settling from flooding
 	var bob := sin(t * 0.7 + bob_phase) * 0.25
 	var swell_roll := sin(t * 0.55 + bob_phase) * deg_to_rad(1.2)
-	position = Vector3(x, -sink + bob, z)
+	if is_sub():
+		bob *= 0.3
+	position = Vector3(x, -sink + bob - depth_m, z)
 	var trim := 0.0
 	if T.get("role", "") == "pt" and alive:
 		trim = deg_to_rad(4.5) * clampf(v / (35.0 * Data.KN), 0.0, 1.0)
@@ -328,7 +370,7 @@ const SAVE_FIELDS := ["type_id", "team", "ship_name", "is_player", "objective", 
 	"group", "leader_flag", "detached", "escort_group", "tactic", "tactic_until", "zig", "zig_t",
 	"x", "z", "h", "v", "tele", "rud", "rud_cmd", "rud_jam_until", "roll", "pitch", "sink", "sinking", "alive", "gone", "mag_blown",
 	"crew", "flood", "flood_side", "flood_fwd", "dir_ang", "illum", "q", "fire", "smoke_on", "star_cd", "torp_cd",
-	"ai_state", "evade_until", "spotted_once", "weave_t", "last_fired"]
+	"ai_state", "evade_until", "spotted_once", "weave_t", "last_fired", "depth", "depth_m", "battery", "dc_left", "dc_cd", "hh_cd", "asw_state"]
 
 
 ## Everything about this ship as plain data (ship references become indices in battle.gd).

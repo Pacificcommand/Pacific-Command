@@ -27,13 +27,16 @@ func reset() -> void:
 func step(s: Ship) -> void:
 	var tgt := pick_target(s)
 	var want := s.h
-	match s.role():
-		"barge", "merchant":
-			want = transport(s, tgt)
-		"pt":
-			want = pt_boat(s, tgt)
-		_:
-			want = warship(s, tgt)
+	if s.is_sub():
+		want = submarine(s, tgt)
+	else:
+		match s.role():
+			"barge", "merchant":
+				want = transport(s, tgt)
+			"pt":
+				want = pt_boat(s, tgt)
+			_:
+				want = warship(s, tgt)
 	s.torp_cd -= 0.5
 	# ships turn toward torpedo wakes they can see, to comb them
 	if s.T.L > 40.0:
@@ -63,6 +66,25 @@ func pick_target(s: Ship) -> Ship:
 			return F.tgt
 		return near
 	return nearest_noticed(s, s.role() == "pt" and s.team == p.team)
+
+
+## Submarines go for the fat targets: merchants and carriers first, warships only when close.
+func sub_target(s: Ship) -> Ship:
+	var best: Ship = null
+	var bv := 1e9
+	for o in B.ships:
+		if o.team == s.team or not o.alive or o.escaped or o.is_sub():
+			continue
+		if not s.contact(o):
+			continue
+		var v := s.range_to(o)
+		if o.role() in ["merchant", "barge"] or o.cls() in ["cv", "cvl", "cve", "bb"]:
+			v -= 4000.0
+		elif o.cls() in ["dd", "de", "pt"]:
+			v += 3000.0
+		if v < bv:
+			bv = v; best = o
+	return best
 
 
 func nearest_noticed(s: Ship, prefer_obj: bool) -> Ship:
@@ -160,6 +182,10 @@ func plan_fleet(F: Dictionary, leader: Ship, tgt: Ship) -> void:
 # =====================================================================
 
 func warship(s: Ship, tgt: Ship) -> float:
+	# escorts with a sonar contact and no surface fight on their hands go hunting
+	if s.sonar_range() > 0.0 and not s.sonar_contacts.is_empty() and (tgt == null or tgt.is_sub() or s.range_to(tgt) > 6000.0):
+		return hunt(s)
+	s.asw_state = ""
 	var hurt: bool = s.eff() < 0.5 or s.flood > s.T.displacement * 0.18 or s.mod_health("mount") < 0.3
 	var F = fleet_of(s)
 	# the last ship of a division fights on her own
@@ -369,11 +395,20 @@ func battle_line(s: Ship, tgt: Ship, R: float) -> float:
 	return par + U.ang_d(par, beam) * 0.5
 
 
+## Carriers: stay well outside gun range but inside strike range, running from anything that closes.
 func keep_away(s: Ship, tgt: Ship, R: float) -> float:
-	s.ai_state = "keeping clear"
-	s.tele = 6 if R < 15000.0 else 4
 	s.fire = R < s.max_range()
-	return fposmod(s.bearing_to(tgt.x, tgt.z) + PI + s.side * deg_to_rad(20.0), TAU)
+	var to_t := s.bearing_to(tgt.x, tgt.z)
+	if R < 16000.0:
+		s.ai_state = "running from surface ships"
+		s.tele = 6
+		return fposmod(to_t + PI + s.side * deg_to_rad(20.0), TAU)
+	s.ai_state = "flight operations"
+	s.tele = 5
+	if R > 26000.0:
+		return to_t + s.side * deg_to_rad(30.0)
+	# steam across the enemy's bearing (into the wind, as carriers do) to hold the range
+	return to_t + s.side * deg_to_rad(95.0)
 
 
 ## Run in at flank speed to a torpedo firing position off the target's bow.
@@ -503,7 +538,7 @@ func convoy_centre(s: Ship):
 	var cz := 0.0
 	var n := 0
 	for o in B.ships:
-		if o.team == s.team and o != s and o.alive and not o.escaped and (o.role() == "merchant" or o.role() == "barge"):
+		if o.team == s.team and o != s and o.alive and not o.escaped and (o.role() == "merchant" or o.role() == "barge" or o.cls() in ["cve", "cv", "cvl"]):
 			cx += o.x; cz += o.z; n += 1
 	if n == 0:
 		return null
@@ -647,3 +682,105 @@ func transport(s: Ship, tgt: Ship) -> float:
 	s.target = tgt
 	s.tele = 2
 	return s.route_h
+
+
+# =====================================================================
+# submarines and their hunters
+# =====================================================================
+
+## A submarine: creep to a firing position at periscope depth, shoot, go deep and slip away.
+func submarine(s: Ship, tgt: Ship) -> float:
+	var hunted := false
+	var hunter: Ship = null
+	var hd := 1e9
+	for o in B.ships:
+		if o.team != s.team and o.alive and o.sonar_range() > 0.0:
+			var d := s.range_to(o)
+			if d < hd:
+				hd = d; hunter = o
+			if d < 2500.0 and o.sonar_contacts.has(s.ship_name):
+				hunted = true
+	s.fire = false
+	if s.battery < 0.08 and not hunted:
+		s.depth = 0
+	if hunted or B.t < s.evade_until:
+		# deep, slow and twisting away from the hunter
+		s.ai_state = "evading deep"
+		s.depth = 2
+		s.tele = 2 if B.t - s.evade_until > -60.0 else 3
+		if hunted:
+			s.evade_until = B.t + 90.0
+		s.zig_t -= 0.5
+		if s.zig_t <= 0.0:
+			s.zig_t = randf_range(20.0, 40.0)
+			s.zig = -s.zig if s.zig != 0.0 else 1.0
+		var away: float = fposmod(s.bearing_to(hunter.x, hunter.z) + PI, TAU) if hunter else s.h
+		return away + s.zig * deg_to_rad(35.0)
+	if tgt == null:
+		s.ai_state = "patrolling"
+		# surfaced on patrol at night, periscope depth by day
+		s.depth = 0 if (Data.WEATHER[B.weather].night and hd > 6000.0) else 1
+		s.tele = 3 if s.depth == 0 else 2
+		if s.route_h != 0.0:
+			return s.route_h
+		var near := nearest_noticed(s, true)
+		return s.bearing_to(near.x, near.z) if near else s.h
+	s.target = tgt
+	var R := s.range_to(tgt)
+	s.depth = 1
+	s.ai_state = "approaching"
+	if s.torps_left() == 0:
+		s.ai_state = "tubes empty, withdrawing"
+		s.depth = 2 if hd < 5000.0 else 1
+		s.tele = 2
+		return fposmod(s.bearing_to(tgt.x, tgt.z) + PI, TAU)
+	# firing position: about 90 degrees on the target's bow, 1,200-1,800 m off
+	var ip: Array = s.torp_intercept(tgt, s.x, s.z)
+	var brg := s.bearing_to(ip[0].x, ip[0].y)
+	if R < 1800.0 and absf(U.ang_d(s.h, brg)) < deg_to_rad(12.0):
+		var n: int = B.launch_torps(s, tgt)
+		if n > 0:
+			s.evade_until = B.t + 150.0
+			s.torp_cd = 60.0
+			if B.player.contact(s) or tgt.is_player or tgt.team == B.player.team:
+				B.say("Torpedo wakes from a submarine! %s is under attack." % ("Our ship" if tgt.is_player else tgt.ship_name), "bad")
+			return fposmod(brg + PI, TAU)
+	s.tele = 3 if R > 4000.0 else 2
+	if R > 2500.0:
+		# get ahead of the target's track
+		var f := U.fwd(tgt.h)
+		var lead := clampf(R * 0.8, 1500.0, 6000.0)
+		return s.bearing_to(tgt.x + f.x * lead, tgt.z + f.y * lead)
+	return brg
+
+
+## An escort hunting a submarine: run to the last sonar fix, drop a pattern over it, circle back.
+func hunt(s: Ship) -> float:
+	var key := ""
+	var best_t := -1.0
+	for k in s.sonar_contacts:
+		if s.sonar_contacts[k].t > best_t:
+			best_t = s.sonar_contacts[k].t; key = k
+	var c: Dictionary = s.sonar_contacts[key]
+	var d := U.hyp(c.x - s.x, c.z - s.z)
+	s.fire = false
+	s.target = null
+	s.smoke_on = false
+	if d > 1500.0:
+		s.asw_state = "closing a sonar contact"
+		s.ai_state = s.asw_state
+		s.tele = 5
+		return s.bearing_to(c.x, c.z)
+	# attack run at moderate speed so the set still hears
+	s.tele = 4
+	s.asw_state = "depth charge run"
+	s.ai_state = s.asw_state
+	var ahead := s.to_local_xz(c.x, c.z)
+	if s.T.get("hedgehog", s.type_id == "buckley") and ahead.x > 180.0 and ahead.x < 280.0 and absf(ahead.y) < 40.0:
+		B.fire_hedgehog(s)
+	if ahead.x < 0.0 and ahead.x > -60.0 and absf(ahead.y) < 50.0:
+		B.drop_charges(s, c.depth == 2)
+	if ahead.x < -60.0:
+		# passed over: swing round for another run
+		return s.bearing_to(c.x, c.z) + s.side * deg_to_rad(60.0)
+	return s.bearing_to(c.x, c.z)

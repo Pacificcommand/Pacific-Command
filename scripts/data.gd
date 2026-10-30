@@ -184,3 +184,38 @@ const WEATHER := {
 		"sky": Color(0.05, 0.07, 0.12), "ambient": 0.4, "fog": Color(0.01, 0.02, 0.035), "fog_k": 0.03, "chop": 0.8, "spec": 0.35,
 		"sun_dir": Vector3(0.4, -0.7, -0.5), "lit": 0.5},
 }
+
+
+## Aircraft. speed in knots (real), hp = planes lost per unit of flak, rating = air-to-air strength,
+## bomb = damage of one bomb hit in 5-inch-shell units, torp = aerial torpedo.
+const AIRCRAFT := {
+	"f4f": {"name": "Wildcat", "nation": "us", "kind": "fighter", "speed": 280.0, "rating": 1.0, "model": "res://assets/models/plane_us_fighter.glb"},
+	"f6f": {"name": "Hellcat", "nation": "us", "kind": "fighter", "speed": 330.0, "rating": 1.6, "model": "res://assets/models/plane_us_fighter.glb"},
+	"sbd": {"name": "Dauntless", "nation": "us", "kind": "dive", "speed": 220.0, "rating": 0.4, "bomb": 4.5, "model": "res://assets/models/plane_us_bomber.glb"},
+	"sb2c": {"name": "Helldiver", "nation": "us", "kind": "dive", "speed": 250.0, "rating": 0.45, "bomb": 5.0, "model": "res://assets/models/plane_us_bomber.glb"},
+	"tbf": {"name": "Avenger", "nation": "us", "kind": "torpedo", "speed": 240.0, "rating": 0.4, "torp": {"name": "Mark 13 (aerial)", "speed_kn": 33.5, "range": 2200.0, "dud": 0.2, "flood": 200.0}, "model": "res://assets/models/plane_us_bomber.glb"},
+	"os2u": {"name": "Kingfisher", "nation": "us", "kind": "scout", "speed": 150.0, "rating": 0.2, "model": "res://assets/models/plane_us_float.glb"},
+	"a6m": {"name": "Zero", "nation": "ijn", "kind": "fighter", "speed": 290.0, "rating": 1.3, "model": "res://assets/models/plane_jp_fighter.glb"},
+	"d3a": {"name": "Val", "nation": "ijn", "kind": "dive", "speed": 220.0, "rating": 0.35, "bomb": 3.0, "model": "res://assets/models/plane_jp_bomber.glb"},
+	"b5n": {"name": "Kate", "nation": "ijn", "kind": "torpedo", "speed": 210.0, "rating": 0.3, "torp": {"name": "Type 91 (aerial)", "speed_kn": 42.0, "range": 2000.0, "dud": 0.05, "flood": 240.0}, "model": "res://assets/models/plane_jp_bomber.glb"},
+	"e13a": {"name": "Jake", "nation": "ijn", "kind": "scout", "speed": 200.0, "rating": 0.2, "model": "res://assets/models/plane_jp_float.glb"},
+}
+
+## Air groups by carrier size: [type, planes] per squadron. "year" picks the aircraft types.
+static func air_group(hangar: String, count: int) -> Array:
+	var out := []
+	if hangar == "ijn":
+		var third := maxi(6, int(count / 3.0))
+		out.append(["a6m", third]); out.append(["d3a", third]); out.append(["b5n", count - 2 * third])
+	else:
+		var fighters := maxi(6, int(count * 0.4))
+		var dive := maxi(6, int(count * 0.35))
+		out.append(["f6f" if count >= 60 else "f4f", fighters]); out.append(["sb2c" if count >= 80 else "sbd", dive]); out.append(["tbf", maxi(4, count - fighters - dive)])
+	# split big squadrons so strikes arrive in waves
+	var split := []
+	for sq in out:
+		var n: int = sq[1]
+		while n > 12:
+			split.append([sq[0], 12]); n -= 12
+		split.append([sq[0], n])
+	return split

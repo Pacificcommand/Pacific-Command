@@ -1,7 +1,14 @@
-# Pacific Command — combat sandbox (build 0.5)
+# Pacific Command — combat sandbox (build 0.6)
 
-WWII Pacific naval game for PC, made in **Godot 4.7.2**. Combat sandbox with six
-missions, picked on the briefing screen (some let you choose your ship):
+WWII Pacific naval game for PC, made in **Godot 4.7.2**. Combat sandbox with nine
+missions, picked on the briefing screen (most let you choose your ship):
+
+- **Carrier strike:** Essex, Enterprise or Bataan with a screen against Shokaku, Zuikaku
+  and Zuiho 30 km away. Launch your strike (L), keep fighters up, set the AA priority.
+- **Submarine patrol:** USS Wahoo against an escorted convoy: dive (X), shoot from
+  periscope depth, go deep and slip away from the depth charges.
+- **Submarine hunt:** a destroyer escort screening an escort carrier against two
+  I-boats: sonar, hedgehog (H) and depth charges (G).
 
 - **Cruiser night action:** a light cruiser (Cleveland, Helena or Atlanta) and two
   Fletchers against a Tokyo Express led by the cruiser Jintsu with four destroyers.
@@ -43,11 +50,20 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 | Space | Tactical pause |
 | 1 / 2 / 3 | Slow ¼× / normal / fast 3× |
 | Mouse wheel | Zoom; drag to look around (the camera unlocks); Home locks it back on the ship |
+| L | Carriers and ships with floatplanes: launch an air strike at your target |
+| X / E | Submarines: dive (periscope depth, then deep) / come up |
+| G / H | Drop depth charges / fire the hedgehog |
 | Esc | Pause menu: resume, save, load, settings, main menu |
 
 All keys can be changed in Settings › Controls.
 
 ## What's in this build
+- Aircraft as weapons: carriers launch and recover fighter, dive-bomber and torpedo
+  squadrons that fly out visibly, attack, dogfight, take flak and come home to rearm;
+  cruisers and battleships launch floatplane scouts that report what they find.
+  Air-search radar warns of incoming raids; AA fire has priority settings.
+- Submarines: surfaced, periscope depth and deep; battery; sonar contacts that fade;
+  depth-charge patterns and hedgehog; escorts that hunt; submarines that stalk convoys.
 - 37 new ship classes built with the parametric warship builder, matched to the
   reference photos: US Mahan, Benson, Buckley, Gato, Atlanta, Brooklyn, Cleveland,
   Northampton, New Orleans, Baltimore, North Carolina, South Dakota, Iowa, Texas,

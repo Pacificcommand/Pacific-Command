@@ -27,6 +27,9 @@ var guns_box: HBoxContainer
 var brief: PanelContainer
 var endp: PanelContainer
 var pausep: Control = null
+var air_plate: PanelContainer
+var sub_row: HBoxContainer
+var asw_row: HBoxContainer
 var ship_row: HBoxContainer
 var _pause_prev := 1.0
 var drag := {}
@@ -155,8 +158,8 @@ func _set_bar(nm: String, f: float) -> void:
 ## Pin a control to a corner or edge of the screen; it grows inward to fit its contents.
 func _place(c: Control, where: String, m := 12.0) -> void:
 	root.add_child(c)
-	var ax = {"tl": 0.0, "tr": 1.0, "bl": 0.0, "br": 1.0, "bc": 0.5, "c": 0.5, "tc": 0.5}[where]
-	var ay = {"tl": 0.0, "tr": 0.0, "bl": 1.0, "br": 1.0, "bc": 1.0, "c": 0.5, "tc": 0.0}[where]
+	var ax = {"tl": 0.0, "tr": 1.0, "bl": 0.0, "br": 1.0, "bc": 0.5, "c": 0.5, "tc": 0.5, "ml": 0.0}[where]
+	var ay = {"tl": 0.0, "tr": 0.0, "bl": 1.0, "br": 1.0, "bc": 1.0, "c": 0.5, "tc": 0.0, "ml": 0.5}[where]
 	c.anchor_left = ax; c.anchor_right = ax; c.anchor_top = ay; c.anchor_bottom = ay
 	var ox := m if ax == 0.0 else (-m if ax == 1.0 else 0.0)
 	var oy := m if ay == 0.0 else (-m if ay == 1.0 else 0.0)
@@ -225,6 +228,23 @@ func _build_plates() -> void:
 	bl.add_child(blv)
 	_place(bl, "bl")
 
+	# middle left: air group (carriers and ships with floatplanes)
+	air_plate = _panel()
+	var av := VBoxContainer.new()
+	av.add_theme_constant_override("separation", 5)
+	av.add_child(_label("AIR GROUP", 11, C_BRASS))
+	lbl.air = _label("", 12)
+	av.add_child(lbl.air)
+	btn.strike = _button("Strike target (L)", func(): B.order_strike())
+	btn.cap = _button("Fighter patrol", func(): B.order_cap())
+	btn.scout = _button("Scout", func(): B.order_scout())
+	btn.recall = _button("Recall", func(): B.air.recall(B.player); log_msg("All aircraft ordered home."))
+	av.add_child(_row([btn.strike, btn.cap, btn.scout, btn.recall]))
+	av.add_child(_row([_caps("AA guns"), _seg("aa", [["self", "Protect self"], ["carrier", "Protect carrier"], ["bombers", "Bombers first"]], func(v): B.air.aa_mode = v; _set_seg("aa", v))]))
+	air_plate.add_child(av)
+	_place(air_plate, "ml")
+	air_plate.visible = false
+
 	# bottom center: damage control
 	var bc := _panel()
 	bc.custom_minimum_size.x = 480
@@ -279,6 +299,16 @@ func _build_plates() -> void:
 	btn.torp = _button("Torpedo aim (T)", func(): B.fire_torpedoes(), true)
 	btn.smoke = _button("Lay smoke (Z)", func(): B.toggle_smoke(), true)
 	fv.add_child(_row([btn.fire, btn.torp, btn.smoke]))
+	# submarines: depth; escorts: depth charges and hedgehog
+	sub_row = _row([_caps("Depth"), _seg("depth", [[0, "Surfaced"], [1, "Periscope"], [2, "Deep"]], func(v): B.order_depth(v))])
+	lbl.battery = _label("Battery 100%", 12, C_MUTED)
+	sub_row.add_child(lbl.battery)
+	fv.add_child(sub_row)
+	btn.charges = _button("Depth charges (G)", func(): B.order_charges())
+	btn.hedgehog = _button("Hedgehog (H)", func(): B.order_hedgehog())
+	lbl.dc = _label("", 12, C_MUTED)
+	asw_row = _row([_caps("ASW"), btn.charges, btn.hedgehog, lbl.dc])
+	fv.add_child(asw_row)
 	br.add_child(fv)
 	brv.add_child(br)
 	var vp := _panel()
@@ -356,7 +386,7 @@ func _build_brief() -> void:
 	lbl.brief_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.brief_text.custom_minimum_size.x = 520
 	v.add_child(lbl.brief_text)
-	v.add_child(_row([_caps("Mission"), _seg("mission", [["dd", "Destroyers"], ["barges", "PT barge hunt"], ["convoy", "PT convoy"], ["cruisers", "Cruiser night action"], ["bbs", "Battleship action"], ["fleet", "Fleet action"]], _on_mission)]))
+	v.add_child(_row([_caps("Mission"), _seg("mission", [["dd", "Destroyers"], ["barges", "PT barge hunt"], ["convoy", "PT convoy"], ["cruisers", "Cruiser night action"], ["bbs", "Battleship action"], ["fleet", "Fleet action"], ["carriers", "Carrier strike"], ["subpatrol", "Submarine patrol"], ["subhunt", "Submarine hunt"]], _on_mission)]))
 	ship_row = HBoxContainer.new()
 	ship_row.add_theme_constant_override("separation", 2)
 	v.add_child(_row([_caps("Your ship"), ship_row]))
@@ -461,6 +491,7 @@ func on_new_game() -> void:
 	ship_row.get_parent().visible = not choices.is_empty()
 	_set_seg("view", "close" if B.player.T.L < 40.0 else "ship")
 	_set_seg("cam", "player")
+	_set_seg("depth", B.player.depth)
 	_set_seg("mag", B.magazine)
 	_set_seg("scheme", B.scheme)
 	btn.follow.set_pressed_no_signal(B.follow)
@@ -501,6 +532,8 @@ func refresh() -> void:
 	var p: Ship = B.player
 	if p == null:
 		return
+	_refresh_air(p)
+	_refresh_sub(p)
 	var W: Dictionary = Data.WEATHER[B.weather]
 	lbl.sub.text = "%s · %s · Battle time %s" % [p.T.name, W.name, _clock(B.t)]
 	for i in tele_btns.size():
@@ -569,6 +602,64 @@ func refresh() -> void:
 # =====================================================================
 # drawing
 # =====================================================================
+
+func on_depth() -> void:
+	_set_seg("depth", B.player.depth)
+
+
+func _refresh_sub(p: Ship) -> void:
+	sub_row.visible = p.is_sub()
+	if p.is_sub():
+		lbl.battery.text = "Battery %d%%  ·  %s" % [int(p.battery * 100), ["surfaced", "periscope depth, %d m" % int(p.depth_m), "deep, %d m" % int(p.depth_m)][p.depth]]
+	var asw: bool = p.dc_left > 0 or p.T.get("hedgehog", p.type_id == "buckley") or p.sonar_range() > 0.0
+	asw_row.visible = asw and not p.is_sub()
+	if asw_row.visible:
+		btn.charges.visible = p.T.get("depth_charges", 0) > 0
+		btn.hedgehog.visible = p.T.get("hedgehog", p.type_id == "buckley")
+		var txt := "%d charges" % p.dc_left if p.T.get("depth_charges", 0) > 0 else ""
+		if p.sonar_contacts.is_empty():
+			txt += "  ·  sonar: no contact" if p.sonar_range() > 0.0 else ""
+		else:
+			var k = p.sonar_contacts.keys()[0]
+			var c: Dictionary = p.sonar_contacts[k]
+			txt += "  ·  sonar contact %s, %s (%s)" % [U.deg3(p.bearing_to(c.x, c.z)), U.yards(U.hyp(c.x - p.x, c.z - p.z)), "deep" if c.depth == 2 else "shallow"]
+		lbl.dc.text = txt
+
+
+func _refresh_air(p: Ship) -> void:
+	var mine := []
+	for sq in B.air.sqs:
+		if sq.home == p and sq.state != "lost":
+			mine.append(sq)
+	air_plate.visible = not mine.is_empty()
+	if mine.is_empty():
+		return
+	var lines := []
+	for sq in mine:
+		var A: Dictionary = Data.AIRCRAFT[sq.type]
+		var st: String = sq.state
+		if st == "ready":
+			st = "ready" if sq.rearm <= 0.0 else "rearming %d:%02d" % [int(sq.rearm) / 60, int(sq.rearm) % 60]
+		elif st == "outbound" and sq.target:
+			st = "outbound to %s" % sq.target.ship_name
+		lines.append("%d %s (%s): %s" % [sq.n, A.name, _kind_short(sq.kind), st])
+	lbl.air.text = "\n".join(lines)
+	_set_seg("aa", B.air.aa_mode)
+	btn.strike.disabled = B.air.ready_squadrons(p, ["dive", "torpedo"]).is_empty() or _rearming(p, ["dive", "torpedo"])
+	btn.cap.disabled = B.air.ready_squadrons(p, ["fighter"]).is_empty() or _rearming(p, ["fighter"])
+	btn.scout.disabled = B.air.ready_squadrons(p, ["scout"]).is_empty() or _rearming(p, ["scout"])
+
+
+func _rearming(p: Ship, kinds: Array) -> bool:
+	for sq in B.air.ready_squadrons(p, kinds):
+		if sq.rearm <= 0.0:
+			return false
+	return true
+
+
+func _kind_short(kind: String) -> String:
+	return {"fighter": "fighters", "dive": "dive bombers", "torpedo": "torpedo bombers", "scout": "scouts"}.get(kind, kind)
+
 
 func _draw_rudder() -> void:
 	var p: Ship = B.player
@@ -940,6 +1031,11 @@ func _unhandled_input(e: InputEvent) -> void:
 		elif Game.pressed(e, "slow"): B.set_speed(0.25)
 		elif Game.pressed(e, "normal"): B.set_speed(1.0)
 		elif Game.pressed(e, "fast"): B.set_speed(3.0)
+		elif Game.pressed(e, "strike"): B.order_strike()
+		elif Game.pressed(e, "dive"): B.order_depth(p.depth + 1)
+		elif Game.pressed(e, "surface"): B.order_depth(p.depth - 1)
+		elif Game.pressed(e, "charges"): B.order_charges()
+		elif Game.pressed(e, "hedgehog"): B.order_hedgehog()
 		elif Game.pressed(e, "menu"):
 			if B.torp_aim:
 				B.torp_aim = false
