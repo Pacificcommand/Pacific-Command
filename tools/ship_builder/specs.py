@@ -868,3 +868,34 @@ DATA['subchaser'] = dict(name='No. 13 class subchaser', nation='ijn', cls='de', 
     gun='jp8cm', draft=2.4, size_vis=0.6, radar=0.0, smoke=False, night_eye=1.3, funnels=[-8.0], funnel_top=8.0, sonar=1500.0, depth_charges=36,
     mounts=mounts([('Gun1', 14.0, 0.0, 'fwd')]), torps=[], torp={}, aa=aa_n,
     modules=[['Bridge', 'bridge', 4.0, 2.0], ['Engine room', 'engine', -6.0, 2.5], ['Steering', 'steering', -22.0, 1.5], ['Magazine', 'magazine', 10.0, 2.0]])
+
+
+# ---- Liberty ship (US cargo, 1942): three islands, five hatches, three masts with derricks, one funnel ----
+L = 135.0
+spec('liberty', nation='us', L=L, B=17.3, T=8.4, deck=(9.2, 7.6, 8.0), breaks=[(50.0, 1.4), (-50.0, -0.8)], rake=2.0, entry=0.24, run=0.24, fine=2.2, flare=0.1, stern='cruiser',
+     palette=dict(hull='#3f4448', deck='#5a4a3a', sup='#8f918c'),
+     bollards=[60, 40, -40, -60], vents=[(20, 6), (20, -6), (-20, 6), (-20, -6)],
+     parts=[('block', 16.0, -14.0, 7.5, 7.6, 10.4), ('block', 12.0, -10.0, 6.0, 10.4, 13.0), ('glass', 11.6, 4.0, 5.6, 13.0),
+            ('funnel', -6.0, 13.0, 8.0, 2.0, 1.5, 0.3), ('pole', 40.0, 7.6, 20.0, 6.0), ('pole', -36.0, 7.6, 20.0, 6.0), ('pole', 22.0, 13.9, 12.0, 4.0),
+            ('box', 44.0, 8.2, 0.0, 9.0, 1.2, 7.0, 'dark'), ('box', 30.0, 8.2, 0.0, 9.0, 1.2, 7.0, 'dark'), ('box', -26.0, 8.2, 0.0, 9.0, 1.2, 7.0, 'dark'), ('box', -40.0, 8.2, 0.0, 9.0, 1.2, 7.0, 'dark'),
+            ('boat', -4.0, 14.0, 7.0, 7.0, 2.0), ('boat', -4.0, 14.0, -7.0, 7.0, 2.0)],
+     weapons=[('dp_single', 'Gun1', -60.0, 7.4, 0.0, PI, 102, False), ('dp_single', 'Gun2', 60.0, 9.2, 0.0, 0.0, 76, False),
+              ('oerlikon', 'Oerlikon1', 8.0, 13.2, 6.2, PI / 2), ('oerlikon', 'Oerlikon2', 8.0, 13.2, -6.2, -PI / 2)])
+DATA['liberty'] = dict(name='Liberty ship', nation='us', cls='merchant', role='merchant', L=135.0, B=17.3, max_kn=11.0, turn=1.3, crew=80, displacement=14000.0,
+    gun='us3in50', gunnery=0.6, draft=8.4, size_vis=1.4, radar=0.0, smoke=False, night_eye=1.0, funnels=[-6.0], funnel_top=21.0,
+    mounts=mounts([('Gun1', -60.0, PI, 'aft'), ('Gun2', 60.0, 0.0, 'fwd')], 'us3in50'), torps=[], torp={}, aa=['Oerlikon1', 'Oerlikon2'],
+    modules=[['Bridge', 'bridge', 8.0, 4.0], ['Engine room', 'engine', -8.0, 5.0], ['Steering', 'steering', -64.0, 3.0],
+             ['No. 1 hold', 'cargo', 44.0, 4.0], ['No. 2 hold', 'cargo', 30.0, 4.0], ['No. 3 hold', 'cargo', -26.0, 4.0], ['No. 4 hold', 'cargo', -40.0, 4.0]])
+
+# shore targets and survivors (models from shore.py)
+DATA['shore_battery'] = dict(name='Coastal gun battery', nation='ijn', cls='fort', role='shore', ground=True, L=30.0, B=30.0, max_kn=0.0, turn=0.0, crew=60, displacement=3000.0,
+    gun='jp140', gunnery=0.9, draft=0.0, size_vis=0.6, radar=0.0, smoke=False, night_eye=1.3, funnels=[], funnel_top=5.0, armor=1.2,
+    mounts=mounts([('Gun1', 1.0, 0.0, 'all'), ('Gun2', 1.0, 0.0, 'all')]), torps=[], torp={}, aa=[],
+    modules=[['Fire control post', 'director', 0.0, 3.0], ['Magazine', 'magazine', -4.0, 4.0], ['Casemate', 'bridge', 2.0, 5.0]])
+DATA['supply_dump'] = dict(name='Supply dump', nation='ijn', cls='fort', role='shore', ground=True, L=36.0, B=28.0, max_kn=0.0, turn=0.0, crew=40, displacement=1500.0,
+    gun='jp77', gunnery=0.5, draft=0.0, size_vis=0.7, radar=0.0, smoke=False, night_eye=1.3, funnels=[], funnel_top=5.0,
+    mounts=[], torps=[], torp={}, aa=[],
+    modules=[['Fuel drums', 'fuel', 10.0, 2.0], ['Ammunition', 'magazine', -8.0, 2.0], ['Stores', 'cargo', 0.0, 3.0], ['Stores', 'cargo', -14.0, 3.0]])
+DATA['raft'] = dict(name='Life raft', nation='us', cls='raft', role='survivors', L=5.2, B=3.2, max_kn=0.0, turn=0.0, crew=4, displacement=1.0,
+    gun='browning50', draft=0.3, size_vis=0.25, radar=0.0, smoke=False, night_eye=1.0, funnels=[], funnel_top=1.0,
+    mounts=[], torps=[], torp={}, aa=[], modules=[['Raft', 'cargo', 0.0, 1.0]])

@@ -1,7 +1,13 @@
-# Pacific Command — combat sandbox (build 0.6)
+# Pacific Command — combat sandbox (build 0.7)
 
-WWII Pacific naval game for PC, made in **Godot 4.7.2**. Combat sandbox with nine
-missions, picked on the briefing screen (most let you choose your ship):
+WWII Pacific naval game for PC, made in **Godot 4.7.2**. Combat sandbox with twelve
+missions, picked on the briefing screen (most let you choose your ship), each with a
+threat rating; reputation buys support ships before the battle, capped by rank:
+
+- **Convoy escort:** keep four Liberty ships alive against three raiding destroyers and
+  a submarine. **Shore bombardment:** silence two coastal batteries and a supply dump
+  on an island (mind the shoals). **Rescue:** pick up three rafts of survivors off an
+  enemy coast before a Japanese destroyer arrives.
 
 - **Carrier strike:** Essex, Enterprise or Bataan with a screen against Shokaku, Zuikaku
   and Zuiho 30 km away. Launch your strike (L), keep fighters up, set the AA priority.
@@ -58,6 +64,11 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 All keys can be changed in Settings › Controls.
 
 ## What's in this build
+- Islands with beaches you can run aground on, coastal gun batteries that shoot back,
+  Liberty ships, life rafts; threat ratings (Low to Extreme) from the enemy force;
+  reputation earned by results and spent on support ships (destroyers to carriers)
+  on the briefing, limited by rank. Sandbox career: Captain with 900 reputation,
+  saved in user://career.json until the career build replaces it.
 - Aircraft as weapons: carriers launch and recover fighter, dive-bomber and torpedo
   squadrons that fly out visibly, attack, dogfight, take flak and come home to rearm;
   cruisers and battleships launch floatplane scouts that report what they find.

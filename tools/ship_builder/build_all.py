@@ -23,6 +23,9 @@ SHIPS = [
 for name in specs.SPECS:
     SHIPS.append((name, name.title().replace('_', ''), (lambda n: (lambda: build_spec(specs.SPECS[n])))(name)))
 from planes import PLANES, build_plane
+from shore import SHORE
+for name, fn in SHORE:
+    SHIPS.append((name, name.title().replace('_', ''), fn))
 for name, nation, kind in PLANES:
     SHIPS.append((name, name.title().replace('_', ''), (lambda n, k: (lambda: build_plane(n, k)))(nation, kind)))
 for name, root, fn in SHIPS:

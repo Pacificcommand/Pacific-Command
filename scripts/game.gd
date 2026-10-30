@@ -7,7 +7,7 @@ signal graphics_changed
 const CFG := "user://settings.cfg"
 const SAVE_DIR := "user://saves"
 const SLOTS := 5
-const VERSION := "0.6"
+const VERSION := "0.7"
 
 ## Graphics and sound settings with their defaults.
 var settings := {
@@ -36,6 +36,10 @@ const ACTIONS := [
 ]
 var keys := {}                 # action -> keycode
 
+## Career (sandbox until the career build): rank index into Missions.RANKS, reputation to spend on support.
+const CAREER_FILE := "user://career.json"
+var career := {"rank": 3, "reputation": 900, "xp": 0, "year": 1943, "missions": 0, "won": 0}
+
 var pending_load := -1         # save slot the battle scene should load when it opens
 var start_scenario := "dd"     # mission the battle scene should set up
 
@@ -47,7 +51,24 @@ func _ready() -> void:
 		keys[a[0]] = a[2]
 	_make_buses()
 	load_settings()
+	load_career()
 	apply_all()
+
+
+func load_career() -> void:
+	if FileAccess.file_exists(CAREER_FILE):
+		var f := FileAccess.open(CAREER_FILE, FileAccess.READ)
+		var d = JSON.parse_string(f.get_as_text())
+		if d is Dictionary:
+			for k in career:
+				if d.has(k):
+					career[k] = int(d[k]) if career[k] is int else d[k]
+
+
+func save_career() -> void:
+	var f := FileAccess.open(CAREER_FILE, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(career))
 
 
 # =====================================================================

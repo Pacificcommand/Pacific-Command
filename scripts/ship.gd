@@ -76,6 +76,9 @@ var leader_flag := false     # named leader of the group in the mission setup
 var fstation := Vector2.ZERO # station on the leader (lx, lz)
 var detached := false        # left the formation (damaged)
 var escort_group := ""       # set when this ship screens a convoy
+var protect := false         # a friendly ship the mission is about (convoy escort)
+var rescued := false         # survivors picked up (rafts)
+var aground := false
 var tactic := ""             # current solo tactic
 var tactic_until := 0.0
 var zig := 0.0
@@ -334,6 +337,13 @@ func update_visual(t: float) -> void:
 	var swell_roll := sin(t * 0.55 + bob_phase) * deg_to_rad(1.2)
 	if is_sub():
 		bob *= 0.3
+	if T.get("ground", false):
+		# shore targets sit on the island
+		var gy: float = Battle.I.terrain.height_at(x, z) if Battle.I and Battle.I.terrain else 0.0
+		position = Vector3(x, gy, z)
+		transform.basis = Basis(Vector3.UP, -h)
+		visible = not gone
+		return
 	position = Vector3(x, -sink + bob - depth_m, z)
 	var trim := 0.0
 	if T.get("role", "") == "pt" and alive:
@@ -370,7 +380,7 @@ const SAVE_FIELDS := ["type_id", "team", "ship_name", "is_player", "objective", 
 	"group", "leader_flag", "detached", "escort_group", "tactic", "tactic_until", "zig", "zig_t",
 	"x", "z", "h", "v", "tele", "rud", "rud_cmd", "rud_jam_until", "roll", "pitch", "sink", "sinking", "alive", "gone", "mag_blown",
 	"crew", "flood", "flood_side", "flood_fwd", "dir_ang", "illum", "q", "fire", "smoke_on", "star_cd", "torp_cd",
-	"ai_state", "evade_until", "spotted_once", "weave_t", "last_fired", "depth", "depth_m", "battery", "dc_left", "dc_cd", "hh_cd", "asw_state"]
+	"ai_state", "evade_until", "spotted_once", "weave_t", "last_fired", "protect", "rescued", "aground", "depth", "depth_m", "battery", "dc_left", "dc_cd", "hh_cd", "asw_state"]
 
 
 ## Everything about this ship as plain data (ship references become indices in battle.gd).

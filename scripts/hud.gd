@@ -29,6 +29,7 @@ var endp: PanelContainer
 var pausep: Control = null
 var air_plate: PanelContainer
 var sub_row: HBoxContainer
+var support_row: HBoxContainer
 var asw_row: HBoxContainer
 var ship_row: HBoxContainer
 var _pause_prev := 1.0
@@ -386,10 +387,17 @@ func _build_brief() -> void:
 	lbl.brief_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.brief_text.custom_minimum_size.x = 520
 	v.add_child(lbl.brief_text)
-	v.add_child(_row([_caps("Mission"), _seg("mission", [["dd", "Destroyers"], ["barges", "PT barge hunt"], ["convoy", "PT convoy"], ["cruisers", "Cruiser night action"], ["bbs", "Battleship action"], ["fleet", "Fleet action"], ["carriers", "Carrier strike"], ["subpatrol", "Submarine patrol"], ["subhunt", "Submarine hunt"]], _on_mission)]))
+	v.add_child(_row([_caps("Mission"), _seg("mission", [["dd", "Destroyers"], ["barges", "PT barge hunt"], ["convoy", "PT convoy"], ["cruisers", "Cruiser night action"], ["bbs", "Battleship action"], ["fleet", "Fleet action"], ["carriers", "Carrier strike"], ["subpatrol", "Submarine patrol"], ["subhunt", "Submarine hunt"], ["escort", "Convoy escort"], ["bombard", "Shore bombardment"], ["rescue", "Rescue"]], _on_mission)]))
 	ship_row = HBoxContainer.new()
 	ship_row.add_theme_constant_override("separation", 2)
 	v.add_child(_row([_caps("Your ship"), ship_row]))
+	support_row = HBoxContainer.new()
+	support_row.add_theme_constant_override("separation", 2)
+	lbl.rep = _label("", 12, C_BRASS)
+	var sup_box := VBoxContainer.new()
+	sup_box.add_child(lbl.rep)
+	sup_box.add_child(support_row)
+	v.add_child(_row([_caps("Support"), sup_box]))
 	v.add_child(_row([_caps("Conditions"), _seg("weather", [["clear", "Clear day"], ["overcast", "Overcast"], ["fog", "Fog"], ["night", "Night"]], _on_weather)]))
 	v.add_child(_row([_caps("Aim"), _seg("aim_b", [["auto", "Crew (auto)"], ["manual", "Manual (mouse)"]], _on_aim_brief)]))
 	v.add_child(_row([_caps("Magazines"), _seg("mag", [["historical", "Historical"], ["reduced", "Reduced"], ["off", "Off"]], _on_mag)]))
@@ -399,6 +407,33 @@ func _build_brief() -> void:
 	v.add_child(go)
 	brief.add_child(v)
 	_place(brief, "c")
+
+
+## Support ships for sale on the briefing, within rank cap and reputation.
+func _build_support_row() -> void:
+	for c in support_row.get_children():
+		c.queue_free()
+	var p: Ship = B.player
+	var avail: Array = Missions.support_available(int(Game.career.year), p.cls())
+	var cap: int = Missions.RANK_CAP[clampi(Game.career.rank, 0, Missions.RANK_CAP.size() - 1)]
+	var in_group := 1
+	for sh in B.ships:
+		if sh.team == p.team and sh != p and sh.group == p.group and sh.group != "":
+			in_group += 1
+	lbl.rep.text = "%s · reputation %d (%d to spend after this) · ships in battle %d of %d allowed" % [Missions.RANKS[clampi(Game.career.rank, 0, 8)], Game.career.reputation, Game.career.reputation - B._spent, in_group, cap]
+	support_row.get_parent().get_parent().visible = not avail.is_empty()
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 2)
+	grid.add_theme_constant_override("v_separation", 2)
+	for it in avail:
+		var tid: String = it[0]
+		var n: int = B.support.count(tid)
+		var b := _button("%s%s · %d" % [("%d× " % n) if n > 0 else "", it[1].replace("-class ", " "), it[2]], func(): B.toggle_support(tid), true)
+		b.add_theme_font_size_override("font_size", 11)
+		b.set_pressed_no_signal(n > 0)
+		grid.add_child(b)
+	support_row.add_child(grid)
 
 
 func _update_brief() -> void:
@@ -439,6 +474,8 @@ func show_end() -> void:
 			lbl.end_t.text = "Mission accomplished"
 		"escaped":
 			lbl.end_t.text = "The enemy got through"
+		"lost_convoy":
+			lbl.end_t.text = "Mission failed"
 		_:
 			lbl.end_t.text = "%s lost" % p.ship_name
 	var sunk_txt: String = ", ".join(st.sunk) if not st.sunk.is_empty() else "none"
@@ -446,6 +483,10 @@ func show_end() -> void:
 	var txt := "Battle time %s.\nEnemy sunk: %s.\n" % [_clock(B.t), sunk_txt]
 	if not st.escaped.is_empty():
 		txt += "Got away: %s.\n" % ", ".join(st.escaped)
+	if st.get("rescued", 0) > 0:
+		txt += "Survivors rescued: %d.\n" % st.rescued
+	var rep: int = st.get("rep_gained", 0)
+	txt += "Reputation %s%d (now %d).\n" % ["+" if rep >= 0 else "", rep, Game.career.reputation]
 	txt += "Bursts and salvos fired: %d, hits: %d (%.0f%%).\nTorpedoes fired: %d, torpedo hits: %d.\nCrew lost: %d of %d." % [st.salvos, st.hits, acc, st.torps, st.torp_hits, lost, st.start_crew]
 	var friends_lost := []
 	for s in B.ships:
@@ -489,6 +530,7 @@ func on_new_game() -> void:
 		b.set_pressed_no_signal(B.player.type_id == id)
 		ship_row.add_child(b)
 	ship_row.get_parent().visible = not choices.is_empty()
+	_build_support_row()
 	_set_seg("view", "close" if B.player.T.L < 40.0 else "ship")
 	_set_seg("cam", "player")
 	_set_seg("depth", B.player.depth)

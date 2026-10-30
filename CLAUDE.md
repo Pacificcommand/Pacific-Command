@@ -21,6 +21,8 @@ experience; explain in plain words, he tests by playing). Top-down 3D view of li
 | `scripts/ui.gd` | Static UI builders (panels, buttons, sliders) shared by menu, settings, pause and slot panels |
 | `scripts/settings_panel.gd`, `slot_panel.gd` | Settings screen; save/load slot picker |
 | `scripts/ai.gd` | Ship AI: fleets, roles, solo tactics, Japanese destroyer doctrine, PT boats, transports, submarines, escorts hunting |
+| `scripts/missions.gd` | Mission plans (convoy escort, shore bombardment, rescue), threat rating, reputation rewards, rank caps, support-ship catalogue; `build()` turns a plan into a battle (the operations map uses it) |
+| `scripts/terrain.gd` | Islands: `height_at(x, z)` for grounding, shore targets and shells on the beach |
 | `scripts/air.gd` | Air war: squadrons (launch, strike, CAP, scout, return, rearm), flak, dogfights, carrier AI. `Data.AIRCRAFT` has the plane stats |
 | `scripts/data.gd` | GUNS, ARCS, TYPES (ship classes), TELE, WEATHER: the numbers to tune |
 | `scripts/battle.gd` | Simulation: missions (`_setup_*`), gunnery, torpedoes, damage, AI, camera, test flags |
@@ -50,7 +52,7 @@ godot --headless --path . --quit-after 3 -- --scenario=barges --auto --start --r
 xvfb-run -a -s "-screen 0 1920x1080x24" godot --path . --rendering-method gl_compatibility \
   --rendering-driver opengl3 -- --scenario=convoy --start --run=300 --view=wide --shot=out.png --quit
 ```
-Flags: `--scenario=dd|barges|convoy|cruisers|bbs|fleet|carriers|subpatrol|subhunt --strike (launch the player's strike at t=20) --weather=clear|overcast|fog|night --start --run=SECONDS
+Flags: `--scenario=dd|barges|convoy|cruisers|bbs|fleet|carriers|subpatrol|subhunt|escort|bombard|rescue --strike (launch the player's strike at t=20) --weather=clear|overcast|fog|night --start --run=SECONDS
 --fire --auto (AI drives the player too) --trace (prints messages and ship states) --view=close|ship|wide|tac
 --cam=player|target --nofollow --aim=manual --torpaim=DEG --save=SLOT (after the run) --load=SLOT
 --pause (open the pause menu) --shot=PNG --frames=N --quit`. Menu screenshots: `--menushot=PNG [--settings]`.

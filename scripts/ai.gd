@@ -45,7 +45,31 @@ func step(s: Ship) -> void:
 				want = tp.h
 				s.ai_note = "combing torpedoes"
 				break
+	if not B.terrain.islands.is_empty() and not s.T.get("ground", false) and s.role() != "survivors":
+		want = avoid_land(s, want)
 	s.rud_cmd = clampf(rad_to_deg(U.ang_d(s.h, want)) * 1.5, -35.0, 35.0)
+
+
+func _clear_ahead(s: Ship, hdg: float, look: float, draft: float) -> bool:
+	for k in [0.5, 1.0]:
+		var f := U.fwd(hdg)
+		if B.terrain.height_at(s.x + f.x * look * k, s.z + f.y * look * k) > -draft * 1.5:
+			return false
+	return true
+
+
+## Steer clear of the beach: if the course ahead runs onto land, try turns of growing size.
+func avoid_land(s: Ship, want: float) -> float:
+	var look: float = maxf(900.0, s.v * 60.0) + s.T.L
+	var draft: float = s.T.get("draft", 4.0)
+	if _clear_ahead(s, want, look, draft):
+		return want
+	for off in [40.0, -40.0, 80.0, -80.0, 120.0, -120.0, 180.0]:
+		var h2 := want + deg_to_rad(off) * s.side
+		if _clear_ahead(s, h2, look, draft):
+			s.ai_note = "avoiding shoal water"
+			return h2
+	return want + PI
 
 
 ## Who this ship should fight: friendlies support the player's target; others take the
@@ -93,9 +117,13 @@ func nearest_noticed(s: Ship, prefer_obj: bool) -> Ship:
 	for o in B.ships:
 		if o.team == s.team or not o.alive or o.escaped:
 			continue
+		if o.role() == "survivors":
+			continue
 		var d := s.range_to(o)
 		if prefer_obj and not o.objective:
 			d += 2500.0   # go for the transports, not the escort
+		if o.protect:
+			d -= 2500.0   # raiders go for the convoy
 		# a ship that just fired nearby gives itself away even if unseen
 		var noticed: bool = s.contact(o) or (B.t - o.last_fired < 4.0 and d < 7000.0 * clampf(o.gun.size, 0.3, 1.0))
 		if noticed and d < bd:
