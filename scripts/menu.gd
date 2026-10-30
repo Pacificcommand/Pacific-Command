@@ -11,6 +11,11 @@ var buttons: VBoxContainer
 func _ready() -> void:
 	# command-line test runs (see CLAUDE.md) go straight to the battle
 	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--ops"):
+			if Game.campaign.is_empty():
+				Game.campaign = load("res://scripts/ops.gd").new_campaign(240, "fletcher", "USS O'Bannon")
+			get_tree().change_scene_to_file.call_deferred("res://scenes/ops.tscn")
+			return
 		if a.begins_with("--scenario") or a.begins_with("--start") or a.begins_with("--load"):
 			for b in OS.get_cmdline_user_args():
 				if b.begins_with("--scenario="):
@@ -95,7 +100,11 @@ func _build_ui() -> void:
 	spacer.custom_minimum_size.y = 24
 	v.add_child(spacer)
 	buttons = UI.column(8)
-	buttons.add_child(UI.big_button("New battle", _on_new))
+	var cont := UI.big_button("Continue campaign", func(): get_tree().change_scene_to_file("res://scenes/ops.tscn"))
+	cont.disabled = Game.campaign.is_empty()
+	buttons.add_child(cont)
+	buttons.add_child(UI.big_button("New campaign", _on_campaign))
+	buttons.add_child(UI.big_button("Single battle", _on_new))
 	var any_save := false
 	for i in Game.SLOTS:
 		if not Game.slot_info(i).is_empty():
@@ -130,6 +139,7 @@ func _process(delta: float) -> void:
 
 func _on_new() -> void:
 	Game.pending_load = -1
+	Game.mission = {}
 	get_tree().change_scene_to_file("res://scenes/battle.tscn")
 
 
@@ -139,6 +149,52 @@ func _on_load() -> void:
 	sp.picked.connect(func(i):
 		Game.pending_load = i
 		get_tree().change_scene_to_file("res://scenes/battle.tscn"))
+
+
+func _on_campaign() -> void:
+	var panel := Control.new()
+	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	panel.add_child(UI.backdrop())
+	var p := UI.panel(20)
+	var v := UI.column(10)
+	v.add_child(UI.label("NEW CAMPAIGN", 11, UI.BRASS))
+	v.add_child(UI.label("Where do you join the war?", 22))
+	var start := [0]
+	var ship := ["fletcher", "USS O'Bannon"]
+	var starts := [[0, "December 1941 · Pearl Harbor"], [240, "August 1942 · Guadalcanal"], [700, "November 1943 · Central Pacific"], [1040, "October 1944 · Philippines"]]
+	var sb := UI.row([], 4)
+	var start_btns := []
+	for it in starts:
+		var b := UI.button(it[1], func(): pass, true)
+		b.pressed.connect(func(): start[0] = it[0]; for o in start_btns: o.set_pressed_no_signal(o == b))
+		b.set_pressed_no_signal(it[0] == 0)
+		start_btns.append(b)
+		sb.add_child(b)
+	v.add_child(sb)
+	v.add_child(UI.label("Your first command", 16))
+	var ships := [["pt_elco", "PT-109"], ["fletcher", "USS O'Bannon"], ["gato", "USS Wahoo"], ["buckley", "USS England"], ["cleveland", "USS Cleveland"], ["baltimore", "USS Baltimore"], ["essex", "USS Essex"], ["iowa", "USS Iowa"]]
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 4)
+	grid.add_theme_constant_override("v_separation", 4)
+	var ship_btns := []
+	for it in ships:
+		var b2 := UI.button("%s (%s)" % [it[1], Data.TYPES[it[0]].name.replace(" class", "")], func(): pass, true)
+		b2.pressed.connect(func(): ship[0] = it[0]; ship[1] = it[1]; for o in ship_btns: o.set_pressed_no_signal(o == b2))
+		b2.set_pressed_no_signal(it[0] == "fletcher")
+		ship_btns.append(b2)
+		grid.add_child(b2)
+	v.add_child(grid)
+	v.add_child(UI.wrap("The career build will tie commands to rank; for now any ship can be chosen. A new campaign replaces the saved one.", 560, 12, UI.MUTED))
+	v.add_child(UI.row([UI.big_button("Begin", func():
+		Game.campaign = load("res://scripts/ops.gd").new_campaign(start[0], ship[0], ship[1])
+		Game.career.year = War.year_of(start[0])
+		Game.save_campaign()
+		get_tree().change_scene_to_file("res://scenes/ops.tscn")), UI.button("Cancel", func(): panel.queue_free())]))
+	p.add_child(v)
+	panel.add_child(p)
+	UI.center(p)
+	ui.add_child(panel)
 
 
 func _on_settings() -> void:

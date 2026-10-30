@@ -7,7 +7,7 @@ signal graphics_changed
 const CFG := "user://settings.cfg"
 const SAVE_DIR := "user://saves"
 const SLOTS := 5
-const VERSION := "0.7"
+const VERSION := "0.8"
 
 ## Graphics and sound settings with their defaults.
 var settings := {
@@ -40,6 +40,14 @@ var keys := {}                 # action -> keycode
 const CAREER_FILE := "user://career.json"
 var career := {"rank": 3, "reputation": 900, "xp": 0, "year": 1943, "missions": 0, "won": 0}
 
+## Campaign (operations map) state, saved with the career. Empty = no campaign started.
+const CAMPAIGN_FILE := "user://campaign.json"
+var campaign := {}
+## The mission the operations map sent the battle scene to fight: {plan, weather, kind, contact, zone, op}.
+## Empty for sandbox battles. last_result carries the outcome back to the map.
+var mission := {}
+var last_result := {}
+
 var pending_load := -1         # save slot the battle scene should load when it opens
 var start_scenario := "dd"     # mission the battle scene should set up
 
@@ -52,6 +60,7 @@ func _ready() -> void:
 	_make_buses()
 	load_settings()
 	load_career()
+	load_campaign()
 	apply_all()
 
 
@@ -63,6 +72,21 @@ func load_career() -> void:
 			for k in career:
 				if d.has(k):
 					career[k] = int(d[k]) if career[k] is int else d[k]
+
+
+func load_campaign() -> void:
+	campaign = {}
+	if FileAccess.file_exists(CAMPAIGN_FILE):
+		var f := FileAccess.open(CAMPAIGN_FILE, FileAccess.READ)
+		var d = JSON.parse_string(f.get_as_text())
+		if d is Dictionary:
+			campaign = d
+
+
+func save_campaign() -> void:
+	var f := FileAccess.open(CAMPAIGN_FILE, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(campaign))
 
 
 func save_career() -> void:

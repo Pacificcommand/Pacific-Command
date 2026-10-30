@@ -459,7 +459,9 @@ func _build_end() -> void:
 	lbl.end_p.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.end_p.custom_minimum_size.x = 430
 	v.add_child(lbl.end_p)
-	v.add_child(_row([_button("Fight again", func(): B.new_game()), _button("Keep watching", func(): endp.visible = false)]))
+	btn.fight_again = _button("Fight again", func(): B.new_game())
+	btn.to_map = _button("Return to the map", func(): get_tree().change_scene_to_file("res://scenes/ops.tscn"))
+	v.add_child(_row([btn.fight_again, btn.to_map, _button("Keep watching", func(): endp.visible = false)]))
 	endp.add_child(v)
 	_place(endp, "c")
 	endp.visible = false
@@ -497,6 +499,8 @@ func show_end() -> void:
 	if B.over == "won" and p.alive:
 		txt += "\n\nObjective destroyed and your boat is still afloat. Well done, Captain."
 	lbl.end_p.text = txt
+	btn.to_map.visible = not Game.mission.is_empty()
+	btn.fight_again.visible = Game.mission.is_empty()
 	endp.visible = true
 
 
@@ -1144,6 +1148,8 @@ func open_pause() -> void:
 	v.add_child(UI.big_button("Load battle", _pause_load))
 	v.add_child(UI.big_button("Settings", func(): pausep.add_child(SettingsPanel.new())))
 	v.add_child(UI.big_button("New battle (briefing)", func(): close_pause(); B.new_game()))
+	if not Game.mission.is_empty():
+		v.add_child(UI.big_button("Abandon battle (back to the map)", func(): Game.last_result = {"over": "abandoned", "mission": Game.mission.duplicate(true)}; get_tree().change_scene_to_file("res://scenes/ops.tscn")))
 	v.add_child(UI.big_button("Main menu", func(): get_tree().change_scene_to_file("res://scenes/menu.tscn")))
 	v.add_child(UI.big_button("Quit to desktop", func(): get_tree().quit()))
 	pnl.add_child(v)

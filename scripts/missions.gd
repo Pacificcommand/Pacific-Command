@@ -189,7 +189,149 @@ static func _spawn_group(B, e: Dictionary) -> void:
 			sh.depth_m = B.DEPTHS[1]
 			sh.route_h = e.h
 			sh.tele = 2
+		if e.get("escort", false):
+			sh.escort_group = "convoy"
+			sh.route_h = e.h
+			sh.tele = 2
 		if e.group == "":
 			sh.group = ""
 	if B.started and not ships.is_empty():
 		B.say("New contact reported: %s bearing %s." % [ships[0].T.name, U.deg3(B.player.bearing_to(ships[0].x, ships[0].z))], "bad")
+
+
+# =====================================================================
+# plans generated for the operations map
+# =====================================================================
+
+static func _enemy_dds(rng: RandomNumberGenerator, n: int, year: int) -> Array:
+	var names := ["Amagiri", "Hatsuyuki", "Yukikaze", "Hamakaze", "Shigure", "Ayanami", "Uranami", "Nowaki", "Akizuki", "Suzutsuki", "Kagero", "Fubuki", "Shirayuki"]
+	var out := []
+	for i in n:
+		var tid := "kagero" if rng.randf() < 0.5 else "fubuki"
+		if year >= 1943 and rng.randf() < 0.2:
+			tid = "akizuki"
+		out.append([tid, names[(rng.randi() % names.size() + i) % names.size()], 800.0 * i, (300.0 if i % 2 == 1 else -300.0) * (1 if i > 0 else 0)])
+	return out
+
+static func _choices(ship_type: String, ship_name: String) -> Array:
+	return [[ship_type, ship_name]]
+
+static func _report(brg: float, dist: float, h: float, kn: float, r: float) -> Dictionary:
+	return {"brg": brg, "dist": dist, "h": h, "kn": kn, "r": r}
+
+## Tokyo Express: destroyers (a light cruiser leading when strong) on a night supply run.
+static func tokyo_express(rng: RandomNumberGenerator, strength: float, year: int, ship_type: String, ship_name: String) -> Dictionary:
+	var brg := rng.randf_range(0.0, TAU)
+	var dist := rng.randf_range(12000.0, 15000.0)
+	var n := clampi(int(2 + strength * 3), 2, 6)
+	var ships := _enemy_dds(rng, n, year)
+	if strength > 1.2:
+		ships.insert(0, ["nagara", "Jintsu", 0.0, 0.0])
+		for i in range(1, ships.size()):
+			ships[i][2] += 800.0
+	var h := fposmod(brg + PI + rng.randf_range(-0.4, 0.4), TAU)
+	return {"id": "express", "title": "Tokyo Express interception", "kind": "sink", "weather": "night", "choices": _choices(ship_type, ship_name), "friends": [],
+		"enemies": [{"group": "Reinforcement Group", "x": sin(brg) * dist, "z": -cos(brg) * dist, "h": h, "kn": 28.0, "ships": ships, "objective": true, "route": true, "dest": 30000.0}],
+		"report": _report(brg, dist, h, 28.0, 3000.0), "escape_r": 26000.0,
+		"text": "Coastwatchers report a Tokyo Express run bearing %s, about %s away: destroyers at high speed with troops and supplies for the garrison. Stop them.\n\nYou command %s. The run is over if they pass out of reach; the night is theirs if their torpedoes find you first."}
+
+## A merchant convoy with escorts to sink.
+static func convoy_attack(rng: RandomNumberGenerator, strength: float, year: int, ship_type: String, ship_name: String) -> Dictionary:
+	var brg := rng.randf_range(0.0, TAU)
+	var dist := rng.randf_range(8000.0, 11000.0)
+	var h := fposmod(brg + PI + rng.randf_range(-0.5, 0.5), TAU)
+	var marus := []
+	var mn := ["Kinai Maru", "Nissho Maru", "Taiyo Maru", "Hokko Maru", "Toyo Maru", "Yamazuki Maru"]
+	var n := clampi(int(2 + strength * 2), 2, 5)
+	for i in n:
+		marus.append(["tanker_maru" if i == 1 else "cargo_maru", mn[i], -500.0 * i, (250.0 if i % 2 == 1 else -250.0)])
+	var escorts := []
+	escorts.append(["kagero" if strength > 0.6 else "subchaser", "Shigure" if strength > 0.6 else "CH-18", 900.0, -900.0])
+	if strength > 1.0:
+		escorts.append(["subchaser", "CH-24", -1800.0, 800.0])
+	return {"id": "convoy", "title": "Convoy attack", "kind": "sink", "weather": "night" if rng.randf() < 0.6 else "overcast", "choices": _choices(ship_type, ship_name), "friends": [],
+		"enemies": [{"group": "", "x": sin(brg) * dist, "z": -cos(brg) * dist, "h": h, "kn": 9.0, "ships": marus, "objective": true, "route": true, "dest": 20000.0},
+			{"group": "", "x": sin(brg) * dist, "z": -cos(brg) * dist, "h": h, "kn": 9.0, "ships": escorts, "objective": false, "escort": true}],
+		"report": _report(brg, dist, h, 9.0, 2500.0), "escape_r": 24000.0,
+		"text": "A convoy of Japanese merchant ships bearing %s, about %s away, is carrying fuel and supplies to the front, with an escort.\n\nYou command %s. Sink the merchantmen; the escort will try to drive you off."}
+
+## A surface task force: cruisers, with battleships when strong.
+static func task_force(rng: RandomNumberGenerator, strength: float, year: int, ship_type: String, ship_name: String) -> Dictionary:
+	var brg := rng.randf_range(0.0, TAU)
+	var dist := rng.randf_range(16000.0, 20000.0)
+	var h := fposmod(brg + PI + rng.randf_range(-0.5, 0.5), TAU)
+	var ships := []
+	var cas := ["takao", "myoko", "mogami", "tone"]
+	var ca_names := ["Atago", "Haguro", "Suzuya", "Chikuma", "Nachi", "Chokai"]
+	if strength > 1.4:
+		ships.append([["kongo", "fuso", "nagato", "yamato"][mini(3, int(strength - 1.0))], ["Kongo", "Fuso", "Nagato", "Yamato"][mini(3, int(strength - 1.0))], 0.0, 0.0])
+	var nca := clampi(int(strength * 2), 1, 4)
+	for i in nca:
+		ships.append([cas[rng.randi() % cas.size()], ca_names[i], 1200.0 * (i + ships.size()), (600.0 if i % 2 == 0 else -600.0)])
+	for d in _enemy_dds(rng, 2 + int(strength), year):
+		ships.append([d[0], d[1], -2500.0 - d[2] * 0.5, d[3] * 2.5])
+	return {"id": "taskforce", "title": "Task force action", "kind": "sink", "weather": ["clear", "overcast", "night"][rng.randi() % 3], "choices": _choices(ship_type, ship_name), "friends": [],
+		"enemies": [{"group": "Striking Force", "x": sin(brg) * dist, "z": -cos(brg) * dist, "h": h, "kn": 24.0, "ships": ships, "objective": true}],
+		"report": _report(brg, dist, h, 24.0, 4500.0), "escape_r": 34000.0,
+		"text": "Scout planes report a Japanese surface force bearing %s, about %s away: cruisers with a destroyer screen, perhaps a battleship. Fleet command wants it brought to action.\n\nYou command %s. Bring the support you have paid for, form a line, and fight at the range that suits your guns."}
+
+## A carrier group to strike (for carrier captains).
+static func carrier_force(rng: RandomNumberGenerator, strength: float, year: int, ship_type: String, ship_name: String) -> Dictionary:
+	var brg := rng.randf_range(0.0, TAU)
+	var dist := rng.randf_range(28000.0, 34000.0)
+	var h := fposmod(brg + PI + rng.randf_range(-0.5, 0.5), TAU)
+	var ships := [["shokaku", "Shokaku", 0.0, 0.0]]
+	if strength > 0.8:
+		ships.append(["hiryu" if year <= 1942 else "zuiho", "Hiryu" if year <= 1942 else "Zuiho", 1500.0, 1800.0])
+	if strength > 1.3:
+		ships.append(["kaga" if year <= 1942 else "shokaku", "Kaga" if year <= 1942 else "Zuikaku", 1500.0, -1800.0])
+	ships.append(["tone", "Tone", -2500.0, -1500.0])
+	for d in _enemy_dds(rng, 2, year):
+		ships.append([d[0], d[1], -3500.0 - d[2] * 0.5, d[3] * 3.0])
+	return {"id": "cvstrike", "title": "Carrier strike", "kind": "sink", "weather": "clear", "choices": _choices(ship_type, ship_name), "friends": [["cleveland", "USS Santa Fe", 1200.0, -1500.0], ["fletcher", "USS Dewey", -2200.0, 1000.0]],
+		"enemies": [{"group": "Carrier Division", "x": sin(brg) * dist, "z": -cos(brg) * dist, "h": h, "kn": 20.0, "ships": ships, "objective": true}],
+		"report": _report(brg, dist, h, 20.0, 6000.0), "escape_r": 60000.0,
+		"text": "A search plane has found Japanese carriers bearing %s, about %s away. They will have seen it too; the first strike home wins.\n\nYou command %s. Launch (L) at the reported position, keep fighters up, and set the AA guns to protect the carrier."}
+
+## One or two submarines on the route (for escorts and destroyers).
+static func sub_contact(rng: RandomNumberGenerator, strength: float, year: int, ship_type: String, ship_name: String) -> Dictionary:
+	var subs := []
+	var n := 2 if strength > 0.8 else 1
+	for i in n:
+		var brg := rng.randf_range(0.0, TAU)
+		var d := rng.randf_range(5000.0, 8000.0)
+		subs.append({"group": "", "x": sin(brg) * d, "z": -cos(brg) * d, "h": fposmod(brg + PI, TAU), "kn": 3.0, "ships": [["i_boat", ["I-175", "I-26", "I-19"][i], 0.0, 0.0]], "objective": true, "sub": true})
+	return {"id": "subhunt", "title": "Submarine hunt", "kind": "sink", "weather": "clear", "choices": _choices(ship_type, ship_name), "friends": [["buckley", "USS Raby", 2200.0, 2200.0]],
+		"enemies": subs, "report": _report(subs[0].h + PI, 6500.0, 0.0, 3.0, 4000.0), "escape_r": 30000.0,
+		"text": "Direction-finding puts a Japanese submarine roughly bearing %s, about %s away, on the convoy route.\n\nYou command %s with USS Raby. Find it on sonar and sink it with hedgehog and depth charges."}
+
+## A barge column hugging the coast (for PT boats and destroyers).
+static func barge_hunt(rng: RandomNumberGenerator, strength: float, year: int, ship_type: String, ship_name: String) -> Dictionary:
+	var brg := rng.randf_range(0.0, TAU)
+	var dist := rng.randf_range(4500.0, 6000.0)
+	var h := fposmod(brg + PI / 2 + rng.randf_range(-0.3, 0.3), TAU)
+	var ships := []
+	var n := clampi(int(4 + strength * 3), 4, 8)
+	for i in n:
+		ships.append(["daihatsu_gun" if (i == 0 or i == n - 1) else "daihatsu", "Barge %d" % (i + 1), 140.0 * i, (60.0 if i % 2 == 0 else -60.0)])
+	return {"id": "barges", "title": "Barge hunt", "kind": "sink", "weather": "night", "choices": _choices(ship_type, ship_name), "friends": [],
+		"enemies": [{"group": "", "x": sin(brg) * dist, "z": -cos(brg) * dist, "h": h, "kn": 7.0, "ships": ships, "objective": true, "route": true, "dest": 9000.0}],
+		"report": _report(brg, dist, h, 7.0, 1500.0), "escape_r": 16000.0,
+		"text": "A coastwatcher reports landing barges bearing %s, about %s away, creeping along the coast with supplies for the garrison. Some are gun barges.\n\nYou command %s. Sink the supply barges before they reach the beach; torpedoes run under them, so this is a gun fight."}
+
+## Pick a plan for a contact kind.
+static func for_contact(kind: String, rng: RandomNumberGenerator, strength: float, year: int, ship_type: String, ship_name: String) -> Dictionary:
+	match kind:
+		"express": return tokyo_express(rng, strength, year, ship_type, ship_name)
+		"convoy": return convoy_attack(rng, strength, year, ship_type, ship_name)
+		"taskforce": return task_force(rng, strength, year, ship_type, ship_name)
+		"carriers": return carrier_force(rng, strength, year, ship_type, ship_name)
+		"sub": return sub_contact(rng, strength, year, ship_type, ship_name)
+		"barges": return barge_hunt(rng, strength, year, ship_type, ship_name)
+		"bombard":
+			var p := shore_bombardment(rng); p.choices = _choices(ship_type, ship_name); p.friends = []; return p
+		"rescue":
+			var p2 := rescue(rng); p2.choices = _choices(ship_type, ship_name); return p2
+		"escort":
+			var p3 := convoy_escort(rng); p3.choices = _choices(ship_type, ship_name); return p3
+	return tokyo_express(rng, strength, year, ship_type, ship_name)

@@ -298,31 +298,36 @@ func new_game() -> void:
 				_spent += it[2]
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
-	match scenario:
-		"escort":
-			Missions.build(self, Missions.convoy_escort(rng), ship_choice)
-		"bombard":
-			Missions.build(self, Missions.shore_bombardment(rng), ship_choice)
-		"rescue":
-			Missions.build(self, Missions.rescue(rng), ship_choice)
-		"barges":
-			_setup_barges()
-		"convoy":
-			_setup_convoy()
-		"cruisers":
-			_setup_cruisers()
-		"bbs":
-			_setup_bbs()
-		"fleet":
-			_setup_fleet()
-		"carriers":
-			_setup_carriers()
-		"subpatrol":
-			_setup_subpatrol()
-		"subhunt":
-			_setup_subhunt()
-		_:
-			_setup_dd()
+	if not Game.mission.is_empty() and Game.mission.has("plan"):
+		weather = Game.mission.get("weather", weather)
+		Missions.build(self, Game.mission.plan, ship_choice)
+		scenario = "campaign"
+	else:
+		match scenario:
+			"escort":
+				Missions.build(self, Missions.convoy_escort(rng), ship_choice)
+			"bombard":
+				Missions.build(self, Missions.shore_bombardment(rng), ship_choice)
+			"rescue":
+				Missions.build(self, Missions.rescue(rng), ship_choice)
+			"barges":
+				_setup_barges()
+			"convoy":
+				_setup_convoy()
+			"cruisers":
+				_setup_cruisers()
+			"bbs":
+				_setup_bbs()
+			"fleet":
+				_setup_fleet()
+			"carriers":
+				_setup_carriers()
+			"subpatrol":
+				_setup_subpatrol()
+			"subhunt":
+				_setup_subhunt()
+			_:
+				_setup_dd()
 	player.is_player = true
 	player.leader_flag = true
 	_add_support()
@@ -937,6 +942,8 @@ func _settle() -> void:
 	if get_meta("settled", false):
 		return
 	set_meta("settled", true)
+	Game.last_result = {"over": over, "sunk": stats.sunk.duplicate(), "rescued": stats.get("rescued", 0), "player_alive": player.alive, "crew_lost": stats.start_crew - player.crew,
+		"flood": player.flood / maxf(1.0, player.flood_cap()), "mission": Game.mission.duplicate(true)}
 	Game.career.missions += 1
 	var tons := 0.0
 	for s in ships:

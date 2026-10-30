@@ -1,8 +1,22 @@
-# Pacific Command — combat sandbox (build 0.7)
+# Pacific Command (build 0.8)
 
-WWII Pacific naval game for PC, made in **Godot 4.7.2**. Combat sandbox with twelve
-missions, picked on the briefing screen (most let you choose your ship), each with a
-threat rating; reputation buys support ships before the battle, capped by rank:
+WWII Pacific naval game for PC, made in **Godot 4.7.2**.
+
+**Campaign:** from the main menu, start a campaign in December 1941, August 1942,
+November 1943 or October 1944 with the ship of your choice. The operations map shows
+the Pacific from Pearl Harbor to Japan: sea zones held by either side, bases, and
+contacts (Tokyo Express runs, convoys, barges, submarines, task forces, carrier
+forces, bombardment requests, rescues, convoys to escort) that appear where the war
+is busy. Click the sea to set a course, run the clock (pause / 1 h per 3 s / fast /
+very fast), sail within 60 nm of a contact and engage it: the battle opens with the
+contact's force and the weather of the hour. Historical operations (Savo, Midway,
+Guadalcanal, Leyte...) arrive on their dates and offer you a part. Your results nudge
+the war: wins bring the Allied advance forward, losses hold it back. After the
+surrender the Pacific stays open for patrols.
+
+**Single battle:** twelve stand-alone missions picked on the briefing screen (most
+let you choose your ship), each with a threat rating; reputation buys support ships
+before the battle, capped by rank:
 
 - **Convoy escort:** keep four Liberty ships alive against three raiding destroyers and
   a submarine. **Shore bombardment:** silence two coastal batteries and a supply dump
@@ -64,6 +78,9 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 All keys can be changed in Settings › Controls.
 
 ## What's in this build
+- The operations map (scripts/ops.gd, scripts/war.gd): 18 sea zones with historical
+  ownership dates, 21 bases, 23 operations on the 1941-45 timeline, contacts generated
+  from zone activity, time compression, campaign saved to user://campaign.json.
 - Islands with beaches you can run aground on, coastal gun batteries that shoot back,
   Liberty ships, life rafts; threat ratings (Low to Extreme) from the enemy force;
   reputation earned by results and spent on support ships (destroyers to carriers)
