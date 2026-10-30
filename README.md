@@ -144,6 +144,9 @@ All keys can be changed in Settings › Controls.
 - Module damage, holes and flooding, list and trim, fires, crew losses lowering
   efficiency, rare magazine explosions (setting: Historical / Reduced / Off).
 - Weather: clear, overcast, fog, night (star shells, gun flashes, radar).
+- The ship is alive: a representative crew walks the decks while cruising, runs to the
+  open gun mounts and the rails at general quarters, repair parties fight the fires, and
+  when she goes down the men go to the side and over.
 - Effects: wakes, splashes, smoke, fires, oil slicks, floating debris.
 - Smoke, gun smoke, fire and flash sprites from the **Kenney Smoke Particles** pack.
 - Whitewater foam and water detail textures from the **Boujie Water Shader**.

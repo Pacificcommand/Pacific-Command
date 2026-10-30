@@ -41,6 +41,7 @@ var flood_side := 0.0
 var flood_fwd := 0.0
 var holes: Array = []        # {lx, side, rate, fix}
 var fires: Array = []        # {lx, lz, int}
+var crew_figs: Array = []    # the visible crew (scripts/crew.gd)
 var modules: Array = []      # {label, kind, x, hp, max, ref}
 var mounts: Array = []       # {g, x, stow, arc, ang, reload, hp, recoil, node}
 var torps: Array = []        # {g, x, n, ang, left, hp, reload_t, node}
@@ -143,6 +144,18 @@ func load_model(scheme: String) -> void:
 	_collect_parts(model)
 	for m in mounts:
 		m.node = parts.get(m.g)
+		# where the mount stands on the model: its athwartships offset and the deck under it
+		if m.node != null:
+			var rel: Transform3D = model.global_transform.affine_inverse() * m.node.global_transform
+			m.lz = rel.origin.x
+			var bottom := 1e9
+			if m.node is MeshInstance3D and m.node.mesh:
+				bottom = m.node.mesh.get_aabb().position.y
+			for c in m.node.get_children():
+				if c is MeshInstance3D and c.mesh:
+					bottom = minf(bottom, (c.transform * c.mesh.get_aabb()).position.y)
+			if bottom < 1e8:
+				m.deck_y = rel.origin.y + bottom
 	for t in torps:
 		t.node = parts.get(t.g)
 	_dead_mat = StandardMaterial3D.new()

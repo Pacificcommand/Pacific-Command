@@ -53,6 +53,7 @@ var ocean: MeshInstance3D
 var ocean_mat: ShaderMaterial
 var fx: Fx
 var sfx: Sfx
+var crew: Crew
 var ai: AI
 var air: Air
 var terrain: Terrain
@@ -75,6 +76,9 @@ func _ready() -> void:
 	sfx = Sfx.new()
 	sfx.B = self
 	add_child(sfx)
+	crew = Crew.new()
+	crew.B = self
+	add_child(crew)
 	ai = AI.new()
 	ai.B = self
 	air = Air.new()
@@ -730,6 +734,7 @@ func _add_ship(type_id: String, team: String, nm: String, x: float, z: float, h:
 	add_child(s)
 	s.setup(type_id, team, nm, x, z, h, kn, scheme)
 	ships.append(s)
+	crew.setup_ship(s)
 	return s
 
 
@@ -961,6 +966,8 @@ func _process(delta: float) -> void:
 		s.update_visual(t)
 	_draw_shells()
 	fx.render(cam.position)
+	crew.step(delta * (speed if started else 0.0))
+	crew.render(cam.position)
 	sfx.step(delta)
 	ocean_mat.set_shader_parameter("time_s", t)
 	hud.refresh()
