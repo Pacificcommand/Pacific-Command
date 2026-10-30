@@ -1,7 +1,14 @@
-# Pacific Command — combat sandbox (build 0.4)
+# Pacific Command — combat sandbox (build 0.5)
 
-WWII Pacific naval game for PC, made in **Godot 4.7.2**. Combat sandbox with three
-missions, picked on the briefing screen:
+WWII Pacific naval game for PC, made in **Godot 4.7.2**. Combat sandbox with six
+missions, picked on the briefing screen (some let you choose your ship):
+
+- **Cruiser night action:** a light cruiser (Cleveland, Helena or Atlanta) and two
+  Fletchers against a Tokyo Express led by the cruiser Jintsu with four destroyers.
+- **Battleship action:** Washington or South Dakota, with the other astern and four
+  destroyers, against Kirishima, Atago, Takao, Nagara and escorts off Savo at night.
+- **Fleet action:** Iowa (or Massachusetts, North Carolina, Baltimore) leading a task
+  force against Yamato, Nagato, Kongo, Tone, Haguro and a destroyer screen by day.
 
 - **Destroyer action:** USS O'Bannon (Fletcher class) against two Kagero-class destroyers.
 - **PT barge hunt:** you and two AI PT boats against a night run of Daihatsu barges
@@ -41,6 +48,16 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 All keys can be changed in Settings › Controls.
 
 ## What's in this build
+- 37 new ship classes built with the parametric warship builder, matched to the
+  reference photos: US Mahan, Benson, Buckley, Gato, Atlanta, Brooklyn, Cleveland,
+  Northampton, New Orleans, Baltimore, North Carolina, South Dakota, Iowa, Texas,
+  Yorktown, Essex, Independence, Casablanca; Japanese Fubuki, Akizuki, Nagara, Myoko,
+  Takao, Mogami, Tone, Kongo, Fuso, Ise, Nagato, Yamato, Akagi, Kaga, Hiryu, Shokaku,
+  Zuiho, I-boat, subchaser. Every turret, mount, tube and director turns.
+- Guns from 3-inch to 18.1-inch with armour penetration: light shells only scratch a
+  battleship; big turrets train at 4 degrees a second and reload in half a minute.
+- Your own task force: consorts keep station on you and engage your target; your
+  destroyers run in with torpedoes when the enemy closes.
 - Main menu, pause menu (Esc), settings (quality preset, fullscreen/resolution/v-sync,
   UI scale, volumes for music/effects/radio, key rebinding) saved between sessions,
   and five save slots for battles in progress.

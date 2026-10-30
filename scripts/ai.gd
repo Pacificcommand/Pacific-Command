@@ -103,7 +103,7 @@ func pick_leader(group: String) -> Ship:
 	for o in B.ships:
 		if o.group != group or not o.alive or o.escaped or o.detached:
 			continue
-		var v: float = o.T.displacement + (1e6 if o.leader_flag else 0.0)
+		var v: float = o.T.displacement + (1e6 if o.leader_flag else 0.0) + (1e7 if o.is_player else 0.0)
 		if v > bv:
 			bv = v; best = o
 	return best
@@ -176,6 +176,9 @@ func warship(s: Ship, tgt: Ship) -> float:
 		plan_fleet(F, s, tgt)
 		if tgt == null and F.tgt != null and F.tgt.alive and not F.tgt.escaped:
 			tgt = F.tgt
+	elif F != null and leader != null and leader.is_player:
+		# the player leads this group: the plan follows the player's target
+		plan_fleet(F, leader, leader.target if leader.target and leader.target.alive else tgt)
 	if tgt == null:
 		return search(s, F, leader)
 	s.target = tgt
@@ -345,9 +348,12 @@ func battle_line(s: Ship, tgt: Ship, R: float) -> float:
 	var band := Vector2(0.55, 0.75)
 	match s.cls():
 		"bb":
-			band = Vector2(0.7, 0.9)
+			band = Vector2(0.6, 0.8)
 		"dd":
 			band = Vector2(0.45, 0.7)
+	# a long stand-off is no battle: the line creeps closer the longer the action lasts
+	if B.combat_t >= 0.0:
+		band *= clampf(1.0 - (B.t - B.combat_t) / 1800.0 * 0.45, 0.55, 1.0)
 	var to_t := s.bearing_to(tgt.x, tgt.z)
 	s.tele = 5
 	if R > mr * band.y:

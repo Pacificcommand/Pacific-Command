@@ -6,7 +6,8 @@ extends Node3D
 static var I  # the running battle, so other scripts can reach it
 
 # ---------- settings ----------
-var scenario := "dd"          # "dd" destroyer action, "barges" PT barge hunt, "convoy" PT convoy attack
+var scenario := "dd"          # dd, barges, convoy, cruisers, bbs, fleet (see _setup_*)
+var ship_choice := ""          # player's ship class for missions that offer a choice ("" = the mission's default)
 var brief := {}                # mission briefing text for the HUD
 var weather := "night"
 var magazine := "historical"   # player magazine detonations: historical, reduced, off
@@ -106,8 +107,7 @@ func _test_args() -> void:
 		var kv: PackedStringArray = a.trim_prefix("--").split("=")
 		_test[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	if _test.has("scenario"):
-		scenario = _test.scenario
-		new_game()
+		set_scenario(_test.scenario)
 	if _test.has("load"):
 		var d := Game.load_slot(int(_test.load))
 		if d.is_empty():
@@ -269,6 +269,7 @@ func new_game() -> void:
 	t = 0.0; salvo_n = 0; over = ""; shake = 0.0; started = false
 	click_shot = null
 	_hit_msg_t.clear()
+	_pending.clear()
 	_torp_warn_t = -99.0
 	_under_msg = false
 	stats = {"salvos": 0, "shells": 0, "hits": 0, "torps": 0, "torp_hits": 0, "sunk": [], "escaped": [], "start_crew": 0}
@@ -279,14 +280,23 @@ func new_game() -> void:
 			_setup_barges()
 		"convoy":
 			_setup_convoy()
+		"cruisers":
+			_setup_cruisers()
+		"bbs":
+			_setup_bbs()
+		"fleet":
+			_setup_fleet()
 		_:
 			_setup_dd()
 	player.is_player = true
+	player.leader_flag = true
 	stats.start_crew = player.crew
 	player.target = null
 	camst.x = player.x; camst.z = player.z; camst.ox = 0.0; camst.oz = 0.0; camst.salvo = null
 	camst.focus = "player"; camst.free = false
 	set_view("close" if player.T.L < 40.0 else "ship")
+	if player.T.L > 150.0:
+		camst.th = maxf(VIEWS.ship, player.T.L * 3.2)
 	camst.h = camst.th
 	apply_weather()
 	set_speed(1.0)
@@ -296,7 +306,9 @@ func new_game() -> void:
 
 ## Destroyer action: USS O'Bannon against two Kageros coming down from the northeast.
 func _setup_dd() -> void:
-	player = _add_ship("fletcher", "us", "USS O'Bannon", 0.0, 0.0, deg_to_rad(10.0), 25.0)
+	var choices := [["fletcher", "USS O'Bannon (Fletcher)"], ["benson", "USS Laffey (Benson)"], ["mahan", "USS Cushing (Mahan)"]]
+	var pc := _pick(choices)
+	player = _add_ship(pc[0], "us", pc[1].split(" (")[0], 0.0, 0.0, deg_to_rad(10.0), 25.0)
 	player.tele = 4
 	var brg := deg_to_rad(45.0 + randf_range(-12.0, 12.0))
 	var dist := randf_range(11500.0, 13000.0)
@@ -314,8 +326,8 @@ func _setup_dd() -> void:
 	b.fstation = Vector2(-600.0, 250.0)
 	a.side = 1.0; b.side = -1.0
 	report = {"x": ex + randf_range(-900, 900), "z": ez + randf_range(-900, 900), "h": eh + deg_to_rad(randf_range(-8, 8)), "v": 30.0 * Data.KN, "r": 2500.0, "t": 0.0, "active": true}
-	brief = {"title": "Intercept the Tokyo Express", "threat": "High (night action; Japanese crews are trained for it)" if weather == "night" else "Moderate",
-		"text": "Coastwatchers report two Japanese destroyers bearing %s from you, about %s away, steering %s at high speed. Expect Kagero-class ships armed with Long Lance torpedoes that outrange ours.\n\nYou command USS O'Bannon, a Fletcher-class destroyer with five 5-inch guns, ten torpedoes and SG radar. Find the enemy, stop the run, and bring your ship home." % [U.deg3(U.bearing(0, 0, report.x, report.z)), U.yards(U.hyp(report.x, report.z)), U.deg3(report.h)]}
+	brief = {"title": "Intercept the Tokyo Express", "threat": "High (night action; Japanese crews are trained for it)" if weather == "night" else "Moderate", "ships": choices,
+		"text": "Coastwatchers report two Japanese destroyers bearing %s from you, about %s away, steering %s at high speed. Expect Kagero-class ships armed with Long Lance torpedoes that outrange ours.\n\nYou command %s, a %s with 5-inch guns, torpedoes and radar. Find the enemy, stop the run, and bring your ship home." % [U.deg3(U.bearing(0, 0, report.x, report.z)), U.yards(U.hyp(report.x, report.z)), U.deg3(report.h), player.ship_name, player.T.name]}
 
 
 ## Three PT boats (you and two others) hunt a night barge run.
@@ -390,6 +402,104 @@ func _setup_convoy() -> void:
 		"text": "Search radar has a small convoy bearing %s, about %s away, course %s at 9 knots: two cargo ships and a tanker, with one Kagero-class destroyer screening them.\n\nYou lead three Elco PT boats from %s. Each boat carries four Mark 13 torpedoes that fire straight ahead, so you aim the whole boat: get inside about 2,000 yards, point at the target and press T. Then turn away and lay smoke before the destroyer finds you. Sink the merchant ships." % [U.deg3(U.bearing(0, 0, report.x, report.z)), U.yards(U.hyp(report.x, report.z)), U.deg3(ch), player.ship_name]}
 
 
+## The player's ship for this mission: the chosen class if it is on the list, else the first.
+func _pick(choices: Array) -> Array:
+	for c in choices:
+		if c[0] == ship_choice:
+			return c
+	return choices[0]
+
+
+## Put a group of ships in formation: leader at (x, z) on course h; the others on stations behind.
+## Returns the ships. stations = [(back, side), ...] in meters.
+func _formation(plan: Array, team: String, group: String, x: float, z: float, h: float, kn: float, objective := false) -> Array:
+	var f := U.fwd(h)
+	var r := Vector2(cos(h), sin(h))
+	var out := []
+	for i in plan.size():
+		var it: Array = plan[i]          # [type, name, back, side]
+		var sx: float = x - f.x * it[2] + r.x * it[3]
+		var sz: float = z - f.y * it[2] + r.y * it[3]
+		var sh := _add_ship(it[0], team, it[1], sx, sz, h, kn)
+		sh.group = group
+		sh.fstation = Vector2(-it[2], it[3])
+		sh.objective = objective
+		sh.tele = 4
+		sh.side = 1.0 if i % 2 == 0 else -1.0
+		if i == 0:
+			sh.leader_flag = true
+		out.append(sh)
+	return out
+
+
+## Cruiser night action: a light cruiser and two destroyers against a Tokyo Express led by a Nagara.
+func _setup_cruisers() -> void:
+	var choices := [["cleveland", "USS Cleveland"], ["brooklyn", "USS Helena (Brooklyn)"], ["atlanta", "USS Atlanta"]]
+	var pc := _pick(choices)
+	var tf := _formation([[pc[0], pc[1].split(" (")[0], 0.0, 0.0], ["fletcher", "USS Nicholas", 700.0, 0.0], ["fletcher", "USS Radford", 1400.0, 0.0]],
+		"us", "TF 18", 0.0, 0.0, deg_to_rad(340.0), 22.0)
+	player = tf[0]
+	var brg := deg_to_rad(20.0 + randf_range(-15.0, 15.0))
+	var dist := randf_range(14000.0, 16000.0)
+	var ex := sin(brg) * dist
+	var ez := -cos(brg) * dist
+	var eh := deg_to_rad(165.0 + randf_range(-10.0, 10.0))
+	_formation([["nagara", "Jintsu", 0.0, 0.0], ["fubuki", "Amagiri", 800.0, -300.0], ["fubuki", "Hatsuyuki", 800.0, 300.0], ["kagero", "Yukikaze", 1500.0, -300.0], ["kagero", "Hamakaze", 1500.0, 300.0]],
+		"ijn", "Tokyo Express", ex, ez, eh, 28.0, true)
+	report = {"x": ex + randf_range(-1200, 1200), "z": ez + randf_range(-1200, 1200), "h": eh + deg_to_rad(randf_range(-10, 10)), "v": 28.0 * Data.KN, "r": 3500.0, "t": 0.0, "active": true}
+	brief = {"title": "Cruiser night action", "escape_r": 24000.0, "threat": "High (a cruiser and four destroyers, all with Long Lance torpedoes)", "ships": choices,
+		"text": "A PBY reports a Japanese cruiser and destroyers bearing %s, about %s away, steering %s at 28 knots: a Tokyo Express run bringing troops down the Slot.\n\nYou command %s with the destroyers Nicholas and Radford astern of you. Your consorts follow your lead and engage your target; right-click an enemy to point the whole group at it. Use your radar to open fire before they see you, and watch for torpedo wakes when the destroyers turn toward you." % [U.deg3(U.bearing(0, 0, report.x, report.z)), U.yards(U.hyp(report.x, report.z)), U.deg3(report.h), player.ship_name]}
+
+
+## Battleship night action off Savo: Washington and South Dakota with four destroyers meet Kirishima's bombardment group.
+func _setup_bbs() -> void:
+	var choices := [["north_carolina", "USS Washington (North Carolina)"], ["south_dakota", "USS South Dakota"]]
+	var pc := _pick(choices)
+	var consort := "south_dakota" if pc[0] == "north_carolina" else "north_carolina"
+	var cname := "USS South Dakota" if consort == "south_dakota" else "USS Washington"
+	var tf := _formation([[pc[0], pc[1].split(" (")[0], 0.0, 0.0], [consort, cname, 900.0, 0.0],
+		["fletcher", "USS Walke", -2500.0, -400.0], ["benson", "USS Benham", -2000.0, 400.0], ["benson", "USS Gwin", -1500.0, -400.0], ["mahan", "USS Preston", -1000.0, 400.0]],
+		"us", "TF 64", 0.0, 0.0, deg_to_rad(300.0), 23.0)
+	player = tf[0]
+	var brg := deg_to_rad(330.0 + randf_range(-15.0, 15.0))
+	var dist := randf_range(16000.0, 18000.0)
+	var ex := sin(brg) * dist
+	var ez := -cos(brg) * dist
+	var eh := deg_to_rad(150.0 + randf_range(-10.0, 10.0))
+	_formation([["kongo", "Kirishima", 0.0, 0.0], ["takao", "Atago", 900.0, -500.0], ["takao", "Takao", 900.0, 500.0], ["nagara", "Nagara", 1800.0, 0.0],
+		["kagero", "Shirayuki", -1500.0, -700.0], ["fubuki", "Hatsuyuki", -1500.0, 700.0]], "ijn", "Bombardment Group", ex, ez, eh, 24.0, true)
+	for sh in ships:
+		if sh.team == "ijn" and sh.cls() == "dd":
+			sh.objective = false
+	report = {"x": ex + randf_range(-1500, 1500), "z": ez + randf_range(-1500, 1500), "h": eh + deg_to_rad(randf_range(-10, 10)), "v": 24.0 * Data.KN, "r": 4000.0, "t": 0.0, "active": true}
+	brief = {"title": "Battleship night action", "escape_r": 28000.0, "threat": "Severe (a battleship, two heavy cruisers, a light cruiser and destroyers)", "ships": choices,
+		"text": "Kirishima, with the heavy cruisers Atago and Takao and their escorts, is coming to bombard Henderson Field. She is reported bearing %s, about %s away, steering %s.\n\nYou command %s with %s astern and four destroyers screening ahead. Your 16-inch guns and radar fire control decide this fight: hold the range, let the screen draw the Long Lances, and put your salvos into the battleship. Sink or drive off Kirishima and the cruisers." % [U.deg3(U.bearing(0, 0, report.x, report.z)), U.yards(U.hyp(report.x, report.z)), U.deg3(report.h), player.ship_name, cname]}
+
+
+## Daylight fleet action: a US task force with a fast battleship, cruisers and destroyers against Yamato's force.
+func _setup_fleet() -> void:
+	var choices := [["iowa", "USS Iowa"], ["south_dakota", "USS Massachusetts (South Dakota)"], ["north_carolina", "USS North Carolina"], ["baltimore", "USS Baltimore"]]
+	var pc := _pick(choices)
+	var tf := _formation([[pc[0], pc[1].split(" (")[0], 0.0, 0.0], ["baltimore", "USS Canberra", 1000.0, 0.0], ["cleveland", "USS Birmingham", 1900.0, 0.0],
+		["fletcher", "USS Johnston", -2800.0, -900.0], ["fletcher", "USS Hoel", -2800.0, 900.0], ["fletcher", "USS Heermann", -2200.0, 0.0], ["benson", "USS Laffey", -1500.0, -1200.0]],
+		"us", "TF 34", 0.0, 0.0, deg_to_rad(20.0), 22.0)
+	player = tf[0]
+	var brg := deg_to_rad(10.0 + randf_range(-15.0, 15.0))
+	var dist := randf_range(20000.0, 23000.0)
+	var ex := sin(brg) * dist
+	var ez := -cos(brg) * dist
+	var eh := deg_to_rad(190.0 + randf_range(-10.0, 10.0))
+	_formation([["yamato", "Yamato", 0.0, 0.0], ["nagato", "Nagato", 1100.0, 0.0], ["kongo", "Kongo", 2200.0, 0.0], ["tone", "Tone", 1000.0, -2000.0], ["myoko", "Haguro", 1000.0, 2000.0],
+		["kagero", "Nowaki", -2500.0, -1000.0], ["kagero", "Isokaze", -2500.0, 1000.0], ["akizuki", "Akizuki", -1800.0, 0.0], ["fubuki", "Uranami", 3300.0, 0.0]],
+		"ijn", "First Striking Force", ex, ez, eh, 22.0, true)
+	for sh in ships:
+		if sh.team == "ijn" and sh.cls() == "dd":
+			sh.objective = false
+	report = {"x": ex + randf_range(-2000, 2000), "z": ez + randf_range(-2000, 2000), "h": eh + deg_to_rad(randf_range(-10, 10)), "v": 22.0 * Data.KN, "r": 5000.0, "t": 0.0, "active": true}
+	brief = {"title": "Fleet action", "escape_r": 34000.0, "threat": "Extreme (Yamato, Nagato and Kongo with cruisers and destroyers)", "ships": choices,
+		"text": "Scout planes report the Japanese main body bearing %s, about %s away, steering %s: the battleships Yamato, Nagato and Kongo, the cruisers Tone and Haguro, and a destroyer screen.\n\nYou command %s leading a cruiser and destroyer task force. Form your battle line, keep the destroyers out in front for torpedo runs, and concentrate on one battleship at a time. Expect a long fight: Yamato's 18-inch guns outrange yours." % [U.deg3(U.bearing(0, 0, report.x, report.z)), U.yards(U.hyp(report.x, report.z)), U.deg3(report.h), player.ship_name]}
+
+
 func _add_ship(type_id: String, team: String, nm: String, x: float, z: float, h: float, kn: float) -> Ship:
 	var s := Ship.new()
 	add_child(s)
@@ -406,7 +516,8 @@ func begin() -> void:
 func set_scenario(sc: String) -> void:
 	scenario = sc
 	Game.start_scenario = sc
-	weather = "night" if sc != "dd" or weather == "night" else weather
+	ship_choice = ""
+	weather = "clear" if sc == "fleet" else ("night" if sc != "dd" or weather == "night" else weather)
 	new_game()
 
 
@@ -597,6 +708,7 @@ func _step(dt: float) -> void:
 		report.z += f.y * report.v * dt
 		report.r = minf(report.r + dt * 4.0, 5000.0)
 	shake = maxf(0.0, shake - dt * 1.5)
+	_flush_hit_reports()
 	_check_end()
 
 
@@ -615,7 +727,7 @@ func _check_end() -> void:
 			continue
 		if not o.alive and not o.escaped:
 			sunk += 1
-		elif o.escaped or player.range_to(o) > 16000.0:
+		elif o.escaped or (combat_t >= 0.0 and player.range_to(o) > float(brief.get("escape_r", 16000.0))):
 			got_away += 1
 		else:
 			left += 1
@@ -771,7 +883,7 @@ func _launch_shells(s: Ship, sv: Dictionary, ready: Array, aim: Vector2, sig_r: 
 	var bias_d := U.gauss() * sig_d * bias_k
 	var e := s.eff()
 	var sz: float = g.size
-	var muzzle_y: float = 8.0 if s.T.L > 50.0 else 3.0
+	var muzzle_y: float = (12.0 if s.T.L > 170.0 else 8.0) if s.T.L > 50.0 else 3.0
 	for j in ready.size():
 		var m: Dictionary = ready[j]
 		after(j * 0.12 * sz, func():
@@ -787,7 +899,7 @@ func _launch_shells(s: Ship, sv: Dictionary, ready: Array, aim: Vector2, sig_r: 
 				var delay: float = k * 0.15 if sz < 0.5 else 0.0
 				shells.append({"sx": mp.x, "sz": mp.y, "sy": muzzle_y, "tx": tx, "tz": tz, "t": -delay, "tof": tof * randf_range(0.98, 1.02),
 					"apex": R * g.apex, "salvo": sv, "team": s.team, "pos": Vector3(mp.x, muzzle_y, mp.y), "prev": Vector3(mp.x, muzzle_y, mp.y),
-					"dmg": g.dmg, "size": sz})
+					"dmg": g.dmg, "size": sz, "pen": g.get("pen", g.dmg * 0.3)})
 				sv.shells += 1
 			m.recoil = 1.5
 			var fp := s.to_world_xz(m.x + cos(m.ang) * 9.0 * sz, sin(m.ang) * 9.0 * sz)
@@ -869,7 +981,7 @@ func land_shell(sh: Dictionary) -> void:
 			sfx.play("boom", Vector2(sh.tx, sh.tz), cam.position, 0.5)
 		else:
 			fx.small_hit(sh.tx, deck, sh.tz, dmg)
-		damage(hit, l.x, l.y, dmg, "shell", sv.shooter)
+		damage(hit, l.x, l.y, dmg, "shell", sv.shooter, sh.get("pen", dmg * 0.3))
 		if sv.shooter.is_player:
 			stats.hits += 1
 	else:
@@ -903,9 +1015,15 @@ func land_shell(sh: Dictionary) -> void:
 
 ## Apply one hit at ship coordinates (lx, lz). dmg: 5-inch shell = 1.0. kind: "shell" or "torpedo".
 ## Builds one message that says what the hit did ("Hit aft: Mount 54 knocked out; fire aft").
-func damage(s: Ship, lx: float, lz: float, dmg: float, kind: String, shooter: Ship = null) -> void:
+func damage(s: Ship, lx: float, lz: float, dmg: float, kind: String, shooter: Ship = null, pen := -1.0) -> void:
 	if not s.alive:
 		return
+	# armour: a shell that cannot get through the belt only scratches the ship
+	var ar := s.armor()
+	if kind != "torpedo" and ar > 0.0:
+		if pen < 0.0:
+			pen = dmg * 0.3
+		dmg *= clampf(pen / ar, 0.15, 1.0)
 	var isp := s.is_player
 	var best = null
 	var bd := 1e9
@@ -983,8 +1101,10 @@ func damage(s: Ship, lx: float, lz: float, dmg: float, kind: String, shooter: Sh
 		# a big hole: the first rush of water comes in at once, then it keeps flooding until patched
 		what.append(add_hole(s, lx, 1.0 if lz >= 0.0 else -1.0, 12.0 * clampf(s.T.displacement / 2500.0, 0.4, 3.0)))
 		s.flood += s.T.displacement * 0.10
-	elif randf() < 0.45 * minf(1.0, dmg * 1.5):
-		var hole := add_hole(s, lx, 1.0 if lz >= 0.0 else -1.0, randf_range(1.0, 3.0) * dmg * (0.12 if small else 1.0))
+	elif randf() < 0.45 * minf(1.0, dmg * 1.5) * (0.7 if s.T.displacement > 8000.0 else 1.0):
+		# big ships have more compartments between a hole and the sea: slower flooding per hit
+		var big_k := pow(clampf(2500.0 / s.T.displacement, 0.05, 1.0), 0.5)
+		var hole := add_hole(s, lx, 1.0 if lz >= 0.0 else -1.0, randf_range(1.0, 3.0) * dmg * (0.12 if small else big_k))
 		if dmg >= 0.5 or small:
 			what.append(hole)   # light shells only nick a big hull; not worth a report
 	if randf() < (0.8 if kind == "torpedo" else 0.4 * minf(1.0, dmg * 2.0) * (0.3 if light_vs_big else 1.0)):
@@ -994,36 +1114,73 @@ func damage(s: Ship, lx: float, lz: float, dmg: float, kind: String, shooter: Sh
 	_hit_report(s, lx, what, dmg, kind, seen_by_player, shooter != null and shooter.is_player)
 
 
-## One message per hit that mattered. Hits that did nothing are summed up now and then,
-## and only for the player's own shooting or hits on the player's ship.
+## Hit reports are gathered for half a second so a salvo that lands three shells makes one line:
+## "Yamato: hits amidships and aft: Turret 2 knocked out; fire started aft". Hits that broke nothing
+## are summed up now and then, and only for the player's own shooting or hits on the player's ship.
+## Other friendly ships' hits are only reported when something important broke.
+var _pending := {}   # ship name -> {t, who, tone, where: [], what: [], head, isp, mine, dmg}
+
 func _hit_report(s: Ship, lx: float, what: Array, dmg: float, kind: String, seen: bool, mine: bool) -> void:
 	var isp := s.is_player
 	if not isp and not seen:
 		return
 	var where := "forward" if lx > s.T.L * 0.15 else ("aft" if lx < -s.T.L * 0.15 else "amidships")
-	var head := "Torpedo hit" if kind == "torpedo" else "Hit"
-	var who := "" if isp else s.ship_name + ": "
-	var tone := "bad" if isp else "good"
-	if not what.is_empty():
-		var txt: String = "%s%s %s: %s." % [who, head, where, "; ".join(what)]
-		say(txt[0].to_upper() + txt.substr(1), tone)
-		if isp and kind == "torpedo":
-			shake = maxf(shake, 2.0)
-		return
-	# nothing important broke: one line every few seconds so the log stays readable
-	if not (isp or mine):
-		return
 	var key: String = s.ship_name
-	var gap := 6.0 if dmg >= 0.5 else 10.0
-	if t - _hit_msg_t.get(key, -99.0) < gap:
+	if isp and kind == "torpedo":
+		shake = maxf(shake, 2.0)
+	if not _pending.has(key):
+		_pending[key] = {"t": t, "isp": isp, "mine": mine, "where": [], "what": [], "torpedo": false, "dmg": 0.0, "ship": s}
+	var pd: Dictionary = _pending[key]
+	if not pd.where.has(where):
+		pd.where.append(where)
+	for w in what:
+		if not pd.what.has(w):
+			pd.what.append(w)
+	pd.torpedo = pd.torpedo or kind == "torpedo"
+	pd.mine = pd.mine or mine
+	pd.dmg = maxf(pd.dmg, dmg)
+
+
+func _flush_hit_reports() -> void:
+	if _pending.is_empty():
 		return
-	_hit_msg_t[key] = t
-	if dmg >= 0.5:
-		say("%s%s %s, no serious damage." % [who, head, where], tone)
-	elif isp:
-		say("Under light gunfire %s, no serious damage." % where, tone)
-	else:
-		say("%shit by our light guns %s." % [who, where], tone)
+	var done := []
+	for key in _pending:
+		var pd: Dictionary = _pending[key]
+		if t - pd.t < 0.6:
+			continue
+		done.append(key)
+		var isp: bool = pd.isp
+		var who: String = "" if isp else key + ": "
+		var tone: String = "bad" if isp else "good"
+		var head: String = ("Torpedo hit" if pd.torpedo else "Hit") if pd.where.size() == 1 else ("Torpedo hits" if pd.torpedo else "Hits")
+		var where: String = " and ".join(pd.where) if pd.where.size() <= 2 else "all along the ship"
+		if not pd.what.is_empty():
+			var important := false
+			for w in pd.what:
+				for mark in ["knocked out", "out of action", "wrecked", "destroyed", "flooded to prevent", "jammed", "burnt"]:
+					if mark in w:
+						important = true
+			# consorts' hits: only the big news
+			if not (isp or pd.mine) and not important:
+				continue
+			var txt: String = "%s%s %s: %s." % [who, head, where, "; ".join(pd.what)]
+			say(txt[0].to_upper() + txt.substr(1), tone)
+			continue
+		if not (isp or pd.mine):
+			continue
+		var gap := 6.0 if pd.dmg >= 0.5 else 10.0
+		if t - _hit_msg_t.get(key, -99.0) < gap:
+			continue
+		_hit_msg_t[key] = t
+		if pd.dmg >= 0.5:
+			say("%s%s %s, no serious damage." % [who, head, where], tone)
+		elif isp:
+			say("Under light gunfire %s, no serious damage." % where, tone)
+		else:
+			say("%shit by our light guns %s." % [who, where], tone)
+	for key in done:
+		_pending.erase(key)
 
 
 func _pretty(label: String) -> String:
@@ -1047,7 +1204,7 @@ func add_hole(s: Ship, lx: float, side: float, rate: float) -> String:
 
 ## Starts (or feeds) a fire; returns where it started for the hit report, "" if it only grew.
 func add_fire(s: Ship, lx: float, lz: float, intensity: float) -> String:
-	var span := 8.0 if s.T.L > 50.0 else 3.0
+	var span := maxf(8.0, s.T.L * 0.08) if s.T.L > 50.0 else 3.0
 	for f in s.fires:
 		if absf(f.lx - lx) < span:
 			f.int = minf(1.5, f.int + intensity * 0.6)
@@ -1228,7 +1385,7 @@ func step_ship(s: Ship, dt: float) -> void:
 		for f in s.fires:
 			f.int += dt * (0.025 - 0.06 * e)
 			# casualties from fire scale with how many men are aboard
-			if randf() < dt * 0.4 * f.int * clampf(float(TT.crew) / 300.0, 0.04, 1.0):
+			if randf() < dt * 0.25 * f.int * clampf(sqrt(float(TT.crew) / 300.0), 0.2, 3.0):
 				s.crew = maxi(0, s.crew - 1)
 			for m in s.modules:
 				if absf(m.x - f.lx) < 6.0 and m.hp > 0.0:
@@ -1322,7 +1479,7 @@ func step_ship(s: Ship, dt: float) -> void:
 		m.reload = maxf(0.0, m.reload - dt)
 	# Japanese destroyers carried reloads for their torpedo tubes
 	for tp in s.torps:
-		if tp.hp > 0.0 and tp.left == 0 and s.type_id == "kagero":
+		if tp.hp > 0.0 and tp.left == 0 and (s.type_id == "kagero" or TT.get("reloads", false)):
 			tp.reload_t += dt
 			if tp.reload_t > 150.0:
 				tp.left = tp.n
@@ -1450,7 +1607,9 @@ func step_fire_control(s: Ship, dt: float) -> void:
 		if rbm != null:
 			want = rbm if Ship.mount_can_bear(m, rbm) else Ship.arc_clamp(m, rbm)
 		var light: bool = g.dmg < 0.5
-		var rate := deg_to_rad(60.0 if light else 15.0) * (0.6 + 0.4 * s.eff())
+		# light guns swing fast; a 16-inch turret trains at about 4 degrees a second
+		var deg_s := 60.0 if light else (15.0 if g.dmg < 1.5 else (8.0 if g.dmg < 6.0 else 4.0))
+		var rate := deg_to_rad(deg_s) * (0.6 + 0.4 * s.eff())
 		m.ang += clampf(U.ang_d(m.ang, want), -rate * dt, rate * dt)
 		m.on = rbm != null and Ship.mount_can_bear(m, rbm) and absf(U.ang_d(m.ang, rbm)) < deg_to_rad(4.0 if light else 1.5)
 		m.bears = rbm != null and Ship.mount_can_bear(m, rbm)

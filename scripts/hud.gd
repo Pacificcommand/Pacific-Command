@@ -27,6 +27,7 @@ var guns_box: HBoxContainer
 var brief: PanelContainer
 var endp: PanelContainer
 var pausep: Control = null
+var ship_row: HBoxContainer
 var _pause_prev := 1.0
 var drag := {}
 var tele_btns: Array = []
@@ -355,7 +356,10 @@ func _build_brief() -> void:
 	lbl.brief_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.brief_text.custom_minimum_size.x = 520
 	v.add_child(lbl.brief_text)
-	v.add_child(_row([_caps("Mission"), _seg("mission", [["dd", "Destroyer action"], ["barges", "PT barge hunt"], ["convoy", "PT convoy attack"]], _on_mission)]))
+	v.add_child(_row([_caps("Mission"), _seg("mission", [["dd", "Destroyers"], ["barges", "PT barge hunt"], ["convoy", "PT convoy"], ["cruisers", "Cruiser night action"], ["bbs", "Battleship action"], ["fleet", "Fleet action"]], _on_mission)]))
+	ship_row = HBoxContainer.new()
+	ship_row.add_theme_constant_override("separation", 2)
+	v.add_child(_row([_caps("Your ship"), ship_row]))
 	v.add_child(_row([_caps("Conditions"), _seg("weather", [["clear", "Clear day"], ["overcast", "Overcast"], ["fog", "Fog"], ["night", "Night"]], _on_weather)]))
 	v.add_child(_row([_caps("Aim"), _seg("aim_b", [["auto", "Crew (auto)"], ["manual", "Manual (mouse)"]], _on_aim_brief)]))
 	v.add_child(_row([_caps("Magazines"), _seg("mag", [["historical", "Historical"], ["reduced", "Reduced"], ["off", "Off"]], _on_mag)]))
@@ -445,6 +449,16 @@ func on_new_game() -> void:
 		c.queue_free()
 	_set_seg("weather", B.weather)
 	_set_seg("mission", B.scenario)
+	for c in ship_row.get_children():
+		c.queue_free()
+	var choices: Array = B.brief.get("ships", [])
+	for ch in choices:
+		var id: String = ch[0]
+		var b := _button(ch[1], func(): B.ship_choice = id; B.new_game(), true)
+		b.add_theme_font_size_override("font_size", 12)
+		b.set_pressed_no_signal(B.player.type_id == id)
+		ship_row.add_child(b)
+	ship_row.get_parent().visible = not choices.is_empty()
 	_set_seg("view", "close" if B.player.T.L < 40.0 else "ship")
 	_set_seg("cam", "player")
 	_set_seg("mag", B.magazine)

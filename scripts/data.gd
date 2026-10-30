@@ -21,6 +21,24 @@ const GUNS := {
 	"jp13": {"cal": "13 mm", "vel": 800.0, "reload": 1.0, "range_max": 1000.0, "per_mount": 1, "dmg": 0.06, "apex": 0.01, "size": 0.25},
 	"jp77": {"cal": "7.7 mm", "vel": 730.0, "reload": 1.0, "range_max": 700.0, "per_mount": 1, "dmg": 0.03, "apex": 0.01, "size": 0.2},
 	"jp8cm": {"cal": "8 cm", "vel": 600.0, "reload": 6.0, "range_max": 5000.0, "per_mount": 1, "dmg": 0.55, "apex": 0.04, "size": 0.7},
+	# cruiser, battleship and escort guns (build 0.5). dmg is relative to a 5-inch shell; pen = how well
+	# the shell gets through heavy armour (1.0 = 8-inch).
+	"us5in38tw": {"cal": "5-inch/38 twin", "vel": 790.0, "reload": 4.2, "range_max": 8000.0, "per_mount": 2, "dmg": 1.0, "apex": 0.05, "size": 1.0},
+	"us5in25": {"cal": "5-inch/25", "vel": 660.0, "reload": 4.5, "range_max": 6500.0, "per_mount": 1, "dmg": 0.9, "apex": 0.05, "size": 0.9},
+	"us3in50": {"cal": "3-inch/50", "vel": 820.0, "reload": 3.5, "range_max": 6000.0, "per_mount": 1, "dmg": 0.45, "apex": 0.04, "size": 0.7},
+	"us6in47": {"cal": "6-inch/47", "vel": 810.0, "reload": 6.5, "range_max": 11500.0, "per_mount": 3, "dmg": 1.8, "apex": 0.06, "size": 1.3, "pen": 0.6},
+	"us8in55": {"cal": "8-inch/55", "vel": 760.0, "reload": 12.0, "range_max": 14000.0, "per_mount": 3, "dmg": 3.6, "apex": 0.07, "size": 1.7, "pen": 1.0},
+	"us14in45": {"cal": "14-inch/45", "vel": 790.0, "reload": 28.0, "range_max": 16000.0, "per_mount": 2, "dmg": 9.0, "apex": 0.08, "size": 2.3, "pen": 2.2},
+	"us16in45": {"cal": "16-inch/45", "vel": 700.0, "reload": 30.0, "range_max": 17500.0, "per_mount": 3, "dmg": 13.0, "apex": 0.09, "size": 2.6, "pen": 3.0},
+	"us16in50": {"cal": "16-inch/50", "vel": 760.0, "reload": 30.0, "range_max": 19000.0, "per_mount": 3, "dmg": 13.5, "apex": 0.09, "size": 2.6, "pen": 3.3},
+	"bofors40q": {"cal": "40 mm Bofors quad", "vel": 880.0, "reload": 1.3, "range_max": 2600.0, "per_mount": 4, "dmg": 0.32, "apex": 0.02, "size": 0.45},
+	"jp100": {"cal": "10 cm", "vel": 1000.0, "reload": 3.2, "range_max": 9000.0, "per_mount": 2, "dmg": 0.7, "apex": 0.05, "size": 0.9},
+	"jp140": {"cal": "14 cm", "vel": 850.0, "reload": 7.0, "range_max": 9500.0, "per_mount": 1, "dmg": 1.4, "apex": 0.05, "size": 1.1, "pen": 0.4},
+	"jp155": {"cal": "15.5 cm", "vel": 920.0, "reload": 7.0, "range_max": 11500.0, "per_mount": 3, "dmg": 1.8, "apex": 0.06, "size": 1.3, "pen": 0.6},
+	"jp203": {"cal": "20.3 cm", "vel": 835.0, "reload": 12.0, "range_max": 14000.0, "per_mount": 2, "dmg": 3.6, "apex": 0.07, "size": 1.7, "pen": 1.0},
+	"jp356": {"cal": "35.6 cm", "vel": 775.0, "reload": 30.0, "range_max": 17000.0, "per_mount": 2, "dmg": 9.5, "apex": 0.08, "size": 2.3, "pen": 2.3},
+	"jp410": {"cal": "41 cm", "vel": 780.0, "reload": 32.0, "range_max": 18000.0, "per_mount": 2, "dmg": 13.0, "apex": 0.09, "size": 2.6, "pen": 3.1},
+	"jp460": {"cal": "46 cm", "vel": 780.0, "reload": 35.0, "range_max": 21000.0, "per_mount": 3, "dmg": 18.0, "apex": 0.1, "size": 3.0, "pen": 4.0},
 }
 
 ## Firing arcs: [center, half-width] in degrees of relative bearing (+ = starboard).
@@ -30,7 +48,8 @@ const ARCS := {"fwd": [0.0, 150.0], "aft": [180.0, 150.0], "port": [-90.0, 135.0
 ## Modules: [label, kind, x position, hit points]
 ## cls = fleet role (pt, dd, de, cl, ca, bb, cv, cve, ss, merchant, barge); doctrine = how the AI
 ## fights the ship ("ijn_dd": Japanese destroyer tactics, torpedo first, avoid gun duels).
-const TYPES := {
+## Hand-built classes (build 0.1-0.2). The rest come from ShipTypes (generated from tools/ship_builder/specs.py).
+const BASE_TYPES := {
 	"fletcher": {
 		"name": "Fletcher class", "nation": "us",
 		"models": {"m21": "res://assets/models/fletcher_m21.glb", "m22": "res://assets/models/fletcher_m22.glb"},
@@ -127,6 +146,18 @@ const TYPES := {
 			["Forward tanks", "oil", 30.0, 5.0], ["After tanks", "oil", -22.0, 5.0]],
 	},
 }
+
+## Every ship class: the hand-built ones plus the generated ones.
+static var TYPES: Dictionary = _all_types()
+
+static func _all_types() -> Dictionary:
+	var d := {}
+	for k in BASE_TYPES:
+		d[k] = BASE_TYPES[k]
+	for k in ShipTypes.TYPES:
+		d[k] = ShipTypes.TYPES[k]
+	return d
+
 
 ## Engine telegraph orders.
 const TELE := [

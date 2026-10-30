@@ -28,7 +28,8 @@ experience; explain in plain words, he tests by playing). Top-down 3D view of li
 | `scripts/fx.gd` / `sfx.gd` | Particles (MultiMesh layers) and lights / placeholder sounds |
 | `shaders/` | Ocean and particle shaders |
 | `assets/models/*.glb` | Ship models, built by `tools/ship_builder` |
-| `tools/ship_builder/` | Python (numpy) mesh builder: `geom.py` primitives, one file per class, `build_all.py` |
+| `tools/ship_builder/` | Python (numpy) mesh builder: `geom.py` primitives; hand-built classes one file each (fletcher, kagero, pt_elco, daihatsu, merchant); `warship.py` parametric parts + `specs.py` (one spec dict per class, with its game DATA); `build_all.py` builds every .glb; `gen_data.py` writes `scripts/ship_types.gd` from specs.DATA; `preview.py NAME` renders /tmp/previews/NAME.png (top + oblique) to check against the photos |
+| `scripts/ship_types.gd` | GENERATED ship classes (do not edit; change specs.py and run gen_data.py). `Data.TYPES` merges these with the hand-built `Data.BASE_TYPES` |
 | `addons/pyrolux_fx/` | PYROLUX Lite fire/explosion addon (license: do NOT redistribute; repo must stay private) |
 
 ## Conventions
@@ -48,13 +49,18 @@ godot --headless --path . --quit-after 3 -- --scenario=barges --auto --start --r
 xvfb-run -a -s "-screen 0 1920x1080x24" godot --path . --rendering-method gl_compatibility \
   --rendering-driver opengl3 -- --scenario=convoy --start --run=300 --view=wide --shot=out.png --quit
 ```
-Flags: `--scenario=dd|barges|convoy --weather=clear|overcast|fog|night --start --run=SECONDS
+Flags: `--scenario=dd|barges|convoy|cruisers|bbs|fleet --weather=clear|overcast|fog|night --start --run=SECONDS
 --fire --auto (AI drives the player too) --trace (prints messages and ship states) --view=close|ship|wide|tac
 --cam=player|target --nofollow --aim=manual --torpaim=DEG --save=SLOT (after the run) --load=SLOT
 --pause (open the pause menu) --shot=PNG --frames=N --quit`. Menu screenshots: `--menushot=PNG [--settings]`.
 Keys in hud.gd go through `Game.pressed(e, "action")`, never raw keycodes; add new actions to `Game.ACTIONS`. Godot 4.7.2 Linux binary:
 https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip
 Watch for "Cannot infer the type" parse errors (use `=` not `:=` when the value is a Variant).
+
+## Adding a ship class
+1. Add `spec('name', ...)` and `DATA['name']` in `tools/ship_builder/specs.py` (positions in m, x forward, y up, z starboard).
+2. `python3 preview.py name` and compare with the PDF; then `python3 build_all.py && python3 gen_data.py`.
+3. `godot --headless --path . --import` so the new .glb is imported. Weapon group names in the spec = `mounts[].g` in DATA.
 
 ## Commits
 Commit each playable step with a clear message; push to `main`. Keep the README controls table current.

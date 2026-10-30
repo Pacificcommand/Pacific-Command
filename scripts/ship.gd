@@ -106,7 +106,7 @@ func setup(p_type: String, p_team: String, p_name: String, px: float, pz: float,
 		var hp := 3.0 if g.dmg >= 0.5 else 1.5
 		mounts.append({"g": m.g, "x": m.x, "stow": m.stow, "arc": Data.ARCS[m.arc], "ang": m.stow, "reload": randf_range(0.0, 2.0), "hp": hp, "recoil": 0.0, "node": null, "gun": g, "on": false, "bears": false})
 	for t in T.torps:
-		torps.append({"g": t.g, "x": t.x, "n": t.n, "ang": 0.0, "left": t.n, "hp": 2.0, "reload_t": 0.0, "node": null, "fixed": t.get("fixed", false)})
+		torps.append({"g": t.g, "x": t.x, "n": t.n, "ang": 0.0, "left": t.n, "hp": 2.0, "reload_t": 0.0, "node": null, "fixed": t.get("fixed", false), "aft": t.get("aft", false)})
 	for i in T.aa.size():
 		aa_ang.append(0.0)
 	for md in T.modules:
@@ -257,7 +257,9 @@ func torp_mounts_for(brg: float) -> Array:
 		if m.hp <= 0.0 or m.left <= 0:
 			continue
 		if m.fixed:
-			if absf(rb) <= deg_to_rad(30.0):
+			# bow (or stern) tubes fire ahead (astern) with a little gyro angle
+			var rel: float = absf(rb) if not m.get("aft", false) else PI - absf(rb)
+			if rel <= deg_to_rad(30.0):
 				out.append(i)
 		elif absf(rb) >= deg_to_rad(30.0) and absf(rb) <= deg_to_rad(150.0):
 			out.append(i)
@@ -265,6 +267,12 @@ func torp_mounts_for(brg: float) -> Array:
 
 func role() -> String:
 	return T.get("role", "warship")
+
+## Armour: how much shell a hit must carry to do real damage (0 = unarmoured, 1 = 8-inch belt, 3+ = battleship).
+func armor() -> float:
+	if T.has("armor"):
+		return T.armor
+	return {"ca": 0.5, "cl": 0.3, "cv": 0.4, "bb": 1.0, "cvl": 0.3}.get(cls(), 0.0)
 
 ## Ship class for fleet roles: pt, dd, de, cl, ca, bb, cv, cve, ss, merchant, barge.
 func cls() -> String:

@@ -7,6 +7,8 @@ from kagero import build as kagero
 from pt_elco import build as pt_elco
 from daihatsu import build as daihatsu
 from merchant import build_cargo, build_tanker
+from warship import build_spec
+import specs
 
 OUT = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'models')
 SHIPS = [
@@ -18,6 +20,8 @@ SHIPS = [
     ('cargo_maru', 'CargoMaru', build_cargo),
     ('tanker_maru', 'TankerMaru', build_tanker),
 ]
+for name in specs.SPECS:
+    SHIPS.append((name, name.title().replace('_', ''), (lambda n: (lambda: build_spec(specs.SPECS[n])))(name)))
 for name, root, fn in SHIPS:
     M = fn()
     M.rootname = root
