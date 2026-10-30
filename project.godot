@@ -6,6 +6,7 @@ config_version=5
 [application]
 
 config/name="Pacific Command"
+config/icon="res://icon.png"
 config/description="WWII Pacific naval combat. Combat sandbox build."
 config/version="0.11.0"
 run/main_scene="res://scenes/menu.tscn"
@@ -15,6 +16,7 @@ config/features=PackedStringArray("4.7", "Forward Plus")
 
 Game="*res://scripts/game.gd"
 Audio="*res://scripts/audio.gd"
+SteamHook="*res://scripts/steam.gd"
 
 [display]
 

@@ -1,0 +1,12 @@
+"AppBuild"
+{
+	"AppID" "YOUR_APP_ID"            // from the Steamworks App Admin page
+	"Desc" "Pacific Command 0.11"    // shows in the Builds list
+	"ContentRoot" "..\..\build\windows\"   // folder with PacificCommand.exe (relative to this file)
+	"BuildOutput" "..\..\build\steam_output\"
+	"SetLive" ""                     // "" = upload only; "beta" or "default" to publish straight to that branch
+	"Depots"
+	{
+		"YOUR_DEPOT_ID" "depot_build.vdf"
+	}
+}

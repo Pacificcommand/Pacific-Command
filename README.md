@@ -165,6 +165,12 @@ All keys can be changed in Settings › Controls.
 | `shaders/` | Sea and particle shaders |
 | `assets/models/` | Ship models (.glb) |
 
+## Windows build and Steam
+`Project > Export > Windows Desktop` (or `tools\export_windows.bat`) makes a single
+`build/windows/PacificCommand.exe`. `docs/STEAM.md` has the whole Steam checklist:
+Steamworks setup, store assets, GodotSteam install, achievements (16, tracked in the
+career even without Steam), cloud saves, and the SteamPipe upload scripts in `tools/steam/`.
+
 Design doc: https://claude.ai/artifact/6DsTxwe8UHnRugVtDqbLH2
 
 ## Third-party assets and licenses

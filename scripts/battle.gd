@@ -1014,6 +1014,9 @@ func _settle() -> void:
 		return
 	set_meta("settled", true)
 	Audio.music("victory" if over == "won" else "defeat", "")
+	if Game.campaign_active():
+		for a in SteamHook.check_battle(self):
+			say("Achievement: %s" % SteamHook.name_of(a), "good")
 	Game.last_result = {"over": over, "sunk": stats.sunk.duplicate(), "rescued": stats.get("rescued", 0), "player_alive": player.alive, "crew_lost": stats.start_crew - player.crew,
 		"flood": player.flood / maxf(1.0, player.flood_cap()), "mission": Game.mission.duplicate(true)}
 	Game.career.missions += 1
@@ -1080,6 +1083,7 @@ func _check_end() -> void:
 		for o in ships:
 			if o.team != player.team and o.alive and not o.escaped and not o.is_sub() and player.range_to(o) < float(brief.get("escape_r", 16000.0)):
 				raiders += 1
+		stats.protect_lost = lost
 		if lost * 2 > total:
 			over = "lost_convoy"
 			after(5.0, func(): hud.show_end())
@@ -1998,6 +2002,8 @@ func step_ship(s: Ship, dt: float) -> void:
 					tally.kills += 1
 					if s.cls() in ["bb", "cv"]:
 						tally.big_kill = true
+					if s.is_sub():
+						stats.sub_kill = true
 	else:
 		s.sinking += dt
 		var fast := 3.0 if s.mag_blown else 1.0

@@ -137,6 +137,11 @@ func _medals_tab() -> Control:
 		v.add_child(UI.label("No decorations yet.", 14, UI.MUTED))
 	for m in c.medals:
 		v.add_child(UI.label("%s · %s" % [m.name, War.date_str(int(m.day))], 14, UI.BRASS))
+	var ach: Array = c.get("achievements", [])
+	if not ach.is_empty():
+		v.add_child(UI.label("Achievements", 11, UI.BRASS))
+		for a in ach:
+			v.add_child(UI.label("%s · %s" % [SteamHook.name_of(a.id), War.date_str(int(a.day))], 13, UI.INK))
 	v.add_child(UI.label("Ship's log", 11, UI.BRASS))
 	var log: Array = c.get("log", [])
 	for i in range(log.size() - 1, maxi(-1, log.size() - 25), -1):

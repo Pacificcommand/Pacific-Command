@@ -24,6 +24,7 @@ var log_box: VBoxContainer
 var card: Control = null
 var _drag := {}
 var _hour_acc := 0.0
+var _ach_day := -1
 var _rng := RandomNumberGenerator.new()
 var _save_t := 0.0
 
@@ -409,6 +410,9 @@ func _sail(hours: float) -> void:
 
 
 func _tick_hour() -> void:
+	if int(C.day) != _ach_day:
+		_ach_day = int(C.day)
+		SteamHook.check_day(_ach_day)
 	# contacts fade, new ones appear in active zones near the player
 	var keep := []
 	for ct in C.contacts:

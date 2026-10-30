@@ -34,6 +34,8 @@ experience; explain in plain words, he tests by playing). Top-down 3D view of li
 | `scripts/hud.gd` | All UI (built in code), overlay markers, briefing, action report, input |
 | `scripts/fx.gd` | Particles (MultiMesh layers) and lights |
 | `scripts/audio.gd` | Autoload `Audio`: ALL sound and music, synthesised in code on first run and cached in user://audio_cache (bump CACHE_VERSION after changing a sound). `Audio.at/ui/loop/ambience/music`. Files in assets/sounds|music override by name (see assets/sounds/README.md). `--audiotest` builds the bank synchronously in headless |
+| `scripts/steam.gd` | Autoload `SteamHook`: achievements (tracked in the career; sent to Steam when the GodotSteam GDExtension is installed), rich presence. `check_battle(B)` on settle, `check_day` on the map |
+| `export_presets.cfg`, `tools/export_windows.*`, `tools/steam/*.vdf`, `docs/STEAM.md` | Windows .exe export (one embedded-pck exe, icon.ico) and the Steam upload/checklist. Templates: `Godot_v4.7.2-stable_export_templates.tpz` from the GitHub release, only `windows_*_x86_64.exe` needed in `~/.local/share/godot/export_templates/4.7.2.stable/`; then `godot --headless --export-release "Windows Desktop" build/windows/PacificCommand.exe` |
 | `scripts/sfx.gd` | Battle sound hooks: gun by calibre, per-frame ambience/fire/plane drone/sonar pings |
 | `shaders/` | Ocean and particle shaders |
 | `assets/models/*.glb` | Ship models, built by `tools/ship_builder` |
