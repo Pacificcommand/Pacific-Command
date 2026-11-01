@@ -41,6 +41,7 @@ var dial_view: Control
 var squad_plate: PanelContainer
 var squad_box: VBoxContainer
 var _squad_key := ""
+var squad_open := false        # the orders panel starts folded to one line
 var _last_click_t := -9.0
 
 
@@ -767,13 +768,26 @@ func _refresh_squad(p: Ship) -> void:
 	var key := ""
 	for s in mates:
 		key += "%s:%s:%s|" % [s.ship_name, s.order, s.ai_state]
-	key += p.target.ship_name if p.target else "-"
+	key += (p.target.ship_name if p.target else "-") + str(squad_open)
 	if key == _squad_key:
 		return
 	_squad_key = key
 	for c in squad_box.get_children():
 		c.queue_free()
-	squad_box.add_child(_label("SHIPS IN COMPANY", 11, C_BRASS))
+	# header with a fold button; folded, the panel is one line with the count and any orders
+	var hdr := HBoxContainer.new()
+	hdr.add_theme_constant_override("separation", 8)
+	var fold := _button("▾ Orders" if squad_open else "▸ Orders", func(): squad_open = not squad_open; _squad_key = "")
+	fold.add_theme_font_size_override("font_size", 11)
+	hdr.add_child(fold)
+	var ordered := 0
+	for s in mates:
+		if s.order != "":
+			ordered += 1
+	hdr.add_child(_label("SHIPS IN COMPANY · %d ship%s%s" % [mates.size(), "" if mates.size() == 1 else "s", (" · %d under orders" % ordered) if ordered > 0 else ""], 11, C_BRASS))
+	squad_box.add_child(hdr)
+	if not squad_open:
+		return
 	var tgt_name: String = p.target.ship_name if p.target and p.target.alive else ""
 	var order_row := func(who: Array, label: String, state: String):
 		var hb := HBoxContainer.new()
