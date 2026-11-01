@@ -110,6 +110,11 @@ static func year_of(day: int) -> int:
 
 ## Who holds a zone on a given day, with the player's influence (positive = ahead of history).
 static func owner(zone_id: String, day: float, shift: float) -> String:
+	# the campaign can override history: a zone whose key island was taken (or retaken)
+	if not Game.campaign.is_empty():
+		var ov: Dictionary = Game.campaign.get("zone_owner", {})
+		if ov.has(zone_id):
+			return ov[zone_id]
 	var z: Dictionary = ZONES[zone_id]
 	var jp: int = z.jp
 	var us: int = z.us

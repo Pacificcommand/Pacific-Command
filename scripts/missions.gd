@@ -445,3 +445,44 @@ static func _enemy_text(kind: String) -> String:
 		"sub": return "a Japanese submarine on the route. Find it on sonar and sink it."
 		"carriers": return "Japanese carriers with their screen. The first strike home wins."
 	return "a Japanese surface force. Fleet command wants it brought to action."
+
+
+## Assault on a held island (operations map): silence its coastal batteries and the supply
+## dump to raise the flag. `isl` is a Geo.ISLANDS entry, `garrison` the number of batteries,
+## `friends` the ships in company, `boats` any small craft the defenders have in the lagoon.
+static func island_assault(rng: RandomNumberGenerator, isl: Dictionary, garrison: int, friends: Array, player_type: String, player_name: String, weather: String, enemy_side: String) -> Dictionary:
+	var ib := rng.randf_range(0.0, TAU)
+	var idist := 10000.0
+	var ix := sin(ib) * idist
+	var iz := -cos(ib) * idist
+	var islands := []
+	var biggest := 0.0
+	for c in isl.shape:
+		islands.append({"x": ix + c[0], "z": iz + c[1], "r": float(c[2]), "h": float(c[3]), "seed": rng.randi() % 1000})
+		biggest = maxf(biggest, float(c[2]))
+	# batteries on the shore facing the sea the player comes from, the dump behind the beach
+	var shore := []
+	var face := ib + PI
+	for i in garrison:
+		var a := face + deg_to_rad(-50.0 + 100.0 * float(i) / maxf(1.0, garrison - 1)) if garrison > 1 else face
+		var c0: Array = isl.shape[i % isl.shape.size()]
+		var r0: float = float(c0[2])
+		shore.append(["shore_battery", "Battery %s" % char(65 + i), ix + c0[0] + sin(a) * r0 * 0.78, iz + c0[1] - cos(a) * r0 * 0.78])
+	var c1: Array = isl.shape[0]
+	shore.append(["supply_dump", "Supply dump", ix + c1[0] + sin(face) * float(c1[2]) * 0.45, iz + c1[1] - cos(face) * float(c1[2]) * 0.45])
+	var fl := []
+	var fr_ships := layout([[player_type, player_name]] + friends, rng)
+	for i in range(1, fr_ships.size()):
+		fl.append(fr_ships[i])
+	var enemies := []
+	if enemy_side == "ijn":
+		var boats := [["daihatsu_gun", "Gun barge 1", 0.0, 0.0], ["daihatsu", "Barge 2", 120.0, 60.0]]
+		if garrison >= 3:
+			boats.append(["jp_mtb", "T-%d" % (1 + rng.randi() % 50), 240.0, -60.0])
+		enemies.append({"group": "", "x": ix + sin(ib + PI / 2) * (biggest * 1.5), "z": iz - cos(ib + PI / 2) * (biggest * 1.5), "h": fposmod(ib + PI, TAU), "kn": 7.0, "ships": boats, "objective": false, "route": true, "dest": 6000.0})
+	else:
+		enemies.append({"group": "", "x": ix + sin(ib + PI / 2) * (biggest * 1.5), "z": iz - cos(ib + PI / 2) * (biggest * 1.5), "h": fposmod(ib + PI, TAU), "kn": 20.0, "ships": [["pt_elco", "PT-%d" % (100 + rng.randi() % 99), 0.0, 0.0]], "objective": false})
+	return {"id": "assault", "title": "Assault on %s" % isl.name, "kind": "bombard", "weather": weather,
+		"choices": [[player_type, player_name]], "friends": fl, "islands": islands, "shore": shore, "enemies": enemies,
+		"report": {"brg": ib, "dist": idist, "h": 0.0, "kn": 0.0, "r": biggest, "fixed": true}, "escape_r": 30000.0,
+		"text": "%s lies bearing %%s, about %%s away, held by the enemy with %d coastal batter%s and a supply dump behind the beach. Silence the guns and burn the dump and the landing force raises the flag.\n\nYou command %%s. The batteries shoot back and the water shoals close inshore; pick each one as your target and pound it." % [isl.name, garrison, "y" if garrison == 1 else "ies"]}

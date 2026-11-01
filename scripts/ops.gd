@@ -81,6 +81,19 @@ func _migrate() -> void:
 	if not C.has("next_id"):
 		C.next_id = 1
 	C.erase("contacts")
+	for k in ["zone_owner", "base_owner", "islands"]:
+		if not C.has(k):
+			C[k] = {}
+	# islands start with their historical holder
+	for iid in Geo.ISLANDS:
+		if not C.islands.has(iid):
+			var isl: Dictionary = Geo.ISLANDS[iid]
+			var side := War.owner(isl.zone, C.day, C.shift)
+			if isl.base != "" and War.BASES[isl.base].side == "us" and War.BASES[isl.base].from >= 0 and C.day >= War.BASES[isl.base].from:
+				side = "us"
+			if isl.base != "" and War.BASES[isl.base].side == "ijn" and side == "us" and War.ZONES[isl.zone].us > C.day:
+				side = "ijn"
+			C.islands[iid] = {"side": side, "garrison": isl.garrison if side == "ijn" else maxi(1, isl.garrison - 1), "grow": C.day}
 
 
 func _test_shot(path: String) -> void:
@@ -109,6 +122,19 @@ func _test_shot(path: String) -> void:
 	print("groups ", C.groups.size(), " (enemy seen ", seen, ") fights ", C.fights.size(), " day ", C.day, " ops ", C.done_ops)
 	for g in C.groups:
 		print("  %s %s %s [%s] at %.1f,%.1f -> %s %s" % [g.side, g.kind, g.name, _describe(g.ships), g.lon, g.lat, _dest_name(g), g.state])
+	if "--assault" in OS.get_cmdline_user_args():
+		var best := ""
+		var bd := 1e9
+		for iid in C.islands:
+			if C.islands[iid].side == "ijn":
+				var isl: Dictionary = Geo.ISLANDS[iid]
+				var d := War.dist_nm(C.lon, C.lat, isl.lon, isl.lat)
+				if d < bd:
+					bd = d; best = iid
+		C.lon = Geo.ISLANDS[best].lon + 0.3; C.lat = Geo.ISLANDS[best].lat
+		print("assaulting ", best, " garrison ", C.islands[best].garrison)
+		_assault(best)
+		return
 	if "--joinfight" in OS.get_cmdline_user_args():
 		# test: a convoy of ours under attack right here
 		var year := War.year_of(int(C.day))
@@ -233,7 +259,7 @@ func _where() -> String:
 func _port_here() -> String:
 	for nm in War.BASES:
 		var b: Dictionary = War.BASES[nm]
-		if b.side == "us" and b.from >= 0 and C.day >= b.from and War.dist_nm(C.lon, C.lat, b.lon, b.lat) < PORT_NM:
+		if _base_side(nm) == "us" and War.dist_nm(C.lon, C.lat, b.lon, b.lat) < PORT_NM:
 			return nm
 	return ""
 
@@ -267,7 +293,9 @@ func _refresh_side() -> void:
 	# the selected thing
 	var g = _group(selected)
 	var f = _fight(selected)
-	if f != null:
+	if Geo.ISLANDS.has(selected):
+		_island_side_panel(selected)
+	elif f != null:
 		var gu = _group(f.us)
 		var gj = _group(f.ijn)
 		var d: float = War.dist_nm(C.lon, C.lat, f.lon, f.lat)
@@ -337,6 +365,31 @@ static func _kind_lc(kind: String) -> String:
 		"boats": return "torpedo boat section"
 		"picket": return "picket boats"
 	return kind
+
+
+func _island_side_panel(iid: String) -> void:
+	var isl: Dictionary = Geo.ISLANDS[iid]
+	var st: Dictionary = C.islands[iid]
+	var ours: bool = st.side == "us"
+	var d := War.dist_nm(C.lon, C.lat, isl.lon, isl.lat)
+	side.add_child(UI.label(isl.name, 18))
+	var gtxt := "%d coastal batter%s" % [int(st.garrison), "y" if int(st.garrison) == 1 else "ies"]
+	side.add_child(UI.wrap("%s · %s · %.0f nm away%s%s." % ["Held by us" if ours else "Held by Japan", gtxt, d, " · key to %s" % War.ZONES[isl.zone].name if isl.key else "", " · base: %s" % isl.base if isl.base != "" else ""], 350, 12))
+	var guards := _guards_near(iid, "ijn" if ours else "us")
+	var own_guards := _guards_near(iid, "us" if ours else "ijn")
+	if not own_guards.is_empty():
+		side.add_child(UI.wrap("%s near the island: %s." % ["Our ships" if ours else "Enemy guard", ", ".join(own_guards.map(func(g): return g.name if g.side == "us" else _kind_lc(g.kind) + " (" + _describe(g.ships) + ")"))], 350, 12, Color(0.55, 0.85, 1.0) if ours else Color(0.95, 0.45, 0.4)))
+	if not guards.is_empty():
+		side.add_child(UI.wrap("%s threatening it: %s." % ["Enemy ships" if ours else "Our ships", ", ".join(guards.map(func(g): return g.name if g.side == "us" else _kind_lc(g.kind)))], 350, 12, UI.BRASS))
+	var go := UI.button("Set course", func(): C.attached = ""; C.intercept = ""; _set_dest(isl.lon + 0.2, isl.lat); _refresh_side())
+	side.add_child(go)
+	if not ours:
+		var blocked := not own_guards.is_empty()
+		var txt := "Assault (land and raise the flag)" if d < ENGAGE_NM and not blocked else ("Assault (%.0f nm to go)" % (d - ENGAGE_NM) if d >= ENGAGE_NM else "Assault: drive off the guard first")
+		var b := UI.button(txt, func(): _assault(iid))
+		b.disabled = d >= ENGAGE_NM or blocked
+		side.add_child(b)
+		side.add_child(UI.wrap("Taking an island: silence its coastal guns and burn the supply dump in a bombardment action; the landing force does the rest. The island then spots for us, its base is ours, and a key island brings the whole zone with it. Garrisons grow a battery a month.", 350, 11, UI.MUTED))
 
 
 func _gname(gid: String) -> String:
@@ -599,21 +652,14 @@ func _sail(hours: float) -> void:
 			C.dest = [tg.lon, tg.lat]
 	if C.dest == null:
 		return
-	var T: Dictionary = Data.TYPES[C.ship]
 	var kn: float = _squadron_speed()
-	var d := War.dist_nm(C.lon, C.lat, C.dest[0], C.dest[1])
 	var step := kn * hours
-	if d <= step:
-		C.lon = C.dest[0]; C.lat = C.dest[1]
+	if _advance(C, C.dest, step):
 		if C.intercept == "":
 			C.dest = null
 			speed_i = mini(speed_i, 1)
 			_log("Arrived. %s." % _where().capitalize())
 			_refresh_side()
-		return
-	var k := step / d
-	C.lon += (C.dest[0] - C.lon) * k
-	C.lat += (C.dest[1] - C.lat) * k
 
 
 ## Cruising speed of the player and squadron: the slowest ship sets it; small craft push
@@ -644,16 +690,151 @@ func _move_groups(hours: float) -> void:
 	for g in C.groups:
 		if g.state == "fight" or g.dest == null:
 			continue
-		var d: float = War.dist_nm(g.lon, g.lat, g.dest[0], g.dest[1])
 		var step: float = float(g.kn) * hours
-		if d <= step:
-			g.lon = g.dest[0]; g.lat = g.dest[1]
+		if _advance(g, g.dest, step):
 			g.dest = null
 			g.arrived = true
-		else:
-			var k: float = step / d
-			g.lon += (g.dest[0] - g.lon) * k
-			g.lat += (g.dest[1] - g.lat) * k
+
+
+## Move something with lon/lat toward a destination, steering round land. Returns true on arrival.
+## Harbours sit on the coast, so the last 40 nm to a destination may cross the shoreline.
+func _advance(o: Dictionary, dest: Array, step: float) -> bool:
+	var d := War.dist_nm(o.lon, o.lat, dest[0], dest[1])
+	if d <= step:
+		o.lon = dest[0]; o.lat = dest[1]
+		return true
+	var dx: float = (dest[0] - o.lon) * cos(deg_to_rad(o.lat))
+	var dy: float = dest[1] - o.lat
+	var course := atan2(dx, dy)
+	var step_deg := step / 60.0
+	var near_port := d < 40.0
+	for turn in [0.0, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5, 2.1, -2.1, 2.6, -2.6]:
+		var a: float = course + float(turn)
+		var nlon: float = o.lon + sin(a) * step_deg / cos(deg_to_rad(o.lat))
+		var nlat: float = o.lat + cos(a) * step_deg
+		if near_port or not Geo.on_land(nlon, nlat):
+			o.lon = nlon; o.lat = nlat
+			return false
+	return false      # boxed in: wait
+
+
+# ---------------------------------------------------------------- islands and captures
+
+func _island_side(iid: String) -> String:
+	return C.islands.get(iid, {}).get("side", "ijn")
+
+
+## Enemy warship groups guarding an island (within 60 nm of it).
+func _guards_near(iid: String, side: String) -> Array:
+	var isl: Dictionary = Geo.ISLANDS[iid]
+	var out := []
+	for g in C.groups:
+		if g.side != side or g.kind in ["convoy", "barges", "sub"]:
+			continue
+		if War.dist_nm(g.lon, g.lat, isl.lon, isl.lat) < 60.0:
+			out.append(g)
+	return out
+
+
+## The flag changes hands. Bases, zones (for key islands), spotting and spawning follow.
+func _capture(iid: String, side: String, who: String) -> void:
+	var isl: Dictionary = Geo.ISLANDS[iid]
+	var st: Dictionary = C.islands[iid]
+	st.side = side
+	st.garrison = 1
+	st.grow = C.day
+	if isl.base != "":
+		C.base_owner[isl.base] = side
+	if isl.key:
+		C.zone_owner[isl.zone] = side
+	_log("%s %s %s%s." % [who, "took" if side == "us" else "took", isl.name, (" and with it %s" % War.ZONES[isl.zone].name) if isl.key else ""])
+	Audio.ui("radio", 0.7, "Radio")
+	if side == "us":
+		C.shift += 6.0 if isl.key else 2.0
+	else:
+		C.shift -= 6.0 if isl.key else 2.0
+	# guards with nothing left to guard go home
+	for g in C.groups:
+		if g.get("guard", "") == iid and g.side != side:
+			g.erase("guard")
+			var hb: Dictionary = War.BASES.get(g.home, {})
+			if not hb.is_empty() and _base_side(g.home) == g.side:
+				g.dest = [hb.lon, hb.lat]
+				g.leg = 1
+
+
+## Garrisons dig in over time (one battery a month, up to the island's full strength).
+func _grow_garrisons() -> void:
+	for iid in C.islands:
+		var st: Dictionary = C.islands[iid]
+		var mx: int = Geo.ISLANDS[iid].garrison
+		if st.garrison < mx and C.day - float(st.get("grow", C.day)) > 30.0:
+			st.garrison += 1
+			st.grow = C.day
+
+
+## Both sides' task forces go for weakly held enemy islands at the front, and take them when
+## they arrive unopposed; the other side's guards or a passing fleet can stop them.
+func _ai_captures() -> void:
+	var fronts := _front_zones()
+	for g in C.groups:
+		if g.state != "sail" or not (g.kind in ["taskforce", "carriers", "patrol"]):
+			continue
+		if g.has("assault"):
+			continue
+		if Missions.group_strength(g.ships) < 8.0 or _rng.randf() > 0.08:
+			continue
+		var best := ""
+		var bd := 900.0
+		for iid in Geo.ISLANDS:
+			var isl: Dictionary = Geo.ISLANDS[iid]
+			if _island_side(iid) == g.side or not fronts.has(isl.zone):
+				continue
+			var st: Dictionary = C.islands[iid]
+			if int(st.garrison) > 2 and Missions.group_strength(g.ships) < 12.0:
+				continue
+			if not _guards_near(iid, "us" if g.side == "ijn" else "ijn").is_empty():
+				continue
+			var d := War.dist_nm(g.lon, g.lat, isl.lon, isl.lat)
+			if d < bd:
+				bd = d; best = iid
+		if best != "":
+			g.assault = best
+			g.orig_dest = g.dest
+			g.dest = [Geo.ISLANDS[best].lon, Geo.ISLANDS[best].lat]
+			if g.side == "us":
+				_log("%s is making for %s to put a landing force ashore." % [g.name, Geo.ISLANDS[best].name])
+
+
+## A group that has reached the island it meant to take.
+func _assault_arrived(g: Dictionary) -> bool:
+	var iid: String = g.get("assault", "")
+	if iid == "":
+		return false
+	var isl: Dictionary = Geo.ISLANDS[iid]
+	if _island_side(iid) == g.side:
+		g.erase("assault")
+		return false
+	var enemy := "us" if g.side == "ijn" else "ijn"
+	if not _guards_near(iid, enemy).is_empty() or (enemy == "us" and War.dist_nm(C.lon, C.lat, isl.lon, isl.lat) < 30.0):
+		# opposed: stand off and wait for the guards to be dealt with (or fight them)
+		g.dest = [isl.lon + 0.3, isl.lat]
+		return true
+	if not g.has("assault_t"):
+		g.assault_t = C.day + 1.0
+		if g.side == "ijn":
+			_log("Radio: enemy landing force reported off %s." % isl.name)
+		g.dest = [isl.lon + 0.2, isl.lat + 0.1]
+		return true
+	if C.day >= g.assault_t:
+		_capture(iid, g.side, g.name if g.side == "us" else "A Japanese landing force")
+		g.erase("assault"); g.erase("assault_t")
+		g.dest = g.get("orig_dest", null)
+		g.erase("orig_dest")
+		if g.dest == null:
+			g.arrived = true
+		return false
+	return true
 
 
 func _tick_hour() -> void:
@@ -663,6 +844,19 @@ func _tick_hour() -> void:
 	# groups that have arrived go into port (or turn for home from a patrol area)
 	var keep := []
 	for g in C.groups:
+		if g.get("arrived", false) and g.has("assault"):
+			g.arrived = false
+			if _assault_arrived(g):
+				keep.append(g)
+				continue
+		if g.get("arrived", false) and g.has("guard"):
+			# guards loiter around their island
+			g.arrived = false
+			var gi: Dictionary = Geo.ISLANDS[g.guard]
+			var a := _rng.randf() * TAU
+			g.dest = [gi.lon + cos(a) * 0.5, gi.lat + sin(a) * 0.5]
+			keep.append(g)
+			continue
 		if g.get("arrived", false):
 			g.arrived = false
 			if g.get("leg", 0) == 0 and g.get("home", "") != "":
@@ -698,6 +892,10 @@ func _tick_hour() -> void:
 	_hunt()
 	_meet()
 	_resolve_fights()
+	if int(C.day * 24.0) % 6 == 0:
+		_ai_captures()
+	_grow_garrisons()
+	_spawn_guards()
 
 
 func _tick_day() -> void:
@@ -751,16 +949,19 @@ func _group_name(side: String, kind: String, ships: Array) -> String:
 func _active_bases(side: String) -> Array:
 	var out := []
 	for nm in War.BASES:
-		var b: Dictionary = War.BASES[nm]
-		if b.side != side:
-			continue
-		if side == "us":
-			if b.from >= 0 and C.day >= b.from:
-				out.append(nm)
-		else:
-			if War.owner(b.zone, C.day, C.shift) == "ijn":
-				out.append(nm)
+		if _base_side(nm) == side:
+			out.append(nm)
 	return out
+
+
+## Who holds a base today: a capture on the map overrides history.
+func _base_side(nm: String) -> String:
+	if C.base_owner.has(nm):
+		return C.base_owner[nm]
+	var b: Dictionary = War.BASES[nm]
+	if b.side == "us":
+		return "us" if (b.from >= 0 and C.day >= b.from) else "ijn"
+	return "ijn" if War.owner(b.zone, C.day, C.shift) == "ijn" else "us"
 
 
 ## Zones where the war is being fought now: the ones that change hands within about a year of
@@ -1095,10 +1296,9 @@ func _detect() -> void:
 					found = true
 					break
 		if not found and day and not sub:
-			# air search from our bases
-			for nm in _active_bases("us"):
-				var b: Dictionary = War.BASES[nm]
-				if War.dist_nm(b.lon, b.lat, g.lon, g.lat) < 400.0 and _rng.randf() < 0.2:
+			# air search from our bases and the islands we hold
+			for pt in _spot_points("us"):
+				if War.dist_nm(pt[0], pt[1], g.lon, g.lat) < pt[2] and _rng.randf() < 0.2:
 					found = true
 					break
 		if not found and not sub:
@@ -1115,6 +1315,59 @@ func _detect() -> void:
 			if fresh and d < 600.0:
 				_log("Contact: enemy %s, %s, %.0f nm %s of us." % [_kind_lc(g.kind), _describe(g.ships), d, _compass(C.lon, C.lat, g.lon, g.lat)])
 				Audio.ui("radio", 0.5, "Radio")
+
+
+## Points that watch the sea for a side: bases (400 nm of air search) and held islands (250 nm).
+func _spot_points(side: String) -> Array:
+	var out := []
+	for nm in _active_bases(side):
+		out.append([War.BASES[nm].lon, War.BASES[nm].lat, 400.0])
+	for iid in C.islands:
+		if C.islands[iid].side == side:
+			out.append([Geo.ISLANDS[iid].lon, Geo.ISLANDS[iid].lat, 250.0])
+	return out
+
+
+## Islands at the front get a guard group of their holder's side now and then.
+func _spawn_guards() -> void:
+	if _rng.randf() > 0.04:
+		return
+	var fronts := _front_zones()
+	var cands := []
+	for iid in C.islands:
+		var isl: Dictionary = Geo.ISLANDS[iid]
+		if not fronts.has(isl.zone):
+			continue
+		var side: String = C.islands[iid].side
+		var has_guard := false
+		for g in C.groups:
+			if g.get("guard", "") == iid:
+				has_guard = true
+		if not has_guard:
+			cands.append(iid)
+	if cands.is_empty():
+		return
+	var iid: String = cands[_rng.randi() % cands.size()]
+	var side: String = C.islands[iid].side
+	var n_side := 0
+	for g in C.groups:
+		if g.side == side:
+			n_side += 1
+	if n_side >= MAX_GROUPS + 2:
+		return
+	var isl: Dictionary = Geo.ISLANDS[iid]
+	var year := War.year_of(int(C.day))
+	var home := _base_weighted(side, isl.lon, isl.lat)
+	if home == "":
+		return
+	var kind: String = "patrol" if side == "us" else (["express", "picket", "boats"][_rng.randi() % 3])
+	var g := _make_group(side, home, [isl.lon + 0.3, isl.lat], false, year, kind)
+	if g.is_empty():
+		return
+	g.guard = iid
+	g.lon = isl.lon + 0.4; g.lat = isl.lat - 0.2
+	g.name = "%s guard" % isl.name if side == "ijn" else "%s patrol" % isl.name
+	C.groups.append(g)
 
 
 func _compass(lon1: float, lat1: float, lon2: float, lat2: float) -> String:
@@ -1386,6 +1639,20 @@ func _engage(g: Dictionary) -> void:
 	_launch(plan, "group", g.id, g.id, ag.id if ag != null else "")
 
 
+## Assault an enemy-held island: a bombardment action against its batteries.
+func _assault(iid: String) -> void:
+	var isl: Dictionary = Geo.ISLANDS[iid]
+	var st: Dictionary = C.islands[iid]
+	var friends: Array = C.squadron.duplicate(true)
+	var ag = _group(C.attached)
+	if ag != null:
+		for sh in ag.ships:
+			if Data.TYPES[sh[0]].get("cls", "") != "merchant":
+				friends.append(sh)
+	var plan := Missions.island_assault(_rng, isl, int(st.garrison), friends, C.ship, C.name, "clear" if _rng.randf() < 0.7 else "overcast", st.side)
+	_launch(plan, "assault", iid, "", ag.id if ag != null else "")
+
+
 ## Join a battle between a friendly group and an enemy group.
 func _join_fight(f: Dictionary) -> void:
 	var gu = _group(f.us)
@@ -1465,6 +1732,15 @@ func _apply_result() -> void:
 		C.fights = C.fights.filter(func(f): return f.id != m.get("ref", ""))
 		if _group(m.get("friend_gid", "")) != null and m.get("friend_gid", "") != "":
 			_group(m.friend_gid).state = "sail"
+	if m.get("kind", "") == "assault" and Geo.ISLANDS.has(m.get("ref", "")):
+		var iid: String = m.ref
+		if r.get("over", "") == "won":
+			var g_n: int = int(C.islands[iid].garrison)
+			_capture(iid, "us", "Our landing force")
+			Game.career.reputation += 60 * g_n + (120 if Geo.ISLANDS[iid].key else 0)
+			_log("Reputation +%d for %s." % [60 * g_n + (120 if Geo.ISLANDS[iid].key else 0), Geo.ISLANDS[iid].name])
+		else:
+			_log("The assault on %s failed; the batteries still hold the beach." % Geo.ISLANDS[iid].name)
 	selected = ""
 	C.sunk_total += sunk.size()
 	match r.get("over", ""):
@@ -1642,30 +1918,6 @@ func _from_px(p: Vector2) -> Vector2:
 	return Vector2(cam_lon + (p.x - s.x / 2) / zoom, cam_lat - (p.y - s.y / 2) / zoom)
 
 
-## Very rough coastlines (lon, lat) for the look of the thing.
-const LAND := {
-	"Honshu": [[131, 34], [133, 35.5], [136, 36.5], [138, 37.5], [140, 39.5], [141.5, 41], [141.8, 38.5], [140.8, 36], [139.8, 35], [137, 34.5], [135, 33.6], [132.5, 33.8]],
-	"Kyushu": [[129.6, 33.2], [131, 33.9], [131.9, 33.2], [131.3, 31.2], [130.3, 31.2], [129.7, 32.5]],
-	"Hokkaido": [[140, 42], [141.5, 43.2], [144.5, 44], [145.5, 43.3], [143.5, 42], [141.5, 41.5]],
-	"Formosa": [[120.2, 22], [120.7, 24.6], [121.6, 25.3], [121.9, 24.3], [120.9, 21.9]],
-	"Luzon": [[120, 15.5], [120.5, 18.5], [122.2, 18.4], [122.1, 16.5], [121.5, 14.2], [120.7, 13.8]],
-	"Mindanao": [[122, 7.5], [123, 8.6], [124.5, 8.2], [126.2, 7.2], [126.3, 6.3], [125.4, 5.6], [124, 6.6], [122.4, 6.8]],
-	"Borneo": [[109, 1.5], [110, 3], [113, 4], [115, 5], [117, 7], [119, 5.3], [118, 1], [117, -2], [116, -3.8], [113.5, -3.2], [110, -2.5], [109, 0]],
-	"Sumatra": [[95.5, 5.5], [98, 3.5], [102, -1], [104.5, -3], [106, -5.5], [104, -5.5], [101, -2.8], [97.5, 1.5]],
-	"Java": [[105.2, -6.3], [108, -6.3], [111, -6.5], [114, -7.8], [114.3, -8.3], [111, -8.3], [108, -7.8], [105.5, -7]],
-	"Celebes": [[119, 1.2], [120.5, 1.4], [122, 1], [124.5, 1.5], [125, 0.5], [123, 0.3], [121, -1], [122.5, -4], [121, -5.5], [120, -3], [119, -1]],
-	"New Guinea": [[131, -1.5], [134, -1], [137, -1.6], [141, -2.6], [145, -4.3], [147.5, -6.3], [150.5, -10.5], [147.5, -10.2], [144.5, -8], [141, -9.2], [138, -8.3], [135, -4.5], [132, -4]],
-	"New Britain": [[148.4, -5.6], [150.5, -5.1], [152.3, -4.2], [151.2, -5.8], [149.6, -6.3]],
-	"Bougainville": [[154.7, -5.5], [155.9, -6.3], [156, -6.9], [155, -6.2]],
-	"Guadalcanal": [[159.6, -9.3], [160.5, -9.6], [160.8, -9.9], [159.8, -9.8]],
-	"Malaita": [[160.6, -8.4], [161.3, -9.2], [161, -9.5], [160.6, -8.8]],
-	"Australia": [[131, -12], [136, -12.5], [138, -16.5], [141.5, -12.5], [143.5, -14], [145.8, -16.9], [149, -21], [152, -25], [153.5, -28], [153, -32], [148, -36], [141, -38], [136, -35], [130, -31], [124, -33], [117, -35], [115, -31], [114, -26], [117, -21], [122, -18], [128, -15]],
-	"Oahu": [[-158.3, 21.3], [-157.6, 21.3], [-157.7, 21.7], [-158.3, 21.6]],
-}
-const DOTS := [[-156, 20.5, 3.0], [-155.5, 19.6, 4.0], [182.6, 28.2, 1.5], [173, 1.5, 1.2], [171.2, 7.1, 1.2], [167.7, 8.7, 1.2], [162.3, 11.4, 1.2],
-	[145.7, 15.2, 1.8], [144.8, 13.4, 1.8], [151.8, 7.4, 1.5], [139.7, 10, 1.2], [134.5, 7.3, 1.8], [141.5, 24.8, 1.2], [127.7, 26.3, 2.5], [128.3, 27, 1.5], [166.4, -22.3, 3.5], [167.2, -15.5, 2.5], [160.1, -9.1, 1.2], [157, -8.3, 2.0], [158.6, -5.0, 1.0]]
-
-
 func _draw_map() -> void:
 	var font = ThemeDB.fallback_font
 	var vs := map.size
@@ -1680,22 +1932,39 @@ func _draw_map() -> void:
 		map.draw_circle(c, r, col)
 		map.draw_arc(c, r, 0, TAU, 48, Color(col, 0.5), 1.0)
 		map.draw_string(font, c + Vector2(-r * 0.5, -r * 0.7), z.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.55))
-	# land
-	for nm in LAND:
+	# land: a pale shelf, then the coast
+	for nm in Geo.LAND:
 		var pts := PackedVector2Array()
-		for p in LAND[nm]:
-			var lon: float = p[0] if p[0] > 0 else p[0] + 360.0
-			pts.append(_to_px(lon, p[1]))
+		for p in Geo.LAND[nm]:
+			pts.append(_to_px(Geo.lon_fix(p[0]), p[1]))
 		if pts.size() >= 3:
 			map.draw_colored_polygon(pts, Color(0.30, 0.36, 0.24))
-			map.draw_polyline(pts + PackedVector2Array([pts[0]]), Color(0.55, 0.6, 0.45, 0.8), 1.0)
-	for d in DOTS:
-		var lon: float = d[0] if d[0] > 0 else d[0] + 360.0
-		map.draw_circle(_to_px(lon, d[1]), maxf(2.0, d[2] * zoom * 0.08), Color(0.32, 0.38, 0.26))
+			map.draw_polyline(pts + PackedVector2Array([pts[0]]), Color(0.62, 0.66, 0.5, 0.9), 1.5)
+	for d in Geo.DOTS:
+		var pd := _to_px(Geo.lon_fix(d[0]), d[1])
+		var rr: float = maxf(2.0, d[2] / 60.0 * zoom)
+		map.draw_circle(pd, rr + 1.5, Color(0.5, 0.62, 0.62, 0.35))   # reef
+		map.draw_circle(pd, rr, Color(0.32, 0.38, 0.26))
+	# islands that can be taken: a flag in the holder's colour, pips for the garrison
+	for iid in Geo.ISLANDS:
+		var isl: Dictionary = Geo.ISLANDS[iid]
+		var st: Dictionary = C.islands.get(iid, {})
+		var p := _to_px(isl.lon, isl.lat)
+		var us_held: bool = st.get("side", "ijn") == "us"
+		var col := Color(0.55, 0.85, 1.0) if us_held else Color(0.95, 0.45, 0.35)
+		if iid == selected:
+			col = UI.BRASS
+		map.draw_line(p + Vector2(-5, 6), p + Vector2(-5, -12), Color(0.9, 0.9, 0.85), 1.5)
+		map.draw_colored_polygon(PackedVector2Array([p + Vector2(-5, -12), p + Vector2(6, -9), p + Vector2(-5, -5)]), col)
+		var g: int = int(st.get("garrison", isl.garrison))
+		for k in g:
+			map.draw_rect(Rect2(p + Vector2(-5 + k * 4, 8), Vector2(3, 3)), col)
+		if zoom > 6.0 or iid == selected:
+			map.draw_string(font, p + Vector2(9, -2), isl.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(col, 0.9))
 	# bases
 	for nm in War.BASES:
 		var b: Dictionary = War.BASES[nm]
-		var us: bool = b.side == "us" and b.from >= 0 and C.day >= b.from
+		var us: bool = _base_side(nm) == "us"
 		var p := _to_px(b.lon, b.lat)
 		var col := Color(0.55, 0.85, 1.0) if us else Color(0.95, 0.45, 0.35)
 		map.draw_rect(Rect2(p - Vector2(4, 4), Vector2(8, 8)), col)
@@ -1792,10 +2061,11 @@ func _map_input(e: InputEvent) -> void:
 				_drag = {}
 		elif e.button_index == MOUSE_BUTTON_RIGHT and e.pressed:
 			var w := _from_px(e.position)
-			C.attached = ""
-			C.intercept = ""
-			_set_dest(w.x, w.y)
-			_refresh_side()
+			if not Geo.on_land(w.x, w.y):
+				C.attached = ""
+				C.intercept = ""
+				_set_dest(w.x, w.y)
+				_refresh_side()
 		map.queue_redraw()
 	elif e is InputEventMouseMotion and not _drag.is_empty():
 		var d: Vector2 = e.position - _drag.last
@@ -1808,7 +2078,13 @@ func _map_input(e: InputEvent) -> void:
 
 
 func _click(pos: Vector2) -> void:
-	# a group or battle under the mouse selects it; otherwise set course
+	# a group, battle or island under the mouse selects it; otherwise set course
+	for iid in Geo.ISLANDS:
+		var isl: Dictionary = Geo.ISLANDS[iid]
+		if _to_px(isl.lon, isl.lat).distance_to(pos + Vector2(0, 4)) < 12.0:
+			selected = iid
+			_refresh_side()
+			return
 	for f in C.fights:
 		if _to_px(f.lon, f.lat).distance_to(pos) < 14.0:
 			selected = f.id
@@ -1824,6 +2100,9 @@ func _click(pos: Vector2) -> void:
 			_refresh_side()
 			return
 	var w := _from_px(pos)
+	if Geo.on_land(w.x, w.y):
+		_log("That is land. Click the sea to set a course.")
+		return
 	C.attached = ""
 	C.intercept = ""
 	_set_dest(w.x, w.y)

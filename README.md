@@ -1,4 +1,4 @@
-# Pacific Command (build 0.13)
+# Pacific Command (build 0.14)
 
 WWII Pacific naval game for PC, made in **Godot 4.7.2**.
 
@@ -11,7 +11,16 @@ Japanese Tokyo Express runs, convoys, task forces, barges and submarines (red, o
 radar, aircraft or a friendly ship has found them). Groups that meet fight each other,
 and the fight is marked on the map for a few hours: sail to it and join, intercept an
 enemy group yourself, or sail with a friendly convoy as its escort and fight when it is
-attacked. In a friendly port you repair, refit, request a new command and **recruit
+attacked. **Islands are the objectives.** Twenty-three real islands and bases (Wake, Tarawa, Kwajalein,
+Truk, Rabaul, Guadalcanal, Munda, Saipan, Guam, Peleliu, Leyte, Iwo Jima, Okinawa...) fly a
+flag and have coastal batteries. Drive off the guard fleet, then assault: a bombardment
+action on a map shaped like the real island, batteries that shoot back; silence them and the
+flag changes. A captured island spots for you, its base is yours, and a key island brings its
+whole sea zone. Both AIs land on weakly held islands at the front and take them back when
+they can; garrisons dig in a battery a month. Japanese torpedo-boat sections, picket boats
+and barge columns are the common small fry for a young PT skipper; everything grows as
+the war goes on. The map has real coastlines and islands and ships steer round them.
+In a friendly port you repair, refit, request a new command and **recruit
 ships for your squadron with reputation**; they sail with you and fight under your
 orders until they are sunk. Click the sea to set a course, run the clock (pause / 1 h
 per 3 s / fast / very fast). Historical operations (Savo, Midway, Guadalcanal,

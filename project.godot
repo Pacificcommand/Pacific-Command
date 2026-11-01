@@ -8,7 +8,7 @@ config_version=5
 config/name="Pacific Command"
 config/icon="res://icon.png"
 config/description="WWII Pacific naval combat. Combat sandbox build."
-config/version="0.13.0"
+config/version="0.14.0"
 run/main_scene="res://scenes/menu.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 
