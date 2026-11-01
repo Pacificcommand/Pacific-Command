@@ -161,6 +161,9 @@ All keys can be changed in Settings › Controls.
 - The ship is alive: a representative crew walks the decks while cruising, runs to the
   open gun mounts and the rails at general quarters, repair parties fight the fires, and
   when she goes down the men go to the side and over.
+- Orders to the ships in company (left side): Follow me, Engage at will, Fall back, Rescue
+  survivors, Attack my target (ships or shore batteries) - for all ships or one at a time;
+  click an order again to release the ship to its own judgement.
 - Ship dial (bottom left, World of Warships style): your ship from above with every mount drawn where it points and coloured by state (ready, loading, cannot bear, knocked out), torpedo tubes with their count, a bearing ring with the target wedge, the telegraph beside it. Secondaries and AA always fire themselves; manual aim controls only the main battery.
 - Effects: wakes, splashes, smoke, fires, oil slicks, floating debris.
 - Smoke, gun smoke, fire and flash sprites from the **Kenney Smoke Particles** pack.

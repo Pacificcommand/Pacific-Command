@@ -27,6 +27,19 @@ func reset() -> void:
 func step(s: Ship) -> void:
 	var tgt := pick_target(s)
 	var want := s.h
+	# the player's orders to a friendly ship come first
+	if s.team == B.player.team and not s.is_player and s.order != "":
+		var done := false
+		var res = ordered(s, tgt)
+		if res != null:
+			want = res
+			done = true
+		if done:
+			s.torp_cd -= 0.5
+			if not B.terrain.islands.is_empty() and not s.T.get("ground", false):
+				want = avoid_land(s, want)
+			s.rud_cmd = clampf(rad_to_deg(U.ang_d(s.h, want)) * 1.5, -35.0, 35.0)
+			return
 	if s.is_sub():
 		want = submarine(s, tgt)
 	else:
@@ -155,10 +168,100 @@ func fleet_of(s: Ship):
 	return F
 
 
+## Carry out the player's order. Returns the wanted heading, or null to fall through to the
+## ship's own judgement ("engage").
+func ordered(s: Ship, tgt: Ship):
+	var p: Ship = B.player
+	match s.order:
+		"follow":
+			# keep station on the player and shoot at whatever comes in range
+			s.ai_state = "following"
+			var near := nearest_noticed(s, false)
+			s.target = near
+			s.fire = near != null and s.range_to(near) <= s.max_range()
+			if near and torpedo_chance(s, near, s.range_to(near)):
+				return s.h
+			if not p.alive:
+				s.order = ""
+				return null
+			return keep_station(s, p) if s.fstation != Vector2.ZERO else keep_station_pt(s, p)
+		"fallback":
+			# open the range from the nearest enemy, past the player, smoke if we have it
+			s.ai_state = "falling back"
+			var near2 := nearest_noticed(s, false)
+			s.target = near2
+			s.fire = near2 != null
+			s.tele = 6
+			if s.T.smoke and near2 and s.range_to(near2) < 8000.0:
+				s.smoke_on = true
+			var away := fposmod(s.bearing_to(near2.x, near2.z) + PI, TAU) if near2 else (p.h + PI if p.alive else s.h)
+			if near2 and s.range_to(near2) > 16000.0:
+				s.tele = 3
+			return away
+		"rescue":
+			var raft := _nearest_raft(s)
+			if raft == null:
+				s.ai_state = "no rafts in sight"
+				s.order = ""
+				return null
+			s.ai_state = "picking up survivors"
+			var d := s.range_to(raft)
+			s.target = nearest_noticed(s, false)
+			s.fire = s.target != null
+			var reach: float = 60.0 + s.T.L * 0.6 + 120.0
+			if d < reach:
+				s.tele = 1    # drift alongside at under 10 knots
+				if s.v > 9.0 * Data.KN:
+					s.tele = 1
+				return s.h
+			s.tele = 3 if d < 1500.0 else 5
+			return s.bearing_to(raft.x, raft.z)
+		"attack":
+			var ot: Ship = s.order_target
+			if ot == null or not ot.alive or ot.escaped:
+				s.order = ""
+				s.order_target = null
+				return null
+			s.target = ot
+			s.fire = true
+			var R := s.range_to(ot)
+			s.ai_state = "attacking %s" % ot.ship_name
+			if ot.T.get("ground", false):
+				# shore target: close to two thirds of gun range and steam across its front
+				var want_r: float = s.max_range() * 0.6
+				if R > want_r:
+					s.tele = 5
+					return s.bearing_to(ot.x, ot.z)
+				s.tele = 3
+				return fposmod(s.bearing_to(ot.x, ot.z) + PI / 2.0 * s.side, TAU)
+			if torpedo_chance(s, ot, R):
+				return s.h
+			if B.t < s.evade_until:
+				return evade(s, ot)
+			if s.role() == "pt":
+				return pt_boat(s, ot)
+			return solo(s, ot, R)
+	return null
+
+
+func _nearest_raft(s: Ship) -> Ship:
+	var best: Ship = null
+	var bd := 1e9
+	for o in B.ships:
+		if o.role() == "survivors" and o.alive and not o.gone and o.team == s.team:
+			var d := s.range_to(o)
+			if d < bd:
+				bd = d; best = o
+	return best
+
+
 ## A group leaves the player's station-keeping once a fight is on or an enemy is close.
 func independent(group: String) -> bool:
 	if group != B.player.group or B.player.group == "":
 		return false
+	for o in B.ships:
+		if o.group == group and o.order == "engage":
+			return true
 	if B.combat_t >= 0.0:
 		return true
 	for o in B.ships:

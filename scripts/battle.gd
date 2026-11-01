@@ -164,6 +164,15 @@ func _test_args() -> void:
 		set_focus(_test.cam)
 		var fs := focus_ship()
 		camst.x = fs.x; camst.z = fs.z
+	if _test.has("order"):
+		# test: give every ship in company an order at t=20
+		after(20.0, func():
+			var mates := []
+			for o in ships:
+				if o.team == player.team and o != player and o.alive and o.role() in ["warship", "pt"]:
+					mates.append(o)
+			if not mates.is_empty():
+				hud._give_order(mates, _test.order))
 	if _test.has("run"):
 		# fast-forward the simulation before the first frame
 		var n := int(float(_test.run) / 0.05)
@@ -2191,9 +2200,18 @@ func _step_raft(s: Ship, dt: float) -> void:
 		s.alive = false
 		say("%s: no survivors left alive." % s.ship_name, "bad")
 		return
+	# the player, or a friendly ship ordered to rescue, alongside and slow
+	var picker: Ship = null
 	var d := player.range_to(s)
 	var reach: float = 60.0 + player.T.L * 0.6 + 120.0   # boats and lines reach well past the hull
 	if player.alive and d < reach and absf(player.v) < 10.0 * Data.KN:
+		picker = player
+	else:
+		for o in ships:
+			if o != player and o.team == player.team and o.alive and o.order == "rescue" and o.range_to(s) < 60.0 + o.T.L * 0.6 + 120.0 and absf(o.v) < 10.0 * Data.KN:
+				picker = o
+				break
+	if picker != null:
 		s.sinking += dt
 		if s.sinking > 8.0:
 			s.rescued = true
@@ -2201,13 +2219,14 @@ func _step_raft(s: Ship, dt: float) -> void:
 			s.gone = true
 			stats.rescued = stats.get("rescued", 0) + s.crew
 			# men from our own sunk ships fill the gaps in the crew; the rest are passengers
-			var room: int = maxi(0, int(player.T.crew) - player.crew)
+			var room: int = maxi(0, int(picker.T.crew) - picker.crew)
 			var take: int = mini(room, s.crew) if s.team == player.team else 0
-			player.crew += take
-			if take > 0:
+			picker.crew += take
+			var who := "" if picker == player else picker.ship_name + ": "
+			if take > 0 and picker == player:
 				say("%d survivors taken aboard from %s; %d of them turn to at our battle stations." % [s.crew, s.ship_name, take], "good")
 			else:
-				say("%d survivors taken aboard from %s." % [s.crew, s.ship_name], "good")
+				say("%s%d survivors taken aboard from %s." % [who, s.crew, s.ship_name], "good")
 	elif d < 400.0 and not s.get_meta("hailed", false):
 		s.set_meta("hailed", true)
 		say("Men in the water ahead! Slow to under 10 knots and close the raft; the boats will do the rest.")

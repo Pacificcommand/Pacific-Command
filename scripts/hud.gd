@@ -38,6 +38,9 @@ var _pause_prev := 1.0
 var drag := {}
 var tele_btns: Array = []
 var dial_view: Control
+var squad_plate: PanelContainer
+var squad_box: VBoxContainer
+var _squad_key := ""
 var _last_click_t := -9.0
 
 
@@ -255,7 +258,16 @@ func _build_plates() -> void:
 	av.add_child(_row([btn.strike, btn.cap, btn.scout, btn.recall]))
 	av.add_child(_row([_caps("AA guns"), _seg("aa", [["self", "Protect self"], ["carrier", "Protect carrier"], ["bombers", "Bombers first"]], func(v): B.air.aa_mode = v; _set_seg("aa", v))]))
 	air_plate.add_child(av)
-	_place(air_plate, "ml")
+	# orders to the ships in company
+	squad_plate = _panel()
+	squad_box = VBoxContainer.new()
+	squad_box.add_theme_constant_override("separation", 3)
+	squad_plate.add_child(squad_box)
+	var left_col := VBoxContainer.new()
+	left_col.add_theme_constant_override("separation", 8)
+	left_col.add_child(air_plate)
+	left_col.add_child(squad_plate)
+	_place(left_col, "ml")
 	air_plate.visible = false
 
 	# bottom center: damage control
@@ -633,6 +645,7 @@ func refresh() -> void:
 		return
 	_refresh_air(p)
 	_refresh_sub(p)
+	_refresh_squad(p)
 	var W: Dictionary = Data.WEATHER[B.weather]
 	lbl.sub.text = "%s · %s · Battle time %s" % [p.T.name, W.name, _clock(B.t)]
 	for i in tele_btns.size():
@@ -724,6 +737,68 @@ func _refresh_sub(p: Ship) -> void:
 			var c: Dictionary = p.sonar_contacts[k]
 			txt += "  ·  sonar contact %s, %s (%s)" % [U.deg3(p.bearing_to(c.x, c.z)), U.yards(U.hyp(c.x - p.x, c.z - p.z)), "deep" if c.depth == 2 else "shallow"]
 		lbl.dc.text = txt
+
+
+## The squadron plate: one row per friendly ship with its state and order buttons, and an
+## "All ships" row. Rebuilt only when the list of ships or their orders change.
+func _refresh_squad(p: Ship) -> void:
+	var mates := []
+	for s in B.ships:
+		if s.team == p.team and s != p and s.alive and not s.escaped and s.role() in ["warship", "pt"] and s.T.get("crew", 0) >= 10 and not s.T.get("ground", false):
+			mates.append(s)
+	squad_plate.visible = not mates.is_empty()
+	if mates.is_empty():
+		return
+	var key := ""
+	for s in mates:
+		key += "%s:%s:%s|" % [s.ship_name, s.order, s.ai_state]
+	key += p.target.ship_name if p.target else "-"
+	if key == _squad_key:
+		return
+	_squad_key = key
+	for c in squad_box.get_children():
+		c.queue_free()
+	squad_box.add_child(_label("SHIPS IN COMPANY", 11, C_BRASS))
+	var tgt_name: String = p.target.ship_name if p.target and p.target.alive else ""
+	var order_row := func(who: Array, label: String, state: String):
+		var hb := HBoxContainer.new()
+		hb.add_theme_constant_override("separation", 2)
+		var nm := _label(label, 12)
+		nm.custom_minimum_size.x = 150
+		hb.add_child(nm)
+		for od in [["follow", "Follow"], ["engage", "Engage"], ["fallback", "Fall back"], ["rescue", "Rescue"], ["attack", "Attack " + (tgt_name if tgt_name != "" else "target")]]:
+			var b := _button(od[1], (func(ships, o): _give_order(ships, o)).bind(who, od[0]), true)
+			b.add_theme_font_size_override("font_size", 11)
+			if who.size() == 1 and who[0].order == od[0]:
+				b.set_pressed_no_signal(true)
+			if od[0] == "attack" and tgt_name == "":
+				b.disabled = true
+			hb.add_child(b)
+		squad_box.add_child(hb)
+		if state != "":
+			var st := _label(state, 10, C_MUTED)
+			squad_box.add_child(st)
+	order_row.call(mates, "All ships", "")
+	for s in mates:
+		var o_txt: String = {"": "", "follow": "following", "engage": "engaging", "fallback": "falling back", "rescue": "rescuing", "attack": "attacking %s" % (s.order_target.ship_name if s.order_target else "")}.get(s.order, "")
+		order_row.call([s], "%s · %s" % [s.ship_name, s.T.name.replace(" class", "")], s.ai_state if (o_txt == "" or s.ai_state.begins_with(o_txt.substr(0, 5))) else "%s · %s" % [s.ai_state, o_txt])
+
+
+func _give_order(ships: Array, o: String) -> void:
+	var p: Ship = B.player
+	for s in ships:
+		if s.order == o and ships.size() == 1:
+			s.order = ""          # click again to release
+			s.order_target = null
+			continue
+		s.order = o
+		s.order_target = p.target if o == "attack" and p.target and p.target.alive else null
+		s.detached = false
+	var names: String = "All ships" if ships.size() > 1 else ships[0].ship_name
+	var txt: String = {"follow": "%s: form on me.", "engage": "%s: engage at will.", "fallback": "%s: fall back and open the range.", "rescue": "%s: pick up survivors.", "attack": "%s: attack " + (p.target.ship_name if p.target else "the target") + "."}.get(o, "%s: carry on.")
+	B.say(txt % names, "")
+	Audio.ui("radio", 0.4, "Radio")
+	_squad_key = ""
 
 
 func _refresh_air(p: Ship) -> void:
