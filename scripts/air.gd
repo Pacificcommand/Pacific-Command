@@ -541,14 +541,63 @@ func _flak(dt: float) -> void:
 			var ang := randf() * TAU
 			B.fx.boom(tgt.x + cos(ang) * 30.0, tgt.alt, tgt.z + sin(ang) * 30.0, false)
 			B.fx.debris(tgt.x, tgt.alt, tgt.z, 6, 12.0)
-		# tracers and bursts
-		if randf() < dt * 6.0 * minf(1.0, power / 4.0):
+		# what you see and hear: tracer streams from the light guns, black bursts from the heavy
+		var light: float = minf(1.0, power / 4.0)
+		var to := Vector3(tgt.x, tgt.alt, tgt.z)
+		if d < 2600.0 and randf() < dt * 1.6 * light:
+			# a Bofors clip: four rounds a tenth of a second apart, arcing out to the planes
 			var mp: Vector2 = s.to_world_xz(randf_range(-s.T.L * 0.3, s.T.L * 0.3), randf_range(-s.T.B * 0.3, s.T.B * 0.3))
-			var to := Vector3(tgt.x + randf_range(-60, 60), tgt.alt + randf_range(-15, 15), tgt.z + randf_range(-60, 60))
-			B.fx.tracer(Vector3(mp.x, 8.0, mp.y), to, Color(1.0, 0.8, 0.4) if s.team == "us" else Color(1.0, 0.55, 0.35), 1.2)
-			B.sfx.play("flak", mp, B.cam.position, 0.5)
-			if randf() < 0.5:
-				B.fx.smoke(to.x, to.y, to.z, 0, 0, randf_range(3, 5), 1.5, randf_range(3, 5), 0.6, Color(0.12, 0.12, 0.12), 0.1)
+			var from := Vector3(mp.x, 8.0, mp.y)
+			var col := Color(1.0, 0.85, 0.5) if s.team == "us" else Color(1.0, 0.5, 0.3)
+			for ri in 4:
+				B.after(0.11 * ri, func(): _fire_round(from, to, 650.0, col, 1.0, 12.0))
+			B.sfx.play("aa_bofors", mp, B.cam.position, 0.6)
+		if d < 1400.0 and randf() < dt * 2.2 * light:
+			# machine guns: a quick stream of small tracers
+			var mp2: Vector2 = s.to_world_xz(randf_range(-s.T.L * 0.3, s.T.L * 0.3), randf_range(-s.T.B * 0.3, s.T.B * 0.3))
+			var from2 := Vector3(mp2.x, 7.0, mp2.y)
+			var col2 := Color(1.0, 0.75, 0.45) if s.team == "us" else Color(1.0, 0.45, 0.3)
+			for ri in 7:
+				B.after(0.06 * ri, func(): _fire_round(from2, to, 820.0, col2, 0.6, 25.0))
+			B.sfx.play("aa_mg", mp2, B.cam.position, 0.5)
+		if s.T.L > 60.0 and d > 900.0 and randf() < dt * 0.9 * light:
+			# heavy flak: 5-inch time-fuzed shells burst in black puffs around the formation
+			var bp := to + Vector3(randf_range(-110, 110), randf_range(-30, 30), randf_range(-110, 110))
+			_flak_burst(bp)
+			B.sfx.play("flak", Vector2(bp.x, bp.z), B.cam.position, 0.7)
+	_step_rounds(dt)
+
+
+## A tracer round in flight: a glowing streak that climbs out to where the planes are.
+var rounds: Array = []
+func _fire_round(from: Vector3, to: Vector3, speed: float, col: Color, width: float, spread: float) -> void:
+	var aim := to + Vector3(randf_range(-spread, spread), randf_range(-spread * 0.5, spread * 0.5), randf_range(-spread, spread))
+	var dirv := (aim - from)
+	var dist := dirv.length()
+	if dist < 1.0:
+		return
+	rounds.append({"pos": from, "vel": dirv / dist * speed, "life": dist / speed + 0.4, "col": col, "w": width})
+
+
+func _step_rounds(dt: float) -> void:
+	for r in rounds:
+		r.life -= dt
+		var prev: Vector3 = r.pos
+		r.pos += r.vel * dt
+		# gravity bends the long shots over; a tracer burns out after its run
+		r.vel.y -= 9.8 * dt * 0.6
+		var tail: Vector3 = r.pos - r.vel.normalized() * 28.0
+		B.fx.tracer(tail, r.pos, r.col, r.w)
+		if r.life < 0.3 and randf() < dt * 8.0:
+			r.life = 0.0
+	rounds = rounds.filter(func(r): return r.life > 0.0 and r.pos.y > 0.0)
+
+
+## A time-fuzed burst: orange flash, then a dark puff that hangs and drifts.
+func _flak_burst(p: Vector3) -> void:
+	B.fx.flash(p.x, p.y, p.z, 6.0, 20.0, 0.12, Color(1.0, 0.75, 0.4))
+	for k in 3:
+		B.fx.smoke(p.x + randf_range(-4, 4), p.y + randf_range(-3, 3), p.z + randf_range(-4, 4), B.fx.wind.x * 0.5, B.fx.wind.y * 0.5, randf_range(7, 10), 4.0, randf_range(5, 8), 0.75, Color(0.1, 0.1, 0.1), 0.05)
 
 
 ## Which squadron a ship shoots at: by default the nearest enemy planes threatening itself;

@@ -25,7 +25,9 @@ instead of the synthesised one. Several takes of the same sound can be given as 
 | `splash` | Shell splash | ~1 s |
 | `torp` | Torpedo launch (compressed air) | ~1.3 s |
 | `alarm` | General quarters alarm | ~1.6 s |
-| `flak` | AA burst | ~0.35 s |
+| `flak` | Heavy AA burst (5-inch) heard at a distance | ~0.9 s |
+| `aa_bofors` | Bofors four-round clip | ~0.8 s |
+| `aa_mg` | Machine-gun burst (20 mm / .50 cal) | ~0.55 s |
 | `mg` | Strafing machine guns | ~0.6 s |
 | `dc` | Depth charge, heard through the hull | ~3 s |
 | `ping` | Sonar ping | ~1.4 s |

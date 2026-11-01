@@ -10,13 +10,13 @@ extends Node
 ##
 ## Buses: "Effects" (battle sounds, ambience, UI), "Music", "Radio" (dispatch and card chimes).
 
-const CACHE_VERSION := 4
+const CACHE_VERSION := 5
 const RATE := 22050
 const MUSIC_RATE := 16000
 
 ## Effects: name -> how to build it. "loop" sounds are built to loop seamlessly.
 const SOUNDS := ["gun_small", "gun_medium", "gun_large", "boom", "boom_big", "splash", "torp",
-	"alarm", "flak", "dc", "ping", "mg", "click", "radio", "creak", "bell", "bomb",
+	"alarm", "flak", "dc", "ping", "mg", "click", "radio", "creak", "bell", "bomb", "aa_bofors", "aa_mg",
 	"plane", "fire", "ocean", "wind", "rain"]
 const LOOPS := ["plane", "fire", "ocean", "wind", "rain"]
 const TRACKS := ["menu", "map", "battle", "victory", "defeat"]
@@ -352,7 +352,9 @@ func _make_sound(nm: String) -> AudioStreamWAV:
 		"splash": return _splash(r)
 		"torp": return _torp(r)
 		"alarm": return _alarm()
-		"flak": return _gun(r, 0.35, 2600.0, 9.0, 0.15, 160.0)
+		"flak": return _flak(r)
+		"aa_bofors": return _bofors(r)
+		"aa_mg": return _mgstream(r)
 		"mg": return _mg(r)
 		"dc": return _dc(r)
 		"ping": return _ping()
@@ -381,6 +383,54 @@ func _gun(r: Rng, length: float, cutoff: float, decay: float, thump: float, thum
 		lp2 += (lp - lp2) * k
 		var th := sin(TAU * thump_hz * t * (1.0 - 0.4 * minf(1.0, t * 2.0))) * exp(-t * decay * 1.3) * thump
 		b[i] = lp2 * 2.5 * env + th
+	return _wav(b, RATE, false)
+
+
+## Heavy flak burst heard from a distance: a muffled crump with a short tail.
+func _flak(r: Rng) -> AudioStreamWAV:
+	var n := int(0.9 * RATE)
+	var b := PackedFloat32Array(); b.resize(n)
+	var lp := 0.0; var lp2 := 0.0
+	var k := 1.0 - exp(-TAU * 380.0 / RATE)
+	for i in n:
+		var t := float(i) / RATE
+		var env := minf(1.0, t / 0.006) * exp(-t * 5.5)
+		var x := r.next()
+		lp += (x - lp) * k
+		lp2 += (lp - lp2) * k
+		b[i] = lp2 * 3.0 * env + sin(TAU * 110.0 * t) * exp(-t * 9.0) * 0.5
+	return _wav(b, RATE, false)
+
+
+## Bofors clip: four sharp pom-pom reports 0.11 s apart.
+func _bofors(r: Rng) -> AudioStreamWAV:
+	var n := int(0.8 * RATE)
+	var b := PackedFloat32Array(); b.resize(n)
+	var lp := 0.0
+	var k := 1.0 - exp(-TAU * 1800.0 / RATE)
+	for i in n:
+		var t := float(i) / RATE
+		var ph := fmod(t, 0.11)
+		var shot := int(t / 0.11)
+		var env := (minf(1.0, ph / 0.002) * exp(-ph * 28.0)) if shot < 4 else 0.0
+		lp += (r.next() - lp) * k
+		b[i] = lp * 2.2 * env + sin(TAU * 170.0 * ph) * exp(-ph * 40.0) * 0.45 * (1.0 if shot < 4 else 0.0)
+	return _wav(b, RATE, false)
+
+
+## Machine-gun stream: seven quick cracks.
+func _mgstream(r: Rng) -> AudioStreamWAV:
+	var n := int(0.55 * RATE)
+	var b := PackedFloat32Array(); b.resize(n)
+	var lp := 0.0
+	var k := 1.0 - exp(-TAU * 3200.0 / RATE)
+	for i in n:
+		var t := float(i) / RATE
+		var ph := fmod(t, 0.06)
+		var shot := int(t / 0.06)
+		var env := (minf(1.0, ph / 0.001) * exp(-ph * 70.0)) if shot < 7 else 0.0
+		lp += (r.next() - lp) * k
+		b[i] = lp * 2.4 * env
 	return _wav(b, RATE, false)
 
 
