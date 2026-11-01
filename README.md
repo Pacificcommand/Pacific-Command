@@ -73,7 +73,7 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 | A / D | Rudder 5° left / right; Q centers the rudder |
 | M | Switch aim: Crew (automatic) or Manual (mouse) |
 | F | Crew aim: open / cease fire on the target |
-| Left click | Crew aim: pick a target. Manual aim: fire where you click |
+| Left click | Crew aim: pick a target. Manual aim: fire ONE gun where you click; click twice quickly for the full salvo. The reticle shows a reload ring per gun and a countdown, so you know when they are up |
 | Right drag | Move the camera (it unlocks; Home locks it back). A plain right click picks a target. Settings can swap this to the left button |
 | Tab | Next target |
 | T | Torpedo aim: lanes follow the mouse, a lead marker shows where to aim, click to fire (T or Esc to cancel) |
@@ -161,6 +161,7 @@ All keys can be changed in Settings › Controls.
 - The ship is alive: a representative crew walks the decks while cruising, runs to the
   open gun mounts and the rails at general quarters, repair parties fight the fires, and
   when she goes down the men go to the side and over.
+- Ship dial (bottom left, World of Warships style): your ship from above with every mount drawn where it points and coloured by state (ready, loading, cannot bear, knocked out), torpedo tubes with their count, a bearing ring with the target wedge, the telegraph beside it. Secondaries and AA always fire themselves; manual aim controls only the main battery.
 - Effects: wakes, splashes, smoke, fires, oil slicks, floating debris.
 - Smoke, gun smoke, fire and flash sprites from the **Kenney Smoke Particles** pack.
 - Whitewater foam and water detail textures from the **Boujie Water Shader**.

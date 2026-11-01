@@ -37,6 +37,8 @@ var ship_row: HBoxContainer
 var _pause_prev := 1.0
 var drag := {}
 var tele_btns: Array = []
+var dial_view: Control
+var _last_click_t := -9.0
 
 
 func _ready() -> void:
@@ -207,29 +209,36 @@ func _build_plates() -> void:
 	trv.add_child(p3)
 	_place(trv, "tr")
 
-	# bottom left: navigation
+	# bottom left: the ship dial (World of Warships style): the ship from above with every
+	# gun's state, the bearing ring and the target wedge; telegraph and rudder beside it
 	var bl := _panel()
+	var blh := HBoxContainer.new()
+	blh.add_theme_constant_override("separation", 10)
+	dial_view = Control.new()
+	dial_view.custom_minimum_size = Vector2(230, 230)
+	dial_view.draw.connect(_draw_dial)
+	dial_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	blh.add_child(dial_view)
 	var blv := VBoxContainer.new()
-	blv.add_theme_constant_override("separation", 6)
-	var tele_row := HBoxContainer.new()
-	tele_row.add_theme_constant_override("separation", 2)
-	for i in Data.TELE.size():
-		var b := _button(Data.TELE[i].n, func(): B.order_tele(i), true)
+	blv.add_theme_constant_override("separation", 2)
+	lbl.spd = _label("25.0 kn", 22)
+	lbl.hdg = _label("Course 000°", 12, C_MUTED)
+	blv.add_child(lbl.spd)
+	blv.add_child(lbl.hdg)
+	for i in range(Data.TELE.size() - 1, -1, -1):
+		var b := _button(Data.TELE[i].n.to_upper(), func(): B.order_tele(i), true)
 		b.add_theme_font_size_override("font_size", 12)
-		tele_btns.append(b)
-		tele_row.add_child(b)
-	blv.add_child(_row([_caps("Engines"), tele_row]))
-	lbl.spd = _label("25.0 kn", 20)
-	lbl.hdg = _label("Course 000°", 13, C_MUTED)
-	blv.add_child(_row([_caps("Speed"), lbl.spd, lbl.hdg]))
+		b.custom_minimum_size.x = 86
+		tele_btns.insert(0, b)
+		blv.add_child(b)
 	rud_view = Control.new()
-	rud_view.custom_minimum_size = Vector2(170, 16)
-	rud_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rud_view.custom_minimum_size = Vector2(86, 14)
 	rud_view.draw.connect(_draw_rudder)
-	blv.add_child(_row([_caps("Rudder"), _button("◀", func(): B.order_rudder(B.player.rud_cmd - 10.0)), rud_view, _button("▶", func(): B.order_rudder(B.player.rud_cmd + 10.0))]))
-	lbl.rud = _label("Rudder amidships", 12, C_MUTED)
+	blv.add_child(_row([_button("◀", func(): B.order_rudder(B.player.rud_cmd - 10.0)), rud_view, _button("▶", func(): B.order_rudder(B.player.rud_cmd + 10.0))]))
+	lbl.rud = _label("Rudder amidships", 11, C_MUTED)
 	blv.add_child(lbl.rud)
-	bl.add_child(blv)
+	blh.add_child(blv)
+	bl.add_child(blh)
 	_place(bl, "bl")
 
 	# middle left: air group (carriers and ships with floatplanes)
@@ -637,6 +646,7 @@ func refresh() -> void:
 	else:
 		lbl.rud.text = "%s %d° rudder" % ["Right" if p.rud_cmd > 0 else "Left", absi(int(round(p.rud_cmd)))]
 	rud_view.queue_redraw()
+	dial_view.queue_redraw()
 	# damage
 	lbl.crew.text = "%d / %d" % [p.crew, p.T.crew]
 	_set_bar("crew", float(p.crew) / p.T.crew)
@@ -749,6 +759,89 @@ func _rearming(p: Ship, kinds: Array) -> bool:
 
 func _kind_short(kind: String) -> String:
 	return {"fighter": "fighters", "dive": "dive bombers", "torpedo": "torpedo bombers", "scout": "scouts"}.get(kind, kind)
+
+
+## The ship dial: hull from above (bow up), each mount as a turret with its barrels where they
+## point, coloured by state (ready, loading with a fill, cannot bear, knocked out); torpedo
+## tubes as bars; a ring of relative bearings; the target as a wedge and a tick on the ring.
+func _draw_dial() -> void:
+	var p: Ship = B.player
+	if p == null:
+		return
+	var s := dial_view.size
+	var c := s / 2.0
+	var R := minf(s.x, s.y) / 2.0 - 6.0
+	var font = ThemeDB.fallback_font
+	# ring and ticks
+	dial_view.draw_circle(c, R, Color(0.02, 0.05, 0.07, 0.75))
+	dial_view.draw_arc(c, R, 0, TAU, 72, Color(0.75, 0.8, 0.8, 0.5), 1.2)
+	for i in 36:
+		var a := TAU * i / 36.0
+		var ln := 7.0 if i % 9 == 0 else (4.5 if i % 3 == 0 else 2.5)
+		dial_view.draw_line(c + Vector2(sin(a), -cos(a)) * (R - ln), c + Vector2(sin(a), -cos(a)) * R, Color(0.75, 0.8, 0.8, 0.6 if i % 3 == 0 else 0.35), 1.0)
+	# the target: a wedge for the main battery's chance to bear, and a tick on the ring
+	var tg: Ship = p.target
+	if tg and tg.alive and p.contact(tg):
+		var rb := p.rel_bearing(tg.x, tg.z)
+		var pts := PackedVector2Array([c])
+		for k in 13:
+			var a2 := rb + deg_to_rad(-9.0 + 1.5 * k)
+			pts.append(c + Vector2(sin(a2), -cos(a2)) * (R - 2.0))
+		dial_view.draw_colored_polygon(pts, Color(0.55, 0.85, 1.0, 0.16))
+		dial_view.draw_line(c + Vector2(sin(rb), -cos(rb)) * (R - 12.0), c + Vector2(sin(rb), -cos(rb)) * R, C_RED, 3.0)
+	# hull
+	var L: float = p.T.L
+	var k := (R * 1.5) / L
+	var hull := PackedVector2Array()
+	var steps := 36
+	for i in steps + 1:
+		var lx := -L / 2.0 + L * i / steps
+		hull.append(c + Vector2(p.half_width_at(lx) * k * 2.4, -lx * k))
+	for i in range(steps, -1, -1):
+		var lx := -L / 2.0 + L * i / steps
+		hull.append(c + Vector2(-p.half_width_at(lx) * k * 2.4, -lx * k))
+	dial_view.draw_colored_polygon(hull, Color(0.16, 0.2, 0.22, 0.95))
+	hull.append(hull[0])
+	dial_view.draw_polyline(hull, Color(0.8, 0.85, 0.85, 0.85), 1.2)
+	# mounts
+	for m in p.mounts:
+		var g: Dictionary = m.gun
+		var main: bool = g == p.gun
+		var pos := c + Vector2(m.get("lz", 0.0) * k * 2.4, -m.x * k)
+		var sz: float = (5.5 if main else 3.0) * clampf(g.size, 0.6, 1.4)
+		var col: Color
+		if m.hp <= 0.0:
+			col = Color(0.5, 0.12, 0.1)
+		elif not m.bears and tg != null:
+			col = Color(0.45, 0.48, 0.5)
+		elif m.reload > 0.0:
+			col = Color(0.85, 0.65, 0.3)
+		else:
+			col = Color(1.0, 0.86, 0.45) if main else Color(0.7, 0.9, 0.75)
+		if main:
+			dial_view.draw_rect(Rect2(pos - Vector2(sz, sz * 0.8), Vector2(sz * 2.0, sz * 1.6)), col)
+			# loading: the dark part is what is left to load
+			if m.reload > 0.0 and m.hp > 0.0:
+				var frac: float = clampf(m.reload / maxf(0.1, g.reload / maxf(0.3, p.eff())), 0.0, 1.0)
+				dial_view.draw_rect(Rect2(pos - Vector2(sz, sz * 0.8), Vector2(sz * 2.0 * frac, sz * 1.6)), Color(0.1, 0.12, 0.13, 0.85))
+			var bl := sz * 2.2
+			var ang: float = m.ang
+			dial_view.draw_line(pos, pos + Vector2(sin(ang), -cos(ang)) * bl, col, 2.0)
+		else:
+			dial_view.draw_circle(pos, sz, col)
+			if g.dmg >= 0.5:
+				dial_view.draw_line(pos, pos + Vector2(sin(m.ang), -cos(m.ang)) * sz * 1.8, col, 1.2)
+	# torpedo tubes
+	for tb in p.torps:
+		var pos := c + Vector2(0.0, -tb.x * k)
+		var col := Color(0.5, 0.12, 0.1) if tb.hp <= 0.0 else (Color(0.85, 0.65, 0.3) if tb.reload_t > 0.0 else Color(0.6, 0.85, 1.0))
+		dial_view.draw_rect(Rect2(pos - Vector2(7, 2), Vector2(14, 4)), col)
+		dial_view.draw_string(font, pos + Vector2(9, 4), str(tb.left), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, col)
+	# heading at the top of the ring
+	dial_view.draw_string(font, c + Vector2(-12, -R + 16), U.deg3(p.h), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, C_INK)
+	# aim mode and fire state at the bottom
+	var mode := "MANUAL" if B.aim_mode == "manual" else ("FIRING" if p.fire else "HOLDING")
+	dial_view.draw_string(font, c + Vector2(-22, R - 6), mode, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, C_BRASS)
 
 
 func _draw_rudder() -> void:
@@ -924,6 +1017,34 @@ func _draw_reticle(p: Ship, px_per_m: float, font: Font) -> void:
 	overlay.draw_string(font, mp + Vector2(spread + 14, -4), "%s · %d s" % [U.yards(R), int(round(p.tof_for(R)))], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, C_INK)
 	var st := "Out of range" if not in_range else ("Guns cannot bear" if bearing == 0 else "%d/%d guns ready" % [ready, bearing])
 	overlay.draw_string(font, mp + Vector2(spread + 14, 12), st, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, C_INK)
+	# reload ring: one segment per main-battery gun, filling as it loads; bright when ready
+	var mains := []
+	for m in p.mounts:
+		if m.gun == p.gun and m.hp > 0.0:
+			mains.append(m)
+	if not mains.is_empty():
+		var n := mains.size()
+		var rr := spread + 7.0
+		var gap := deg_to_rad(6.0)
+		var full: float = maxf(0.1, p.gun.reload / maxf(0.3, p.eff()))
+		var soonest := 99.0
+		for i in n:
+			var m: Dictionary = mains[i]
+			var a0 := -PI / 2.0 + TAU * i / n + gap / 2.0
+			var a1 := -PI / 2.0 + TAU * (i + 1) / n - gap / 2.0
+			overlay.draw_arc(mp, rr, a0, a1, 12, Color(1, 1, 1, 0.18), 3.0)
+			var frac: float = 1.0 if m.reload <= 0.0 else clampf(1.0 - m.reload / full, 0.0, 1.0)
+			var bears: bool = Ship.mount_can_bear(m, rb)
+			var seg_col := (Color(0.44, 0.81, 0.66) if bears else Color(0.6, 0.6, 0.6)) if m.reload <= 0.0 else Color(C_BRASS, 0.9)
+			if frac > 0.01:
+				overlay.draw_arc(mp, rr, a0, a0 + (a1 - a0) * frac, 12, seg_col, 3.0)
+			if m.reload > 0.0:
+				soonest = minf(soonest, m.reload)
+		if ready == 0 and soonest < 99.0:
+			overlay.draw_string(font, mp + Vector2(-14, -spread - 16), "%.1f s" % soonest, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, C_BRASS)
+		elif ready > 0:
+			overlay.draw_string(font, mp + Vector2(-22, -spread - 16), "READY" if ready == n else "%d READY" % ready, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.44, 0.81, 0.66))
+	overlay.draw_string(font, mp + Vector2(spread + 14, 28), "click: one gun · double-click: salvo", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, C_MUTED)
 	# lead marker: where the target will be when the shells arrive
 	var tg: Ship = p.target
 	if B.show_lead and tg and tg.alive and p.contact(tg):
@@ -1155,7 +1276,11 @@ func _unhandled_input(e: InputEvent) -> void:
 					if B.torp_aim and p.alive:
 						B.torp_click(w)
 					elif B.aim_mode == "manual" and p.alive:
-						B.click_shot = w
+						# click: one gun; a second click within a third of a second: the whole salvo
+						var now := Time.get_ticks_msec() / 1000.0
+						var dbl: bool = now - _last_click_t < 0.33
+						_last_click_t = now
+						B.click_shot = {"aim": w, "salvo": dbl}
 					else:
 						B.pick_target_at(w)
 	elif e is InputEventMouseMotion:

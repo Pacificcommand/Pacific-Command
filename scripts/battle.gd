@@ -184,7 +184,7 @@ func _test_args() -> void:
 				var fv := U.fwd(tg.h)
 				mouse_w = Vector2(tg.x + fv.x * tg.v * tf, tg.z + fv.y * tg.v * tf)
 				if i % 60 == 0:
-					click_shot = mouse_w
+					click_shot = {"aim": mouse_w, "salvo": true}
 			_step(0.05)
 			if _test.has("trace") and i % 300 == 0:
 				var line := "t=%d " % t
@@ -2364,12 +2364,14 @@ func step_fire_control(s: Ship, dt: float) -> void:
 		# main target is beyond it: the 5-inch and Bofors open up on destroyers closing in
 		var bt: Ship = tgt
 		var bt_contact := has_contact
-		if not manual and g != s.gun and (tgt == null or R > g.range_max):
+		# only the main battery follows the mouse in manual aim; secondaries and AA work themselves
+		var man_m: bool = manual and g == s.gun
+		if not man_m and g != s.gun and (tgt == null or R > g.range_max):
 			bt = _secondary_target(s, g.range_max)
 			bt_contact = bt != null
 		bat_tgt[g.cal] = bt
 		var rbm = null
-		if manual:
+		if man_m:
 			rbm = s.rel_bearing(mouse_w.x, mouse_w.y) if mouse_w != null else null
 		elif bt_contact:
 			var Rb := s.range_to(bt)
@@ -2395,36 +2397,44 @@ func step_fire_control(s: Ship, dt: float) -> void:
 	s.dir_ang += clampf(U.ang_d(s.dir_ang, dir_want), -deg_to_rad(40.0) * dt, deg_to_rad(40.0) * dt)
 	for i in s.aa_ang.size():
 		s.aa_ang[i] += clampf(sin(t * 0.2 + i) * 0.6 - s.aa_ang[i], -dt, dt)
-	if manual:
-		if click_shot != null:
-			var aim: Vector2 = click_shot
-			click_shot = null
-			var Ra := U.hyp(aim.x - s.x, aim.y - s.z)
-			var rba := s.rel_bearing(aim.x, aim.y)
-			var any_fired := false
-			var any_bear := false
-			var any_range := false
-			for cal in batteries:
-				var ok := []
-				var g: Dictionary = batteries[cal][0].gun
-				for m in batteries[cal]:
-					if Ship.mount_can_bear(m, rba):
-						any_bear = true
-						if Ra <= g.range_max:
-							any_range = true
-							if m.reload <= 0.0 and absf(U.ang_d(m.ang, rba)) < deg_to_rad(5.0):
-								ok.append(m)
-				if not ok.is_empty():
-					fire_at(s, aim, ok, g)
-					any_fired = true
-			if not any_fired:
-				say("No guns bear on that bearing." if not any_bear else ("Out of gun range." if not any_range else "Guns still training or loading."))
-		return
-	if not s.fire:
+	if manual and click_shot != null:
+		# one click fires the next ready gun; a double click (salvo flag) fires every gun that bears
+		var aim: Vector2 = click_shot.aim
+		var salvo: bool = click_shot.salvo
+		click_shot = null
+		var Ra := U.hyp(aim.x - s.x, aim.y - s.z)
+		var rba := s.rel_bearing(aim.x, aim.y)
+		var g: Dictionary = s.gun
+		var ok := []
+		var any_bear := false
+		var any_range := false
+		for m in s.mounts:
+			if m.gun != g or m.hp <= 0.0:
+				continue
+			if Ship.mount_can_bear(m, rba):
+				any_bear = true
+				if Ra <= g.range_max:
+					any_range = true
+					if m.reload <= 0.0 and absf(U.ang_d(m.ang, rba)) < deg_to_rad(5.0):
+						ok.append(m)
+		if ok.is_empty():
+			if Ra > g.range_max:
+				say("Out of gun range.")
+			elif not any_bear:
+				say("No guns bear on that bearing.")
+		else:
+			if not salvo:
+				# the gun most nearly on the line fires alone
+				ok.sort_custom(func(a, b): return absf(U.ang_d(a.ang, rba)) < absf(U.ang_d(b.ang, rba)))
+				ok = [ok[0]]
+			fire_at(s, aim, ok, g)
+	if not s.fire and not manual:
 		return
 	for cal in batteries:
 		var list: Array = batteries[cal]
 		var g: Dictionary = list[0].gun
+		if manual and g == s.gun:
+			continue
 		var bt: Ship = bat_tgt.get(cal)
 		if bt == null or (bt == tgt and not has_contact):
 			continue
