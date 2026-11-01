@@ -12,7 +12,7 @@ const ENGAGE_NM := 40.0              # close enough to open a battle
 const MEET_NM := 25.0                # groups this close fight each other
 const PORT_NM := 70.0
 const MAX_GROUPS := 7                # per side
-const KIND_LABEL := {"convoy": "Convoy", "express": "Tokyo Express", "taskforce": "Task force", "carriers": "Carrier force", "barges": "Barge traffic", "sub": "Submarine", "patrol": "Patrol"}
+const KIND_LABEL := {"convoy": "Convoy", "express": "Tokyo Express", "taskforce": "Task force", "carriers": "Carrier force", "barges": "Barge traffic", "sub": "Submarine", "patrol": "Patrol", "boats": "Torpedo boats", "picket": "Picket boats"}
 
 var C: Dictionary                     # Game.campaign
 var map: Control
@@ -334,6 +334,8 @@ static func _kind_lc(kind: String) -> String:
 		"barges": return "barge column"
 		"sub": return "submarine"
 		"patrol": return "patrol"
+		"boats": return "torpedo boat section"
+		"picket": return "picket boats"
 	return kind
 
 
@@ -614,12 +616,28 @@ func _sail(hours: float) -> void:
 	C.lat += (C.dest[1] - C.lat) * k
 
 
-## Cruising speed of the player and squadron: the slowest ship sets it.
+## Cruising speed of the player and squadron: the slowest ship sets it; small craft push
+## harder than fleets, so a PT boat outruns anything on the map and a battle fleet nothing.
 func _squadron_speed() -> float:
-	var kn: float = Data.TYPES[C.ship].max_kn
-	for sh in C.squadron:
-		kn = minf(kn, float(Data.TYPES[sh[0]].max_kn))
-	return kn * 0.65
+	return _cruise_kn([[C.ship, C.name]] + C.squadron, "player")
+
+
+static func _cruise_kn(ships: Array, kind: String) -> float:
+	var kn := 99.0
+	var biggest := 0.0
+	for sh in ships:
+		var T: Dictionary = Data.TYPES[sh[0]]
+		kn = minf(kn, float(T.max_kn))
+		biggest = maxf(biggest, float(T.get("displacement", 1000.0)))
+	if kind == "sub":
+		return 11.0
+	var k := 0.85
+	if biggest > 100.0: k = 0.75      # destroyers and escorts
+	if biggest > 5000.0: k = 0.65     # cruisers
+	if biggest > 20000.0: k = 0.55    # battleships and carriers
+	if kind in ["convoy", "barges"]:
+		k = 0.55
+	return kn * k
 
 
 func _move_groups(hours: float) -> void:
@@ -723,6 +741,8 @@ func _group_name(side: String, kind: String, ships: Array) -> String:
 						nm = "I-%d" % (15 + _rng.randi() % 160)
 						ships[0][1] = nm
 				"barges": nm = "Barge convoy %d" % (1 + _rng.randi() % 30)
+				"boats": nm = "Torpedo Boat Section %d" % (1 + _rng.randi() % 20)
+				"picket": nm = "Picket Unit %d" % (1 + _rng.randi() % 30)
 				_: nm = "Escort Unit %d" % (1 + _rng.randi() % 20)
 		if not used.has(nm):
 			return nm
@@ -832,7 +852,7 @@ func _spawn_group(side: String, anywhere: bool) -> void:
 	var route := War.dist_nm(hb.lon, hb.lat, dest[0], dest[1])
 	if route > 3200.0 or route < 30.0:
 		return
-	if kind == "barges" and route > 500.0:
+	if kind in ["barges", "boats", "picket"] and route > 500.0:
 		kind = "express"
 	var g := _make_group(side, home, dest, to_base, year, kind)
 	if g.is_empty():
@@ -853,7 +873,8 @@ func _pick_kind(side: String, year: int) -> String:
 		if year >= 1943:
 			pool += ["taskforce", "carriers"]
 	else:
-		pool = ["convoy", "convoy", "express", "express", "taskforce", "sub", "barges"]
+		# small fry (torpedo boats, pickets, barges) are the most common and the easiest prey
+		pool = ["convoy", "convoy", "express", "express", "taskforce", "sub", "barges", "barges", "boats", "boats", "picket", "picket"]
 		if year <= 1944:
 			pool += ["carriers"]
 		if year >= 1944:
@@ -873,16 +894,13 @@ func _make_group(side: String, home: String, dest: Array, to_base: bool, year: i
 	for zid in War.ZONES:
 		if War.dist_nm(dest[0], dest[1], War.ZONES[zid].lon, War.ZONES[zid].lat) < War.ZONES[zid].r:
 			act = maxf(act, War.activity(zid, C.day, C.shift))
-	var strength := clampf(act * _rng.randf_range(0.6, 1.6) + (0.4 if year >= 1943 else 0.0), 0.3, 2.5)
+	# both sides field bigger groups as the war goes on (the challenge keeps pace with the career)
+	var progress: float = clampf(C.day / 1368.0, 0.0, 1.0)
+	var strength := clampf(act * _rng.randf_range(0.6, 1.6) + progress * (1.3 if side == "us" else 1.0), 0.3, 3.0)
 	ships = _ships_for(side, kind, strength, year)
 	if ships.is_empty():
 		return {}
-	kn = 99.0
-	for sh in ships:
-		kn = minf(kn, float(Data.TYPES[sh[0]].max_kn))
-	kn *= 0.6 if kind in ["convoy", "barges"] else 0.7
-	if kind == "sub":
-		kn = 11.0
+	kn = _cruise_kn(ships, kind)
 	var nm := _group_name(side, kind, ships)
 	var id := "g%d" % int(C.next_id)
 	C.next_id = int(C.next_id) + 1
@@ -1000,6 +1018,18 @@ func _ships_for(side: String, kind: String, strength: float, year: int) -> Array
 				var n3 := clampi(int(4 + strength * 3), 4, 8)
 				for i in n3:
 					out.append([("daihatsu_gun" if (i == 0 or i == n3 - 1) else "daihatsu"), "Barge %d" % (i + 1)])
+			"boats":
+				var nb := clampi(int(2 + strength * 1.5), 2, 4)
+				var base_no := 1 + _rng.randi() % 60
+				for i in nb:
+					out.append(["jp_mtb", "T-%d" % (base_no + i)])
+			"picket":
+				out.append(["subchaser", "CH-%d" % (12 + _rng.randi() % 40)])
+				if strength > 0.8:
+					out.append(["subchaser", "CH-%d" % (12 + _rng.randi() % 40)])
+				var ng := clampi(int(1 + strength), 1, 2)
+				for i in ng:
+					out.append(["daihatsu_gun", "Gun barge %d" % (i + 1)])
 	return out
 
 
@@ -1024,16 +1054,21 @@ func _fight(id: String):
 ## How far (nm) the player's ship sees the enemy on the map: radar, lookouts and the time of day.
 func _detect_range() -> float:
 	var T: Dictionary = Data.TYPES[C.ship]
-	var r := 45.0
+	var r := 80.0
 	if T.get("radar", 0.0) > 0.0:
-		r = 70.0
+		r = 120.0
 	if T.get("cls", "") in ["cv", "cvl", "cve"]:
-		r = 160.0          # search planes
+		r = 240.0          # search planes
 	if T.get("cls", "") in ["bb", "ca"] and War.year_of(int(C.day)) >= 1942:
-		r = 110.0          # floatplanes
+		r = 170.0          # floatplanes
 	for sh in C.squadron:
-		if Data.TYPES[sh[0]].get("cls", "") in ["cv", "cvl", "cve"]:
-			r = maxf(r, 160.0)
+		var c2: String = Data.TYPES[sh[0]].get("cls", "")
+		if c2 in ["cv", "cvl", "cve"]:
+			r = maxf(r, 240.0)
+		elif c2 in ["bb", "ca"]:
+			r = maxf(r, 170.0)
+		elif Data.TYPES[sh[0]].get("radar", 0.0) > 0.0:
+			r = maxf(r, 120.0)
 	r *= 1.0 + 0.5 * Career.mod("radar")
 	var hour := fposmod(C.day, 1.0) * 24.0
 	if hour < 6.0 or hour > 18.0:
@@ -1056,7 +1091,7 @@ func _detect() -> void:
 			found = true
 		if not found:
 			for u in C.groups:
-				if u.side == "us" and War.dist_nm(u.lon, u.lat, g.lon, g.lat) < (60.0 if not sub else 20.0):
+				if u.side == "us" and War.dist_nm(u.lon, u.lat, g.lon, g.lat) < (90.0 if not sub else 25.0):
 					found = true
 					break
 		if not found and day and not sub:
@@ -1093,7 +1128,7 @@ func _compass(lon1: float, lat1: float, lon2: float, lat2: float) -> String:
 ## Japanese raiders go for our convoys.
 func _hunt() -> void:
 	for g in C.groups:
-		if g.state != "sail" or g.kind in ["convoy", "barges", "sub", "carriers"]:
+		if g.state != "sail" or g.kind in ["convoy", "barges", "sub", "carriers", "picket"]:
 			continue
 		var best = null
 		var bd := 150.0

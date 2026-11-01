@@ -302,7 +302,8 @@ func _build_plates() -> void:
 	btn.fire = _button("Open fire (F)", func(): B.toggle_fire(), true)
 	btn.torp = _button("Torpedo aim (T)", func(): B.fire_torpedoes(), true)
 	btn.smoke = _button("Lay smoke (Z)", func(): B.toggle_smoke(), true)
-	fv.add_child(_row([btn.fire, btn.torp, btn.smoke]))
+	btn.star = _button("Star shell (I)", func(): B.order_star())
+	fv.add_child(_row([btn.fire, btn.torp, btn.smoke, btn.star]))
 	# submarines: depth; escorts: depth charges and hedgehog
 	sub_row = _row([_caps("Depth"), _seg("depth", [[0, "Surfaced"], [1, "Periscope"], [2, "Deep"]], func(v): B.order_depth(v))])
 	lbl.battery = _label("Battery 100%", 12, C_MUTED)
@@ -1121,6 +1122,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		elif Game.pressed(e, "normal"): B.set_speed(1.0)
 		elif Game.pressed(e, "fast"): B.set_speed(3.0)
 		elif Game.pressed(e, "strike"): B.order_strike()
+		elif Game.pressed(e, "star"): B.order_star()
 		elif Game.pressed(e, "dive"): B.order_depth(p.depth + 1)
 		elif Game.pressed(e, "surface"): B.order_depth(p.depth - 1)
 		elif Game.pressed(e, "charges"): B.order_charges()

@@ -27,7 +27,7 @@ const ACTIONS := [
 	["tele_up", "Engines up", KEY_W], ["tele_down", "Engines down", KEY_S],
 	["rudder_left", "Rudder left", KEY_A], ["rudder_right", "Rudder right", KEY_D], ["rudder_center", "Rudder amidships", KEY_Q],
 	["fire", "Open / cease fire", KEY_F], ["aim_mode", "Crew / manual aim", KEY_M], ["torpedo", "Torpedo aim", KEY_T],
-	["smoke", "Lay smoke", KEY_Z], ["next_target", "Next target", KEY_TAB],
+	["smoke", "Lay smoke", KEY_Z], ["star", "Fire a star shell", KEY_I], ["next_target", "Next target", KEY_TAB],
 	["follow", "Follow salvos", KEY_V], ["camera", "Camera: own ship / target", KEY_C], ["recenter", "Lock camera back on", KEY_HOME],
 	["pause", "Tactical pause", KEY_SPACE], ["slow", "Slow ¼×", KEY_1], ["normal", "Normal speed", KEY_2], ["fast", "Fast 3×", KEY_3],
 	["strike", "Launch air strike", KEY_L],

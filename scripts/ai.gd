@@ -312,11 +312,11 @@ func search(s: Ship, F, leader: Ship) -> float:
 
 
 func night_illumination(s: Ship, tgt: Ship, R: float) -> void:
-	if Data.WEATHER[B.weather].night and R < 4000.0 and s.T.L > 60.0 and s.fire:
+	if Data.WEATHER[B.weather].night and R < 6500.0 and s.T.L > 60.0 and s.fire:
 		s.star_cd -= 0.5
 		if s.star_cd <= 0.0:
 			s.star_cd = 26.0
-			B.star_shell(tgt.x + randf_range(-400, 400), tgt.z + randf_range(-400, 400))
+			B.star_shell(tgt.x + randf_range(-400, 400), tgt.z + randf_range(-400, 400), s)
 
 
 ## Fire torpedoes when the geometry is right. Returns true if a spread was launched.

@@ -69,6 +69,7 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 | Tab | Next target |
 | T | Torpedo aim: lanes follow the mouse, a lead marker shows where to aim, click to fire (T or Esc to cancel) |
 | Z | Lay a smoke screen |
+| I | Fire a star shell over the target (night and fog): everything under it is lit for half a minute |
 | V | Follow salvos on / off |
 | C | Camera on the enemy target / back on your own ship |
 | Space | Tactical pause |

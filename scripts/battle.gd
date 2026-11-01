@@ -477,7 +477,8 @@ func _apply_career_ship() -> void:
 		return
 	player.ship_name = cs.name
 	player.name = cs.name.replace(" ", "_").replace("'", "")
-	player.crew = mini(player.crew, int(cs.crew))
+	# never start a battle with an empty ship (a stale record from a lost ship, say)
+	player.crew = mini(player.crew, maxi(int(cs.crew), int(player.T.crew * 0.25)))
 	for m in player.modules:
 		if cs.damage.has(m.label):
 			m.hp = minf(m.hp, float(cs.damage[m.label]))
@@ -1138,7 +1139,10 @@ func _step_smokes(dt: float) -> void:
 		st.age += dt
 	stars = stars.filter(func(s): return s.age < s.life)
 	for st in stars:
-		fx.light(Vector3(st.x, 300.0 - st.age * 6.0, st.z), 2000.0, Color(1.0, 1.0, 0.88), 3.5, 0.06)
+		var k: float = 1.0 - st.age / st.life
+		fx.light(Vector3(st.x, 320.0 - st.age * 7.0, st.z), 2600.0, Color(1.0, 1.0, 0.9), 7.0 * (0.4 + 0.6 * k), 0.06)
+		if randf() < dt * 20.0:
+			fx.flash(st.x + randf_range(-6, 6), 320.0 - st.age * 7.0, st.z + randf_range(-6, 6), 5.0, 0.0, 0.3, Color(1.0, 1.0, 0.85))
 
 
 # =====================================================================
@@ -1335,7 +1339,7 @@ func can_see(obs: Ship, tgt: Ship) -> bool:
 		if fire > 0.0:
 			rng = maxf(rng, (2500.0 if W.night else 1600.0) + fire * 1300.0)
 		if tgt.illum > 0.0:
-			rng = maxf(rng, 4000.0)
+			rng = maxf(rng, 6000.0)
 	if d > rng:
 		return false
 	return los_clear(obs.x, obs.z, tgt.x, tgt.z)
@@ -2060,6 +2064,8 @@ func step_ship(s: Ship, dt: float) -> void:
 	s.z += fv.y * s.v * dt
 	if s.illum > 0.0:
 		s.illum -= dt
+	if s.star_cd > 0.0 and s.is_player:
+		s.star_cd -= dt
 	if s.gone:
 		return
 	# effects: fires, funnel smoke, smoke screen, oil, wake
@@ -2283,13 +2289,45 @@ func step_ai(s: Ship, dt: float) -> void:
 	ai.step(s)
 
 
-func star_shell(x: float, z: float) -> void:
+func star_shell(x: float, z: float, by: Ship = null) -> void:
 	stars.append({"x": x, "z": z, "age": 0.0, "life": 28.0})
 	fx.flash(x, 300.0, z, 4.0, 0.0, 28.0, Color(1.0, 1.0, 0.9))
-	if U.hyp(x - player.x, z - player.z) < 1200.0:
-		if player.illum <= 0.0:
-			say("Star shell bursting overhead. We are lit up!", "bad")
-		player.illum = 28.0
+	# everything under the flare is lit for its burn time: lookouts see it, gunners hit it
+	var lit := []
+	for s in ships:
+		if s.alive and not s.submerged() and U.hyp(x - s.x, z - s.z) < 1500.0:
+			if s.is_player and s.illum <= 0.0:
+				say("Star shell bursting overhead. We are lit up!", "bad")
+			s.illum = maxf(s.illum, 28.0)
+			if by != null and s.team != by.team:
+				lit.append(s.ship_name)
+	if by != null and by.is_player:
+		say("Star shell over the target%s." % (": %s lit up" % ", ".join(lit) if not lit.is_empty() else ""), "good" if not lit.is_empty() else "")
+
+
+## The player calls for a star shell over the target (or the mouse point).
+func order_star() -> void:
+	var p := player
+	if not Data.WEATHER[weather].night and weather != "fog":
+		say("Star shells are for the dark.")
+		return
+	if p.star_cd > 0.0:
+		say("Star shell loading (%d s)." % int(p.star_cd))
+		return
+	var aim = null
+	if p.target and p.target.alive:
+		aim = Vector2(p.target.x, p.target.z)
+	elif mouse_w != null:
+		aim = mouse_w
+	if aim == null:
+		say("No target for the star shell.")
+		return
+	if U.hyp(aim.x - p.x, aim.y - p.z) > p.gun.range_max * 1.1:
+		say("Too far for a star shell.")
+		return
+	p.star_cd = 20.0
+	var tof := 6.0
+	after(tof, func(): star_shell(aim.x + randf_range(-200, 200), aim.y + randf_range(-200, 200), p))
 
 
 # =====================================================================

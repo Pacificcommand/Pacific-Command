@@ -107,6 +107,23 @@ const BASE_TYPES := {
 		"modules": [["Cockpit", "bridge", 0.5, 2.0], ["Gas tanks", "fuel", -1.5, 2.0], ["Port engine", "engine", -4.5, 1.5], ["Center engine", "engine", -6.0, 1.5],
 			["Starboard engine", "engine", -7.5, 1.5], ["Rudders", "steering", -11.5, 1.0]],
 	},
+	"jp_mtb": {
+		# Japanese motor torpedo boat (Type T-14 / T-38): the same hull shape as the Elco, so it
+		# borrows the model; slower, lighter guns, two 45 cm torpedoes. Easy prey and good practice.
+		"name": "Type T-14 motor torpedo boat", "nation": "ijn",
+		"models": {"m21": "res://assets/models/pt_elco.glb", "m22": "res://assets/models/pt_elco.glb"},
+		"L": 18.0, "B": 4.3, "max_kn": 33.0, "turn": 11.0, "crew": 7, "displacement": 15.0,
+		"gun": "jp25", "role": "pt", "cls": "pt", "size_vis": 0.4, "draft": 1.0, "gunnery": 0.7,
+		"mounts": [
+			{"g": "Gun37", "x": 8.6, "stow": 0.0, "arc": "fwd", "gun": "jp25"},
+			{"g": "Bofors", "x": -9.6, "stow": PI, "arc": "aft", "gun": "jp13"},
+		],
+		"torps": [{"g": "Torpedo1", "x": 2.9, "n": 1, "fixed": true}, {"g": "Torpedo2", "x": 2.9, "n": 1, "fixed": true}],
+		"torp": {"name": "Type 2 (45 cm)", "speed_kn": 39.0, "range": 2000.0, "dud": 0.08, "flood": 120.0},
+		"aa": [], "radar": 0.0, "smoke": false, "night_eye": 1.1,
+		"funnels": [], "funnel_top": 3.0,
+		"modules": [["Cockpit", "bridge", 0.5, 1.5], ["Petrol tanks", "fuel", -1.5, 1.5], ["Engines", "engine", -5.5, 1.5], ["Rudders", "steering", -11.5, 1.0]],
+	},
 	"daihatsu": {
 		"name": "Daihatsu landing barge", "nation": "ijn",
 		"models": {"m21": "res://assets/models/daihatsu.glb", "m22": "res://assets/models/daihatsu.glb"},
