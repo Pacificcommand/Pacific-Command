@@ -161,6 +161,14 @@ All keys can be changed in Settings › Controls.
 - The ship is alive: a representative crew walks the decks while cruising, runs to the
   open gun mounts and the rails at general quarters, repair parties fight the fires, and
   when she goes down the men go to the side and over.
+- Detection plate (top left): your concealment by sea (and how far your gun flashes are seen
+  at night), how far your lookouts see a PT boat / destroyer / battleship in this weather,
+  radar, main gun, secondary, AA, torpedo and sonar ranges, and a DETECTED / Not detected
+  flag. Zoomed out, the overlay draws rings for concealment, main guns, secondaries, AA and
+  radar. Small ships hide better (concealment scales with size); firing in the dark gives you
+  away for three seconds, fires and star shells for longer.
+- Your own main-battery shells are big and bright with long tails; secondaries and enemy
+  shells are thinner and dimmer, so your salvo stands out.
 - Orders to the ships in company (left side): Follow me, Engage at will, Fall back, Rescue
   survivors, Attack my target (ships or shore batteries) - for all ships or one at a time;
   click an order again to release the ship to its own judgement.

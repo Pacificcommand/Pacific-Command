@@ -190,6 +190,20 @@ func _build_plates() -> void:
 	tlv.add_child(lbl.title)
 	lbl.sub = _label("", 13, C_MUTED)
 	tlv.add_child(lbl.sub)
+	# detection and ranges, World of Warships style
+	lbl.detected = _label("", 12, C_RED)
+	tlv.add_child(lbl.detected)
+	var dg := GridContainer.new()
+	dg.columns = 4
+	dg.add_theme_constant_override("h_separation", 12)
+	dg.add_theme_constant_override("v_separation", 1)
+	for key in ["conceal", "spot", "radar", "main", "secondary", "aa", "torp", "sonar"]:
+		var cap := _caps({"conceal": "Concealment", "spot": "Spotting", "radar": "Radar", "main": "Main guns", "secondary": "Secondaries", "aa": "AA guns", "torp": "Torpedoes", "sonar": "Sonar"}[key])
+		cap.custom_minimum_size.x = 90
+		dg.add_child(cap)
+		lbl["det_" + key] = _label("", 12)
+		dg.add_child(lbl["det_" + key])
+	tlv.add_child(dg)
 	tl.add_child(tlv)
 	_place(tl, "tl")
 
@@ -648,6 +662,7 @@ func refresh() -> void:
 	_refresh_squad(p)
 	var W: Dictionary = Data.WEATHER[B.weather]
 	lbl.sub.text = "%s · %s · Battle time %s" % [p.T.name, W.name, _clock(B.t)]
+	_refresh_detection(p, W)
 	for i in tele_btns.size():
 		tele_btns[i].set_pressed_no_signal(i == p.tele)
 	lbl.spd.text = "%.1f kn" % (p.v / Data.KN)
@@ -799,6 +814,26 @@ func _give_order(ships: Array, o: String) -> void:
 	B.say(txt % names, "")
 	Audio.ui("radio", 0.4, "Radio")
 	_squad_key = ""
+
+
+## Concealment and ranges, refreshed every frame (cheap: a few numbers).
+func _refresh_detection(p: Ship, W: Dictionary) -> void:
+	var cc: Array = B.concealment(p)
+	var det: bool = B.detected(p)
+	var firing: bool = B.t - p.last_fired < 3.0 and (W.night or B.weather == "fog")
+	lbl.detected.text = ("DETECTED" if det else "Not detected") + (" · gun flashes seen to %s" % U.yards(cc[1]) if firing else "")
+	lbl.detected.add_theme_color_override("font_color", C_RED if det else C_GREEN)
+	lbl.det_conceal.text = "%s by sea%s" % [U.yards(cc[0]), (" · %s firing" % U.yards(cc[1])) if cc[1] > cc[0] * 1.05 else ""]
+	var eye: float = W.vis * (p.T.night_eye if W.night else 1.0)
+	lbl.det_spot.text = "PT %s · DD %s · BB %s" % [U.yards(eye * 0.5), U.yards(eye * 0.95), U.yards(eye * 1.4)]
+	lbl.det_radar.text = U.yards(p.T.radar) if p.T.radar > 0.0 and p.mod_health("director") > 0.0 else ("knocked out" if p.T.radar > 0.0 else "none")
+	lbl.det_main.text = U.yards(p.max_range()) if p.max_range() > 0.0 else "none"
+	var sr := p.secondary_range()
+	lbl.det_secondary.text = U.yards(sr) if sr > 0.0 else "none"
+	var ar := p.aa_range()
+	lbl.det_aa.text = U.yards(ar) if ar > 0.0 else "none"
+	lbl.det_torp.text = ("%s · %d fish" % [U.yards(p.T.torp.range), p.torps_left()]) if not p.torps.is_empty() else "none"
+	lbl.det_sonar.text = U.yards(p.sonar_range()) if p.sonar_range() > 0.0 else "none"
 
 
 func _refresh_air(p: Ship) -> void:
@@ -994,9 +1029,17 @@ func _draw_overlay() -> void:
 	var px_per_m: float = vs.y / (2.0 * tan(deg_to_rad(32.0) / 2.0) * B.camst.h)
 	# gun range ring when zoomed out
 	if px_per_m < 0.12 and p.alive:
-		_ring(Vector2(p.x, p.z), p.max_range(), Color(C_BRASS, 0.35), "Gun range")
+		_ring(Vector2(p.x, p.z), p.max_range(), Color(C_BRASS, 0.35), "Main guns")
+		var sr := p.secondary_range()
+		if sr > 0.0:
+			_ring(Vector2(p.x, p.z), sr, Color(C_BRASS, 0.18), "Secondaries")
+		var ar := p.aa_range()
+		if ar > 0.0 and ar < sr * 0.9:
+			_ring(Vector2(p.x, p.z), ar, Color(0.7, 0.9, 0.75, 0.18), "AA")
 		if p.T.radar > 0.0:
-			_ring(Vector2(p.x, p.z), p.T.radar, Color(C_GREEN, 0.25), "SG radar")
+			_ring(Vector2(p.x, p.z), p.T.radar, Color(C_GREEN, 0.25), "Radar")
+		var cc: Array = B.concealment(p)
+		_ring(Vector2(p.x, p.z), cc[0], Color(1.0, 1.0, 1.0, 0.3), "Concealment")
 	# own ship marker when zoomed far out
 	if px_per_m < 0.5 and not p.gone:
 		var pc := _p(p.x, p.z, 6.0)

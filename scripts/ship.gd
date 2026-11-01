@@ -274,6 +274,22 @@ func max_range() -> float:
 			r = maxf(r, m.gun.range_max)
 	return r
 
+## Longest range of the guns that are not the main battery (secondaries), 0 if none.
+func secondary_range() -> float:
+	var r := 0.0
+	for m in mounts:
+		if m.hp > 0.0 and m.gun != gun and m.gun.dmg >= 0.5:
+			r = maxf(r, m.gun.range_max)
+	return r
+
+## Reach of the light AA (Bofors, Oerlikons, machine guns), 0 if none.
+func aa_range() -> float:
+	var r := 0.0
+	for m in mounts:
+		if m.hp > 0.0 and m.gun.dmg < 0.5:
+			r = maxf(r, m.gun.range_max)
+	return r
+
 ## Torpedo speed in m/s as used in battle.
 func torp_speed() -> float:
 	return T.torp.speed_kn * Data.KN * Data.TORP_SPEED

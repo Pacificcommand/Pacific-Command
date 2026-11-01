@@ -1336,7 +1336,16 @@ func can_see(obs: Ship, tgt: Ship) -> bool:
 		if obs.depth == 2:
 			return false
 		return d < minf(W.vis * tgt.T.get("size_vis", 1.0), 5500.0) and los_clear(obs.x, obs.z, tgt.x, tgt.z)
-	# small, low craft are harder to see
+	if d > detect_range(obs, tgt):
+		return false
+	return los_clear(obs.x, obs.z, tgt.x, tgt.z)
+
+
+## How far `obs` can see `tgt` right now: the weather's visibility, the target's size (small,
+## low craft hide), the observer's night eyes, and the things that give a ship away in the
+## dark: gun flashes for three seconds after firing, fires, and star-shell light.
+func detect_range(obs: Ship, tgt: Ship) -> float:
+	var W: Dictionary = Data.WEATHER[weather]
 	var rng: float = W.vis * (obs.T.night_eye if W.night else 1.0) * tgt.T.get("size_vis", 1.0)
 	if tgt.is_player:
 		rng *= 1.0 - 0.5 * Career.mod("stealth")
@@ -1351,9 +1360,28 @@ func can_see(obs: Ship, tgt: Ship) -> bool:
 			rng = maxf(rng, (2500.0 if W.night else 1600.0) + fire * 1300.0)
 		if tgt.illum > 0.0:
 			rng = maxf(rng, 6000.0)
-	if d > rng:
-		return false
-	return los_clear(obs.x, obs.z, tgt.x, tgt.z)
+	return rng
+
+
+## The player's concealment: how far an ordinary enemy lookout sees the ship by sea, and the
+## farther distance while her guns are flashing in the dark.
+func concealment(s: Ship) -> Array:
+	var W: Dictionary = Data.WEATHER[weather]
+	var base: float = W.vis * s.T.get("size_vis", 1.0)
+	if s.is_player:
+		base *= 1.0 - 0.5 * Career.mod("stealth")
+	var bloom := base
+	if W.night or weather == "fog":
+		bloom = maxf(base, (6000.0 if W.night else 2500.0) * clampf(s.gun.size, 0.35, 1.0))
+	return [base, bloom]
+
+
+## Is any enemy ship holding the player by eye or radar?
+func detected(s: Ship) -> bool:
+	for o in ships:
+		if o.team != s.team and o.alive and (o.vis.get(s.ship_name, false) or o.radar.get(s.ship_name, false)):
+			return true
+	return false
 
 
 func update_visibility() -> void:
@@ -1471,7 +1499,7 @@ func _launch_shells(s: Ship, sv: Dictionary, ready: Array, aim: Vector2, sig_r: 
 				var delay: float = k * 0.15 if sz < 0.5 else 0.0
 				shells.append({"sx": mp.x, "sz": mp.y, "sy": muzzle_y, "tx": tx, "tz": tz, "t": -delay, "tof": tof * randf_range(0.98, 1.02),
 					"apex": R * g.apex, "salvo": sv, "team": s.team, "pos": Vector3(mp.x, muzzle_y, mp.y), "prev": Vector3(mp.x, muzzle_y, mp.y),
-					"dmg": g.dmg, "size": sz, "pen": g.get("pen", g.dmg * 0.3)})
+					"dmg": g.dmg, "size": sz, "pen": g.get("pen", g.dmg * 0.3), "main": g == s.gun})
 				sv.shells += 1
 			m.recoil = 1.5
 			var fp := s.to_world_xz(m.x + cos(m.ang) * 9.0 * sz, sin(m.ang) * 9.0 * sz)
@@ -1520,9 +1548,23 @@ func _draw_shells() -> void:
 			dir = Vector3(sh.tx - sh.sx, 0, sh.tz - sh.sz).normalized()
 		else:
 			dir = dir.normalized()
-		var tail := clampf(camst.h * 0.05, 6.0, 120.0)
-		var col := Color(1.0, 0.75, 0.4) if sh.team == "us" else Color(1.0, 0.55, 0.35)
-		fx.tracer(p - dir * tail, p, col, clampf(camst.h * 0.0025, 0.5, 14.0))
+		# main-battery shells are big, bright and long-tailed; secondaries thin and dim, so you
+		# can follow your own salvo through the clutter
+		var sz: float = sh.get("size", 1.0)
+		var main: bool = sh.get("main", true)
+		var mine: bool = sh.salvo.shooter.is_player
+		var big: float = clampf(sz, 0.3, 2.0) * (1.0 if main else 0.55)
+		var tail := clampf(camst.h * 0.05, 6.0, 120.0) * (0.6 + 0.6 * big)
+		var col: Color
+		if sh.team == "us":
+			col = Color(1.0, 0.95, 0.75) if mine and main else (Color(1.0, 0.8, 0.45) if main else Color(0.9, 0.65, 0.35, 0.65))
+		else:
+			col = Color(1.0, 0.55, 0.35) if main else Color(0.9, 0.45, 0.3, 0.65)
+		var w := clampf(camst.h * 0.0025, 0.5, 14.0) * (0.5 + 0.7 * big) * (1.3 if mine and main else 1.0)
+		fx.tracer(p - dir * tail, p, col, w)
+		if mine and main and camst.h > 400.0:
+			# a glow spot so your own heavy shells read from high up
+			fx.tracer(p - dir * w * 1.5, p + dir * w * 1.5, Color(col, 0.55), w * 2.6)
 
 
 func land_shell(sh: Dictionary) -> void:
