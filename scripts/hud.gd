@@ -705,7 +705,12 @@ func refresh() -> void:
 	else:
 		var tparts := []
 		for tp in p.torps:
-			tparts.append("x" if tp.hp <= 0.0 else "%d/%d" % [tp.left, tp.n])
+			if tp.hp <= 0.0:
+				tparts.append("x")
+			elif tp.left == 0:
+				tparts.append("reloading %ds" % int(ceil(B.torp_reload_time(p) - tp.reload_t)))
+			else:
+				tparts.append("%d/%d" % [tp.left, tp.n])
 		lbl.torps.text = " · ".join(tparts) if not tparts.is_empty() else "none"
 	btn.fire.disabled = B.aim_mode == "manual"
 	btn.fire.text = "Click to fire" if B.aim_mode == "manual" else ("Cease fire (F)" if p.fire else "Open fire (F)")
@@ -972,9 +977,11 @@ func _draw_dial() -> void:
 	# torpedo tubes
 	for tb in p.torps:
 		var pos := c + Vector2(0.0, -tb.x * k)
-		var col := Color(0.5, 0.12, 0.1) if tb.hp <= 0.0 else (Color(0.85, 0.65, 0.3) if tb.reload_t > 0.0 else Color(0.6, 0.85, 1.0))
-		dial_view.draw_rect(Rect2(pos - Vector2(7, 2), Vector2(14, 4)), col)
-		dial_view.draw_string(font, pos + Vector2(9, 4), str(tb.left), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, col)
+		var col := Color(0.5, 0.12, 0.1) if tb.hp <= 0.0 else (Color(0.85, 0.65, 0.3) if tb.left == 0 else Color(0.6, 0.85, 1.0))
+		dial_view.draw_rect(Rect2(pos - Vector2(7, 2), Vector2(14, 4)), Color(col, 0.35))
+		var tf: float = 1.0 if tb.left > 0 else clampf(tb.reload_t / B.torp_reload_time(p), 0.0, 1.0)
+		dial_view.draw_rect(Rect2(pos - Vector2(7, 2), Vector2(14 * tf, 4)), col)
+		dial_view.draw_string(font, pos + Vector2(9, 4), str(tb.left) if tb.left > 0 else "%ds" % int(ceil(B.torp_reload_time(p) - tb.reload_t)), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, col)
 	# heading at the top of the ring
 	dial_view.draw_string(font, c + Vector2(-12, -R + 16), U.deg3(p.h), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, C_INK)
 	# aim mode and fire state at the bottom

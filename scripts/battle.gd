@@ -2157,13 +2157,31 @@ func step_ship(s: Ship, dt: float) -> void:
 	for m in s.mounts:
 		m.recoil = maxf(0.0, m.recoil - dt * 2.5)
 		m.reload = maxf(0.0, m.reload - dt)
-	# Japanese destroyers carried reloads for their torpedo tubes
+	# torpedo tubes reload on a cooldown instead of running dry: a quick-handling crew loads
+	# faster; Japanese destroyers (with their reload gear) and PT boats fastest of all
 	for tp in s.torps:
-		if tp.hp > 0.0 and tp.left == 0 and (s.type_id == "kagero" or TT.get("reloads", false)):
+		if tp.hp > 0.0 and tp.left == 0:
 			tp.reload_t += dt
-			if tp.reload_t > 150.0:
+			var full := torp_reload_time(s)
+			if tp.reload_t >= full:
 				tp.left = tp.n
 				tp.reload_t = 0.0
+				if s.is_player:
+					say("Torpedo tubes reloaded.", "good")
+
+
+## Seconds to reload a torpedo mount: 120 s for destroyers and cruisers, 90 for Japanese
+## destroyers, 60 for PT boats and submarines; crew efficiency and the torpedo officer help.
+func torp_reload_time(s: Ship) -> float:
+	var base := 120.0
+	if s.doctrine() == "ijn_dd":
+		base = 90.0
+	if s.role() == "pt" or s.is_sub():
+		base = 60.0
+	base /= maxf(0.4, s.eff())
+	if s.is_player:
+		base /= 1.0 + Career.mod("torp_reload")
+	return base
 
 
 ## Shore batteries and dumps: no motion; destroyed when the crew is gone or everything is wrecked.

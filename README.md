@@ -76,7 +76,7 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 | Left click | Crew aim: pick a target. Manual aim: fire ONE gun where you click; click twice quickly for the full salvo. The reticle shows a reload ring per gun and a countdown, so you know when they are up |
 | Right drag | Move the camera (it unlocks; Home locks it back). A plain right click picks a target. Settings can swap this to the left button |
 | Tab | Next target |
-| T | Torpedo aim: lanes follow the mouse, a lead marker shows where to aim, click to fire (T or Esc to cancel) |
+| T | Torpedo aim (tubes reload on a cooldown after a spread: about 2 min for destroyers and cruisers, 1½ for Japanese destroyers, 1 min for PT boats and submarines, faster with a good crew): lanes follow the mouse, a lead marker shows where to aim, click to fire (T or Esc to cancel) |
 | Z | Lay a smoke screen |
 | I | Fire a star shell over the target (night and fog): everything under it is lit for half a minute |
 | V | Follow salvos on / off |
