@@ -1366,7 +1366,9 @@ func _spawn_guards() -> void:
 		return
 	g.guard = iid
 	g.lon = isl.lon + 0.4; g.lat = isl.lat - 0.2
-	g.name = "%s guard" % isl.name if side == "ijn" else "%s patrol" % isl.name
+	# a short place name for the guard or patrol (the full one is on the island itself)
+	var short: String = isl.base if isl.base != "" else isl.name.get_slice(" (", 0).get_slice(" and ", 0)
+	g.name = "%s guard" % short if side == "ijn" else "%s patrol" % short
 	C.groups.append(g)
 
 
@@ -1922,6 +1924,13 @@ func _draw_map() -> void:
 	var font = ThemeDB.fallback_font
 	var vs := map.size
 	# zones first, tinted by owner
+	# one name per place: islands and bases carry their own labels, so a zone or base
+	# that shares the name keeps quiet
+	var named := {}
+	for iid in Geo.ISLANDS:
+		named[Geo.ISLANDS[iid].name] = true
+		if Geo.ISLANDS[iid].base != "":
+			named[Geo.ISLANDS[iid].base] = true
 	for zid in War.ZONES:
 		var z: Dictionary = War.ZONES[zid]
 		var c := _to_px(z.lon, z.lat)
@@ -1931,7 +1940,8 @@ func _draw_map() -> void:
 		var col := Color(0.85, 0.3, 0.25, 0.10 + 0.12 * act) if own == "ijn" else Color(0.35, 0.65, 0.95, 0.06 + 0.06 * act)
 		map.draw_circle(c, r, col)
 		map.draw_arc(c, r, 0, TAU, 48, Color(col, 0.5), 1.0)
-		map.draw_string(font, c + Vector2(-r * 0.5, -r * 0.7), z.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.55))
+		if not named.has(z.name) and not War.BASES.has(z.name):
+			map.draw_string(font, c + Vector2(-r * 0.5, -r * 0.7), z.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.55))
 	# land: a pale shelf, then the coast
 	for nm in Geo.LAND:
 		var pts := PackedVector2Array()
@@ -1968,7 +1978,7 @@ func _draw_map() -> void:
 		var p := _to_px(b.lon, b.lat)
 		var col := Color(0.55, 0.85, 1.0) if us else Color(0.95, 0.45, 0.35)
 		map.draw_rect(Rect2(p - Vector2(4, 4), Vector2(8, 8)), col)
-		if zoom > 7.0:
+		if zoom > 7.0 and not named.has(nm):
 			map.draw_string(font, p + Vector2(7, 4), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(col, 0.9))
 	# the player's detection circle
 	var pp := _to_px(C.lon, C.lat)

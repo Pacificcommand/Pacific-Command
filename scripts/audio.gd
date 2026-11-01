@@ -10,7 +10,7 @@ extends Node
 ##
 ## Buses: "Effects" (battle sounds, ambience, UI), "Music", "Radio" (dispatch and card chimes).
 
-const CACHE_VERSION := 5
+const CACHE_VERSION := 6
 const RATE := 22050
 const MUSIC_RATE := 16000
 
@@ -19,7 +19,8 @@ const SOUNDS := ["gun_small", "gun_medium", "gun_large", "boom", "boom_big", "sp
 	"alarm", "flak", "dc", "ping", "mg", "click", "radio", "creak", "bell", "bomb", "aa_bofors", "aa_mg",
 	"plane", "fire", "ocean", "wind", "rain"]
 const LOOPS := ["plane", "fire", "ocean", "wind", "rain"]
-const TRACKS := ["menu", "map", "battle", "victory", "defeat"]
+const TRACKS := ["menu", "map", "contact", "battle", "battle2", "battle3", "victory", "defeat"]
+const LOOP_TRACKS := ["menu", "map", "contact", "battle", "battle2", "battle3"]
 
 var bank := {}                 # name -> AudioStream
 var variants := {}             # name -> [AudioStream, ...] when recordings with _1, _2 ... exist
@@ -99,7 +100,7 @@ func _load_cache() -> bool:
 		var w := _load_wav(dir + "/music_%s.wav" % tr)
 		if w == null:
 			return false
-		w.loop_mode = AudioStreamWAV.LOOP_FORWARD if tr in ["menu", "map", "battle"] else AudioStreamWAV.LOOP_DISABLED
+		w.loop_mode = AudioStreamWAV.LOOP_FORWARD if tr in LOOP_TRACKS else AudioStreamWAV.LOOP_DISABLED
 		w.loop_end = w.data.size() / 2
 		music_streams[tr] = w
 	return true
@@ -193,7 +194,7 @@ func _finish_bank() -> void:
 			if ResourceLoader.exists(path):
 				var st = load(path)
 				if st is AudioStreamOggVorbis:
-					st.loop = tr in ["menu", "map", "battle"]
+					st.loop = tr in LOOP_TRACKS
 				music_streams[tr] = st
 	for nm in LOOPS:
 		loops[nm].stream = bank[nm]
@@ -771,6 +772,8 @@ const CHORDS := {
 	"Gm": [43, 50, 55, 58], "A": [45, 52, 57, 61], "Am": [45, 52, 57, 60], "D": [50, 57, 62, 66],
 	"G": [43, 50, 55, 59], "Ebm": [51, 58, 63, 66], "D5": [38, 50, 57], "Eb5": [39, 51, 58],
 	"Gmaj": [43, 55, 59, 62, 67], "Bbmaj7": [46, 53, 57, 60, 65],
+	"Em": [40, 47, 52, 55], "B": [47, 54, 59, 63], "Cm": [48, 55, 60, 63], "Ab": [44, 51, 56, 60],
+	"Fm": [41, 48, 53, 56], "Eb": [51, 55, 58, 63],
 }
 
 
@@ -778,7 +781,10 @@ func _make_track(tr: String) -> AudioStreamWAV:
 	match tr:
 		"menu": return _track_menu()
 		"map": return _track_map()
+		"contact": return _track_contact()
 		"battle": return _track_battle()
+		"battle2": return _track_battle2()
+		"battle3": return _track_battle3()
 		"victory": return _track_sting(true)
 		"defeat": return _track_sting(false)
 	return _track_sting(false)
@@ -862,6 +868,116 @@ func _track_battle() -> AudioStreamWAV:
 				_note(buf, "brass", ch[k] + 12, t0 + 2.5 * beat, 0.3, 0.07, 0.01, 0.2)
 			_note(buf, "brass", ch[0] + 12, t0 + 3.5 * beat, 0.3, 0.09, 0.01, 0.2)
 	return _wav(buf, MUSIC_RATE, true)
+
+
+## Before the shooting starts, 48 s loop: a low two-note drone, a ticking pulse like a
+## clock on the bridge, and a distant horn now and then. Tense, not loud.
+func _track_contact() -> AudioStreamWAV:
+	var len := 48.0
+	var buf := PackedFloat32Array(); buf.resize(int(len * MUSIC_RATE))
+	for seg in 6:
+		var t0 := seg * 8.0
+		var root := 38 if seg % 2 == 0 else 37      # D, then a half-step down: unease
+		_note(buf, "pad", root, t0, 8.0, 0.08, 2.0, 2.5, 0.08)
+		_note(buf, "pad", root + 7, t0, 8.0, 0.05, 2.5, 2.5, 0.06)
+		_note(buf, "bass", root, t0, 7.8, 0.1, 1.0, 1.5)
+	# the clock: a dry tick every 0.75 s
+	var tk := 0.0
+	while tk < len:
+		_drum(buf, tk, 0.07, 220.0)
+		tk += 0.75
+	# a horn far off at 10 s and 34 s
+	for h in [[10.0, 62], [34.0, 61]]:
+		_note(buf, "brass", h[1], h[0], 3.0, 0.045, 1.2, 2.0, 0.0, 0.3)
+	return _wav(buf, MUSIC_RATE, true)
+
+
+## Night action / small-ship hunt, 48 s loop, 80 bpm: E minor over a walking bass, snare-like
+## ticks, a lone trumpet line that keeps asking the same question.
+func _track_battle2() -> AudioStreamWAV:
+	var beat := 60.0 / 80.0
+	var bars := 16
+	var len := bars * 4 * beat
+	var buf := PackedFloat32Array(); buf.resize(int(len * MUSIC_RATE))
+	var prog := ["Em", "Em", "C", "B", "Em", "Am", "C", "B", "Em", "Em", "G", "B", "Am", "Em", "B", "Em"]
+	for b in bars:
+		var ch: Array = CHORDS[prog[b]]
+		var t0 := b * 4 * beat
+		for k in ch.size():
+			_note(buf, "pad", ch[k], t0, 4 * beat, 0.07, 0.6, 0.8, 0.09)
+		# walking bass: root, fifth, root, fifth
+		var r0 := _bass_of(ch[0])
+		for q in 4:
+			_note(buf, "bass", r0 if q % 2 == 0 else r0 + 7, t0 + q * beat, beat * 0.9, 0.13, 0.01, 0.15)
+		# ticks on 2 and 4, a soft low drum on 1
+		_drum(buf, t0, 0.22, 55.0)
+		_drum(buf, t0 + beat, 0.08, 180.0)
+		_drum(buf, t0 + 3 * beat, 0.08, 180.0)
+		if b % 4 == 3:
+			_drum(buf, t0 + 3.5 * beat, 0.1, 180.0)
+	# trumpet line, sparse
+	var mel := [[64, 2, 2], [67, 4, 1.5], [66, 5.5, 2.5], [64, 10, 2], [62, 12, 1], [59, 13, 3],
+		[64, 18, 2], [67, 20, 1.5], [71, 21.5, 2.5], [69, 26, 2], [67, 28, 1], [66, 29, 3],
+		[71, 34, 2], [72, 36, 1.5], [71, 37.5, 2.5], [67, 42, 2], [66, 44, 1], [64, 45, 3],
+		[62, 50, 2], [59, 52, 2], [63, 54, 2], [64, 56, 6]]
+	for m in mel:
+		_note(buf, "brass", m[0], m[1] * beat, m[2] * beat - 0.1, 0.085, 0.08, 0.35, 0.0, 0.5)
+	return _wav(buf, MUSIC_RATE, true)
+
+
+## Fleet action, 48 s loop, 120 bpm: hammering timpani, low brass in fourths, a fanfare that
+## climbs every eight bars. For the big gun fights.
+func _track_battle3() -> AudioStreamWAV:
+	var beat := 60.0 / 120.0
+	var bars := 24
+	var len := bars * 4 * beat
+	var buf := PackedFloat32Array(); buf.resize(int(len * MUSIC_RATE))
+	var prog := ["Cm", "Cm", "Ab", "G", "Cm", "Fm", "Ab", "G", "Cm", "Cm", "Eb", "Bb", "Ab", "Fm", "G", "G",
+		"Cm", "Ab", "Fm", "G", "Cm", "Eb", "G", "Cm"]
+	for b in bars:
+		var ch: Array = CHORDS[prog[b]]
+		var t0 := b * 4 * beat
+		for k in ch.size():
+			_note(buf, "pad", ch[k], t0, 4 * beat, 0.075, 0.2, 0.4, 0.1)
+		var r0 := _bass_of(ch[0])
+		# driving eighths in the bass
+		for q in 8:
+			_note(buf, "bass", r0 if q % 4 != 3 else r0 + 5, t0 + q * 0.5 * beat, 0.45 * beat, 0.12, 0.005, 0.1)
+		# timpani: 1, 2, 3, 4-and
+		_drum(buf, t0, 0.34, 56.0)
+		_drum(buf, t0 + beat, 0.2, 56.0)
+		_drum(buf, t0 + 2 * beat, 0.3, 50.0)
+		_drum(buf, t0 + 3 * beat, 0.2, 56.0)
+		_drum(buf, t0 + 3.5 * beat, 0.18, 62.0)
+		if b % 8 == 7:
+			for i in 8:
+				_drum(buf, t0 + (2.0 + i * 0.25) * beat, 0.14 + 0.02 * i, 56.0)
+		# low brass fourths on 1 and 3
+		_note(buf, "brass", ch[0] + 12, t0, 0.9 * beat, 0.08, 0.02, 0.25)
+		_note(buf, "brass", ch[0] + 17, t0, 0.9 * beat, 0.06, 0.02, 0.25)
+		_note(buf, "brass", ch[1] + 12, t0 + 2 * beat, 0.9 * beat, 0.07, 0.02, 0.25)
+	# fanfare in bars 5-8, 13-16, 21-24, each a step higher
+	for rep in 3:
+		var base: int = [16, 48, 80][rep]
+		var lift: int = [0, 3, 7][rep]
+		var fan := [[67, 0, 1], [72, 1, 1], [75, 2, 2], [74, 4, 1], [72, 5, 1], [70, 6, 2],
+			[72, 8, 1], [75, 9, 1], [79, 10, 2], [77, 12, 4]]
+		for m in fan:
+			var tt: float = (base + m[1]) * beat
+			_note(buf, "brass", m[0] + lift, tt, m[2] * beat - 0.08, 0.11, 0.02, 0.3, 0.0, 0.45)
+			_note(buf, "brass", m[0] + lift - 12, tt, m[2] * beat - 0.08, 0.05, 0.03, 0.3)
+	return _wav(buf, MUSIC_RATE, true)
+
+
+## Picks the battle track for a fight: big gun actions get the fleet march, night and
+## small-ship hunts the stalking theme, everything else the original. `pts` is the enemy's
+## threat points (Missions.group_strength).
+static func battle_track(pts: float, night: bool, big_guns: bool) -> String:
+	if big_guns or pts >= 14.0:
+		return "battle3"
+	if night or pts <= 4.0:
+		return "battle2"
+	return "battle"
 
 
 ## Stingers: a major resolution (victory) or a low minor swell (defeat), 8 s.

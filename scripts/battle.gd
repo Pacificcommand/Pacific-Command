@@ -161,7 +161,15 @@ func _test_args() -> void:
 		set_view(_test.view)
 		camst.h = camst.th
 	if _test.has("cam"):
-		set_focus(_test.cam)
+		if _test.cam == "shore":
+			# test: look at the first shore target
+			for o in ships:
+				if o.T.get("ground", false):
+					player.target = o
+					break
+			set_focus("target")
+		else:
+			set_focus(_test.cam)
 		var fs := focus_ship()
 		camst.x = fs.x; camst.z = fs.z
 	if _test.has("order"):
@@ -231,6 +239,8 @@ func _shoot() -> void:
 		await get_tree().process_frame
 	var img := get_viewport().get_texture().get_image()
 	img.save_png(_test.shot)
+	for c in terrain.get_children():
+		print("  mesh aabb ", c.mesh.get_aabb(), " vis ", c.visible, " gpos ", c.global_position)
 	print("saved ", _test.shot)
 	if _test.has("quit"):
 		get_tree().quit()
@@ -748,9 +758,24 @@ func _add_ship(type_id: String, team: String, nm: String, x: float, z: float, h:
 	return s
 
 
+## Which battle theme fits this fight: the fleet march for heavy ships, the stalking theme
+## for night actions and small-boat hunts, the original for the rest.
+func _battle_track() -> String:
+	var pts := 0.0
+	var heavy := false
+	for o in ships:
+		if o.team == player.team or not o.alive or o.T.get("ground", false):
+			continue
+		var cls: String = o.T.get("cls", "dd")
+		pts += Missions.THREAT_PTS.get(cls, 1.0)
+		if cls in ["ca", "bb", "cv", "cvl"]:
+			heavy = true
+	return Audio.battle_track(pts, weather == "night", heavy)
+
+
 func begin() -> void:
 	started = true
-	Audio.music("map")
+	Audio.music("contact")
 	if _spent > 0:
 		Game.career.reputation = maxi(0, Game.career.reputation - _spent)
 		Game.save_career()
@@ -950,7 +975,7 @@ func load_state(d: Dictionary) -> void:
 	hud.on_new_game()
 	hud.brief.visible = false
 	started = true
-	Audio.music("battle" if combat_t >= 0.0 else "map")
+	Audio.music(_battle_track() if combat_t >= 0.0 else "contact")
 	set_speed(0.0)
 	prev_speed = float(d.speed)
 	say("Battle resumed. Press %s or pick a time speed to continue." % Game.key_name("pause"))
@@ -1513,7 +1538,7 @@ func _launch_shells(s: Ship, sv: Dictionary, ready: Array, aim: Vector2, sig_r: 
 	s.last_fired = t
 	if combat_t < 0.0 and (s.is_player or s.team != player.team):
 		combat_t = t
-		Audio.music("battle")
+		Audio.music(_battle_track())
 	var rk := 1.0 - (Career.mod("gun_reload") * 0.5 if s.is_player else 0.0)
 	for m in ready:
 		m.reload = g.reload / e * randf_range(0.95, 1.08) * rk
