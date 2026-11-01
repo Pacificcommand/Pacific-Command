@@ -11,6 +11,36 @@ extends RefCounted
 
 var B                       # the battle (battle.gd)
 var fleets := {}            # group name -> {leader, mode, tgt, plan_t, attack_t, msg}
+var _adv := {}              # team -> [value, time]: how the side's weight of metal compares
+
+
+## The balance of the fight as this side sees it: our fighting strength over the enemy's we
+## know about (threat points, scaled by how hurt each ship is). > 1.3 is the upper hand;
+## < 0.7 is outgunned. Cached for two seconds a side.
+func advantage(s: Ship) -> float:
+	var c = _adv.get(s.team)
+	if c != null and B.t - c[1] < 2.0:
+		return c[0]
+	var mine := 0.0
+	var theirs := 0.0
+	for o in B.ships:
+		if not o.alive or o.escaped or o.role() in ["survivors", "merchant", "barge"] or o.T.get("ground", false):
+			continue
+		var pts: float = Missions.THREAT_PTS.get(o.cls(), 1.0) * (0.4 + 0.6 * o.eff()) * clampf(1.0 - o.flood / maxf(1.0, o.flood_cap()), 0.3, 1.0)
+		if o.team == s.team:
+			mine += pts
+		else:
+			# only what someone on our side has seen counts
+			var seen := false
+			for f in B.ships:
+				if f.team == s.team and f.alive and f.contact(o):
+					seen = true
+					break
+			if seen:
+				theirs += pts
+	var v: float = mine / maxf(0.3, theirs) if theirs > 0.0 else 1.0
+	_adv[s.team] = [v, B.t]
+	return v
 
 const TACTICS := ["close", "open", "zigzag", "cross", "circle_torp", "hide"]
 
@@ -315,6 +345,9 @@ func plan_fleet(F: Dictionary, leader: Ship, tgt: Ship) -> void:
 		F.mode = "approach"
 		return
 	var R := leader.range_to(tgt)
+	var adv := advantage(leader)
+	F.press = adv >= 1.3          # the upper hand: close in and use everything
+	F.wary = adv <= 0.7           # outgunned: keep the range open and look for a way out
 	match cls:
 		"dd":
 			# a destroyer division: close for torpedoes, launch, break away, come back when reloaded
@@ -324,7 +357,7 @@ func plan_fleet(F: Dictionary, leader: Ship, tgt: Ship) -> void:
 			if F.mode == "withdraw":
 				if B.t - F.attack_t > (70.0 if tubes > 0 else 45.0):
 					F.mode = "attack" if tubes > 0 else "engage"
-			elif tubes > 0 and R < (9000.0 if night else 7500.0) and tgt.T.get("draft", 4.0) > 2.0:
+			elif tubes > 0 and R < (9000.0 if night else 7500.0) * (1.3 if F.press else 1.0) and tgt.T.get("draft", 4.0) > 2.0 and not F.wary:
 				F.mode = "attack"
 			else:
 				F.mode = "engage" if tubes == 0 or R < 6000.0 else "approach"
@@ -431,7 +464,8 @@ func torpedo_chance(s: Ship, tgt: Ship, R: float) -> bool:
 	var reach: float = s.T.torp.range * 0.85
 	# Japanese crews fired from long range at night, before they were seen; Americans closer in
 	var ijn: bool = s.doctrine() == "ijn_dd"
-	if R > (reach if ijn else minf(reach, 5500.0)):
+	var press: bool = advantage(s) >= 1.3
+	if R > (reach if (ijn or press) else minf(reach, 5500.0)):
 		return false
 	var rb := absf(rad_to_deg(s.rel_bearing(tgt.x, tgt.z)))
 	if rb < 40.0 or rb > 140.0:
@@ -478,8 +512,8 @@ func in_formation(s: Ship, F: Dictionary, leader: Ship, tgt: Ship, R: float) -> 
 					s.smoke_on = true
 				return fposmod(s.bearing_to(tgt.x, tgt.z) + PI + s.side * deg_to_rad(25.0), TAU)
 		"engage":
-			if cls == "dd" and leader.cls() != "dd" and R < 6500.0 and s.torps_left() > 0:
-				# the screen goes in when the enemy closes on the main body
+			if cls == "dd" and leader.cls() != "dd" and s.torps_left() > 0 and (R < 6500.0 or (F.get("press", false) and R < s.T.torp.range * 1.2)):
+				# the screen goes in when the enemy closes on the main body, or when we have the upper hand
 				return torpedo_run(s, tgt, R)
 	s.ai_state = "in formation"
 	return keep_station(s, leader)
@@ -537,6 +571,12 @@ func battle_line(s: Ship, tgt: Ship, R: float) -> float:
 	# a long stand-off is no battle: the line creeps closer the longer the action lasts
 	if B.combat_t >= 0.0:
 		band *= clampf(1.0 - (B.t - B.combat_t) / 1800.0 * 0.45, 0.55, 1.0)
+	# with the upper hand, close to where every gun and the torpedoes tell; outgunned, hang back
+	var adv := advantage(s)
+	if adv >= 1.3:
+		band *= 0.6
+	elif adv <= 0.7:
+		band *= 1.15
 	var to_t := s.bearing_to(tgt.x, tgt.z)
 	s.tele = 5
 	if R > mr * band.y:
@@ -663,6 +703,18 @@ func pick_tactic(s: Ship, tgt: Ship, R: float) -> void:
 		w.circle_torp += 2.0 if R < s.T.torp.range * 1.1 else 0.8
 	if tgt.v > 20.0 * Data.KN and absf(rad_to_deg(U.ang_d(tgt.h, tgt.bearing_to(s.x, s.z)))) < 50.0:
 		w.cross += 1.5   # the enemy is coming at us: cross his bow
+	var adv := advantage(s)
+	if adv >= 1.3:
+		# the upper hand: press in, bring the secondaries and torpedoes to bear
+		w.close += 2.5
+		w.circle_torp += 1.5 if torps else 0.0
+		w.open *= 0.3
+		w.hide *= 0.3
+	elif adv <= 0.7:
+		w.open += 1.5
+		w.zigzag += 0.5
+		w.hide += 0.8 if s.T.smoke else 0.0
+		w.close *= 0.4
 	if ijn:
 		# light guns, thin plating, superb torpedoes: don't trade salvos with a US destroyer
 		w.open += 1.5
@@ -725,7 +777,11 @@ func escort_station(s: Ship) -> float:
 func escort(s: Ship, tgt: Ship, R: float) -> float:
 	var c = convoy_centre(s)
 	if c == null:
+		# nothing left to escort: drop the escort role entirely (route too), or solo() would
+		# hand straight back here and the stack would overflow
 		s.escort_group = ""
+		s.route_h = 0.0
+		s.dest_dist = 0.0
 		return solo(s, tgt, R)
 	var cx: float = c.x
 	var cz: float = c.y

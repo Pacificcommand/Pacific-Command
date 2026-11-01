@@ -1548,23 +1548,15 @@ func _draw_shells() -> void:
 			dir = Vector3(sh.tx - sh.sx, 0, sh.tz - sh.sz).normalized()
 		else:
 			dir = dir.normalized()
-		# main-battery shells are big, bright and long-tailed; secondaries thin and dim, so you
-		# can follow your own salvo through the clutter
-		var sz: float = sh.get("size", 1.0)
+		# same shape as always; main-battery shells are lighter, secondaries darker
 		var main: bool = sh.get("main", true)
-		var mine: bool = sh.salvo.shooter.is_player
-		var big: float = clampf(sz, 0.3, 2.0) * (1.0 if main else 0.55)
-		var tail := clampf(camst.h * 0.05, 6.0, 120.0) * (0.6 + 0.6 * big)
+		var tail := clampf(camst.h * 0.05, 6.0, 120.0)
 		var col: Color
 		if sh.team == "us":
-			col = Color(1.0, 0.95, 0.75) if mine and main else (Color(1.0, 0.8, 0.45) if main else Color(0.9, 0.65, 0.35, 0.65))
+			col = Color(1.0, 0.92, 0.7) if main else Color(0.8, 0.52, 0.28)
 		else:
-			col = Color(1.0, 0.55, 0.35) if main else Color(0.9, 0.45, 0.3, 0.65)
-		var w := clampf(camst.h * 0.0025, 0.5, 14.0) * (0.5 + 0.7 * big) * (1.3 if mine and main else 1.0)
-		fx.tracer(p - dir * tail, p, col, w)
-		if mine and main and camst.h > 400.0:
-			# a glow spot so your own heavy shells read from high up
-			fx.tracer(p - dir * w * 1.5, p + dir * w * 1.5, Color(col, 0.55), w * 2.6)
+			col = Color(1.0, 0.6, 0.4) if main else Color(0.75, 0.38, 0.25)
+		fx.tracer(p - dir * tail, p, col, clampf(camst.h * 0.0025, 0.5, 14.0))
 
 
 func land_shell(sh: Dictionary) -> void:
