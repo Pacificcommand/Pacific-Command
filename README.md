@@ -172,7 +172,7 @@ All keys can be changed in Settings › Controls.
 - Orders to the ships in company (left side): Follow me, Engage at will, Fall back, Rescue
   survivors, Attack my target (ships or shore batteries) - for all ships or one at a time;
   click an order again to release the ship to its own judgement.
-- Ship dial (bottom left, World of Warships style): your ship from above with every mount drawn where it points and coloured by state (ready, loading, cannot bear, knocked out), torpedo tubes with their count, a bearing ring with the target wedge, the telegraph beside it. Secondaries and AA always fire themselves; manual aim controls only the main battery.
+- Ship dial (bottom left, World of Warships style): your ship from above with every mount drawn where it points and coloured by state (ready, loading, cannot bear, knocked out), torpedo tubes with their count, the internal modules (engines to port, magazines to starboard, bridge, steering) by health, holes at the waterline, fires on deck and flooding filling the hull; a bearing ring with the target wedge; the telegraph beside it and crew / flooding / efficiency / list / fires underneath. One plate for the whole ship. Secondaries and AA always fire themselves; manual aim controls only the main battery.
 - Effects: wakes, splashes, smoke, fires, oil slicks, floating debris.
 - Smoke, gun smoke, fire and flash sprites from the **Kenney Smoke Particles** pack.
 - Whitewater foam and water detail textures from the **Boujie Water Shader**.

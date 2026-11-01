@@ -21,7 +21,6 @@ var seg_groups := {}           # name -> {value: Button}
 var lbl := {}                  # named labels
 var bars := {}                 # named ProgressBar-like ColorRects
 var btn := {}
-var dmg_view: Control
 var rud_view: Control
 var guns_box: HBoxContainer
 var brief: PanelContainer
@@ -256,7 +255,22 @@ func _build_plates() -> void:
 	lbl.rud = _label("Rudder amidships", 11, C_MUTED)
 	blv.add_child(lbl.rud)
 	blh.add_child(blv)
-	bl.add_child(blh)
+	# ship status under the dial: crew, efficiency, list, flooding, fires
+	var status := VBoxContainer.new()
+	status.add_theme_constant_override("separation", 3)
+	lbl.fires = _label("No fires", 11, C_MUTED)
+	lbl.crew = _label("329 / 329", 11)
+	status.add_child(_row([_caps("Crew"), _bar("crew", C_GREEN), lbl.crew]))
+	lbl.flood = _label("0 t", 11)
+	status.add_child(_row([_caps("Flooding"), _bar("flood", C_WATER), lbl.flood]))
+	lbl.eff = _label("100%", 11)
+	lbl.list = _label("0.0°", 11)
+	status.add_child(_row([_caps("Efficiency"), lbl.eff, _caps("List"), lbl.list, lbl.fires]))
+	var blall := VBoxContainer.new()
+	blall.add_theme_constant_override("separation", 4)
+	blall.add_child(blh)
+	blall.add_child(status)
+	bl.add_child(blall)
 	_place(bl, "bl")
 
 	# middle left: air group (carriers and ships with floatplanes)
@@ -284,32 +298,6 @@ func _build_plates() -> void:
 	left_col.add_child(squad_plate)
 	_place(left_col, "ml")
 	air_plate.visible = false
-
-	# bottom center: damage control
-	var bc := _panel()
-	bc.custom_minimum_size.x = 480
-	var bcv := VBoxContainer.new()
-	bcv.add_theme_constant_override("separation", 4)
-	lbl.fires = _label("No fires", 12, C_MUTED)
-	var head := HBoxContainer.new()
-	var dl := _label("DAMAGE CONTROL", 11, C_BRASS)
-	dl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(dl)
-	head.add_child(lbl.fires)
-	bcv.add_child(head)
-	dmg_view = Control.new()
-	dmg_view.custom_minimum_size = Vector2(460, 64)
-	dmg_view.draw.connect(_draw_damage)
-	bcv.add_child(dmg_view)
-	lbl.crew = _label("329 / 329", 12)
-	bcv.add_child(_row([_caps("Crew"), _bar("crew", C_GREEN), lbl.crew]))
-	lbl.eff = _label("100%", 12)
-	lbl.list = _label("0.0°", 12)
-	bcv.add_child(_row([_caps("Efficiency"), lbl.eff, _caps("List"), lbl.list]))
-	lbl.flood = _label("0 t", 12)
-	bcv.add_child(_row([_caps("Flooding"), _bar("flood", C_WATER), lbl.flood]))
-	bc.add_child(bcv)
-	_place(bc, "bc")
 
 	# bottom right: fire control
 	var brv := VBoxContainer.new()
@@ -688,7 +676,6 @@ func refresh() -> void:
 		fire_sum += f.int
 	lbl.fires.text = "No fires" if p.fires.is_empty() else "%d fire%s burning%s" % [p.fires.size(), "s" if p.fires.size() > 1 else "", ", spreading" if fire_sum > 1.2 else ""]
 	lbl.fires.add_theme_color_override("font_color", C_MUTED if p.fires.is_empty() else C_RED)
-	dmg_view.queue_redraw()
 	# fire control
 	var tg: Ship = p.target
 	if tg and tg.alive:
@@ -925,8 +912,35 @@ func _draw_dial() -> void:
 		var lx := -L / 2.0 + L * i / steps
 		hull.append(c + Vector2(-p.half_width_at(lx) * k * 2.4, -lx * k))
 	dial_view.draw_colored_polygon(hull, Color(0.16, 0.2, 0.22, 0.95))
+	# flooding: water fills the hull from the keel line outward
+	var ff := clampf(p.flood / p.flood_cap(), 0.0, 1.0)
+	if ff > 0.0:
+		var wp := PackedVector2Array()
+		for q in hull:
+			wp.append(Vector2(lerpf(c.x, q.x, ff), q.y))
+		dial_view.draw_colored_polygon(wp, Color(C_WATER, 0.5))
 	hull.append(hull[0])
 	dial_view.draw_polyline(hull, Color(0.8, 0.85, 0.85, 0.85), 1.2)
+	# internal modules (engines, magazines, bridge, steering...) as small blocks by health,
+	# engines to port of the centreline, magazines to starboard
+	for m in p.modules:
+		if m.kind in ["mount", "torp"]:
+			continue
+		var f: float = m.hp / m.max
+		var col := Color(0.12, 0.12, 0.12) if f <= 0.0 else (C_RED if f < 0.4 else (C_BRASS if f < 0.8 else Color(0.35, 0.6, 0.45)))
+		var off := 0.0
+		if m.kind == "engine": off = -p.half_width_at(m.x) * k * 2.4 * 0.55
+		elif m.kind == "magazine": off = p.half_width_at(m.x) * k * 2.4 * 0.55
+		var mpos := c + Vector2(off, -m.x * k)
+		dial_view.draw_rect(Rect2(mpos - Vector2(2.5, 2.5), Vector2(5, 5)), col)
+	# holes at the waterline and fires on deck
+	for hl in p.holes:
+		var hp := c + Vector2(hl.side * p.half_width_at(hl.lx) * k * 2.4, -hl.lx * k)
+		dial_view.draw_circle(hp, 3.5 if hl.fix < 0.9 else 2.0, C_WATER if hl.fix < 0.9 else Color(C_WATER, 0.4))
+	for fr in p.fires:
+		var fp := c + Vector2(fr.lz * k * 2.4 * 0.5, -fr.lx * k)
+		var a := 0.6 + 0.4 * sin(B.t * 9.0 + fr.lx)
+		dial_view.draw_circle(fp, 3.0 + fr.int * 4.0, Color(1.0, 0.5, 0.15, a))
 	# mounts
 	for m in p.mounts:
 		var g: Dictionary = m.gun
@@ -977,54 +991,6 @@ func _draw_rudder() -> void:
 	rud_view.draw_line(Vector2(xc, s.y / 2 - 5), Vector2(xc, s.y / 2 + 5), Color(1, 1, 1, 0.35), 2.0)
 	var x := s.x / 2 + p.rud / 35.0 * (s.x / 2 - 3)
 	rud_view.draw_rect(Rect2(x - 2, 0, 4, s.y), C_BRASS)
-
-
-func _draw_damage() -> void:
-	var p: Ship = B.player
-	var s := dmg_view.size
-	var L: float = p.T.L
-	var k := (s.x - 20.0) / L
-	var cy := s.y / 2.0
-	var wk = (s.y - 14.0) / p.T.B
-	var pts := PackedVector2Array()
-	var steps := 40
-	for i in steps + 1:
-		var lx := -L / 2.0 + L * i / steps
-		pts.append(Vector2(s.x / 2.0 + lx * k, cy - p.half_width_at(lx) * wk))
-	for i in range(steps, -1, -1):
-		var lx := -L / 2.0 + L * i / steps
-		pts.append(Vector2(s.x / 2.0 + lx * k, cy + p.half_width_at(lx) * wk))
-	# water inside the hull as it floods
-	var ff := clampf(p.flood / p.flood_cap(), 0.0, 1.0)
-	dmg_view.draw_colored_polygon(pts, Color(0.1, 0.14, 0.15))
-	if ff > 0.0:
-		var wp := PackedVector2Array()
-		for q in pts:
-			wp.append(Vector2(q.x, lerpf(cy, q.y, ff)))
-		dmg_view.draw_colored_polygon(wp, Color(C_WATER, 0.45))
-	pts.append(pts[0])
-	dmg_view.draw_polyline(pts, Color(0.75, 0.8, 0.8, 0.8), 1.2)
-	# modules
-	for m in p.modules:
-		var f: float = m.hp / m.max
-		var col := Color(0.12, 0.12, 0.12) if f <= 0.0 else (C_RED if f < 0.4 else (C_BRASS if f < 0.8 else C_GREEN))
-		var mx: float = s.x / 2.0 + m.x * k
-		var w := 6.0 if m.kind in ["mount", "torp"] else 9.0
-		var hh := 9.0 if m.kind in ["mount", "torp"] else 5.0
-		var yoff := 0.0 if m.kind != "magazine" else 7.0
-		if m.kind == "engine":
-			yoff = -7.0
-		dmg_view.draw_rect(Rect2(mx - w / 2, cy - hh / 2 + yoff, w, hh), col)
-	# holes and fires
-	for hl in p.holes:
-		var hx: float = s.x / 2.0 + hl.lx * k
-		var hy: float = cy + hl.side * (p.half_width_at(hl.lx) * wk - 2.0)
-		dmg_view.draw_circle(Vector2(hx, hy), 3.5 if hl.fix < 0.9 else 2.0, C_WATER if hl.fix < 0.9 else Color(C_WATER, 0.4))
-	for fr in p.fires:
-		var fxp: float = s.x / 2.0 + fr.lx * k
-		var a := 0.6 + 0.4 * sin(B.t * 9.0 + fr.lx)
-		dmg_view.draw_circle(Vector2(fxp, cy + fr.lz * wk * 0.5), 3.0 + fr.int * 4.0, Color(1.0, 0.5, 0.15, a))
-	dmg_view.draw_string(ThemeDB.fallback_font, Vector2(s.x - 30, 11), "BOW", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, C_MUTED)
 
 
 func _p(x: float, z: float, y := 0.0) -> Vector2:
