@@ -85,6 +85,9 @@ func load_career() -> void:
 	for k in fresh:
 		if not career.has(k):
 			career[k] = fresh[k]
+	for o in career.get("officers", []):
+		if not o.has("skills"):
+			o.skills = []
 
 
 func load_campaign() -> void:

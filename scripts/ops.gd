@@ -619,7 +619,7 @@ func _sail(hours: float) -> void:
 ## Cruising speed of the player and squadron: the slowest ship sets it; small craft push
 ## harder than fleets, so a PT boat outruns anything on the map and a battle fleet nothing.
 func _squadron_speed() -> float:
-	return _cruise_kn([[C.ship, C.name]] + C.squadron, "player")
+	return _cruise_kn([[C.ship, C.name]] + C.squadron, "player") * (1.0 + Career.mod("cruise"))
 
 
 static func _cruise_kn(ships: Array, kind: String) -> float:
@@ -1069,7 +1069,7 @@ func _detect_range() -> float:
 			r = maxf(r, 170.0)
 		elif Data.TYPES[sh[0]].get("radar", 0.0) > 0.0:
 			r = maxf(r, 120.0)
-	r *= 1.0 + 0.5 * Career.mod("radar")
+	r *= 1.0 + 0.5 * Career.mod("radar") + Career.mod("map_eyes")
 	var hour := fposmod(C.day, 1.0) * 24.0
 	if hour < 6.0 or hour > 18.0:
 		r *= 0.6
@@ -1514,7 +1514,7 @@ func _ship_lost() -> void:
 	if best != "":
 		C.lon = War.BASES[best].lon; C.lat = War.BASES[best].lat
 	C.day += 10.0
-	c.reputation = maxi(0, c.reputation - 150)
+	c.reputation = maxi(0, c.reputation - int(150 * (1.0 - Career.mod("survive"))))
 	var year := War.year_of(int(C.day))
 	var avail := Career.available_commands(c, year)
 	var tid: String = avail[0] if not avail.is_empty() else "pt_elco"

@@ -74,6 +74,123 @@ const SKILLS := {
 	"gen_handler": ["Ship handler", "all", "Faster engine and rudder response.", {"agility": 0.15}],
 }
 
+## Officer skills (the department heads' own tree): post -> [[id, name, description, modifiers, tier], ...].
+## An officer earns a skill point every two levels; tier 2 needs level 4 and a tier-1 skill,
+## tier 3 needs level 7 and a tier-2 skill.
+const OFFICER_SKILLS := {
+	"Executive officer": [
+		["xo_drill", "Drill schedule", "The crew trains faster between battles.", {"training": 0.3}, 1],
+		["xo_steady", "Steady hand", "Morale holds longer under fire.", {"morale": 0.2}, 1],
+		["xo_parties", "Repair parties", "Faster damage control.", {"dc_rate": 0.15}, 2],
+		["xo_lookouts", "Lookout rota", "Better spotting by day and night.", {"night_spot": 0.15, "lookouts": 0.5}, 2],
+		["xo_second", "Second in command", "The ship fights on steadily when hurt: morale and damage control.", {"morale": 0.2, "dc_rate": 0.1}, 3],
+		["xo_tight", "Tight ship", "Every department works 5% better.", {"gun_reload": 0.05, "torp_reload": 0.05, "dc_rate": 0.05, "agility": 0.05}, 3],
+	],
+	"Gunnery officer": [
+		["gun_ready", "Ready ammunition", "Faster main battery reload.", {"gun_reload": 0.12}, 1],
+		["gun_plot", "Plotting room", "Faster firing solution.", {"solution": 0.25}, 1],
+		["gun_spot", "Spotting corrections", "Tighter salvos once on target.", {"gun_spread": 0.15}, 2],
+		["gun_aa", "AA director", "Stronger anti-aircraft fire.", {"aa": 0.25}, 2],
+		["gun_long", "Long-range gunnery", "Better accuracy beyond 60% of range.", {"long_gun": 0.3}, 3],
+		["gun_night", "Night gunnery", "Better shooting by star shell and flash.", {"night_gun": 0.3}, 3],
+	],
+	"Torpedo officer": [
+		["torp_fast", "Fast reload", "Torpedo tubes reload faster.", {"torp_reload": 0.2}, 1],
+		["torp_spread", "Spread doctrine", "Tighter, better-aimed spreads.", {"torp_spread": 0.2}, 1],
+		["torp_depth", "Depth setting", "Fewer duds and deep runners.", {"torp_dud": 0.4}, 2],
+		["torp_wakes", "Wake watch", "Enemy torpedo wakes spotted farther out.", {"lookouts": 0.6}, 2],
+		["torp_night", "Night attack", "Torpedo runs are harder to spot.", {"stealth": 0.2}, 3],
+		["torp_asw", "Depth charge drill", "Bigger depth charge pattern, faster hedgehog.", {"dc": 0.25, "hedgehog": 0.25}, 3],
+	],
+	"Engineering officer": [
+		["eng_boilers", "Boilers at pressure", "Faster acceleration and a knot more at flank.", {"agility": 0.1, "speed": 0.05}, 1],
+		["eng_smoke", "Smoke on demand", "Thicker, longer smoke screens.", {"smoke": 0.3}, 1],
+		["eng_pumps", "Pumps and shoring", "Flooding is pumped out faster.", {"pump": 0.25}, 2],
+		["eng_splice", "Splice the mains", "Steam and pumps kept up when the ship is hurt.", {"speed": 0.05, "pump": 0.15}, 2],
+		["eng_flank", "Flank speed", "Two knots more at flank, longer.", {"speed": 0.1}, 3],
+		["eng_cruise", "Economical cruising", "Faster passages on the operations map.", {"cruise": 0.15}, 3],
+	],
+	"Navigator": [
+		["nav_helm", "Helmsmanship", "Quicker rudder response.", {"agility": 0.15}, 1],
+		["nav_chart", "Chart work", "Better plotting of contacts: radar and night spotting.", {"radar": 0.1, "night_spot": 0.1}, 1],
+		["nav_radar", "Radar plot", "Longer radar range.", {"radar": 0.2}, 2],
+		["nav_eyes", "Eyes on the horizon", "Farther spotting on the operations map.", {"map_eyes": 0.3}, 2],
+		["nav_night", "Night navigator", "Better night spotting and star-shell use.", {"night_spot": 0.25}, 3],
+		["nav_intercept", "Interception course", "Faster passages and better intercepts on the map.", {"cruise": 0.1, "map_eyes": 0.2}, 3],
+	],
+	"Damage control officer": [
+		["dc_fire", "Fire main", "Fires are put out faster.", {"fire_fight": 0.3}, 1],
+		["dc_shoring", "Shoring timbers", "Holes are plugged faster.", {"dc_rate": 0.2}, 1],
+		["dc_counter", "Counter-flooding", "Less list, smaller flooding penalties.", {"pump": 0.2}, 2],
+		["dc_mag", "Magazine discipline", "Fewer magazine explosions.", {"magazine": 0.5}, 2],
+		["dc_hero", "Hold the line", "Damage control keeps working under heavy fire.", {"dc_rate": 0.25, "morale": 0.15}, 3],
+		["dc_saved", "Saved from the sea", "If the ship is lost, less reputation is lost with her and the crew keeps heart.", {"survive": 0.5, "morale": 0.1}, 3],
+	],
+	"Air group commander": [
+		["air_deck", "Deck spotting", "Faster launch and recovery.", {"deck": 0.25}, 1],
+		["air_cap", "CAP doctrine", "Better combat air patrol.", {"cap": 0.25}, 1],
+		["air_strike", "Coordinated strike", "Dive and torpedo bombers arrive together.", {"strike_acc": 0.2}, 2],
+		["air_rearm", "Rearm drill", "Faster rearm and refuel.", {"rearm": 0.3}, 2],
+		["air_reach", "Long search", "Longer strike and search range.", {"reach": 0.25, "map_eyes": 0.2}, 3],
+		["air_aces", "Fighter aces", "Aircrew survive and learn faster.", {"aircrew": 0.3}, 3],
+	],
+}
+
+static func officer_points_left(o: Dictionary) -> int:
+	return int(officer_level(o.xp) / 2) - o.get("skills", []).size()
+
+## Can this officer take this skill now?
+static func officer_can_learn(o: Dictionary, id: String) -> bool:
+	var sk := officer_skill(o.post, id)
+	if sk.is_empty() or o.get("skills", []).has(id) or officer_points_left(o) <= 0:
+		return false
+	var tier: int = sk[4]
+	var lvl := officer_level(o.xp)
+	if tier == 2 and lvl < 4: return false
+	if tier == 3 and lvl < 7: return false
+	if tier > 1:
+		var has_prev := false
+		for s2 in OFFICER_SKILLS[o.post]:
+			if s2[4] == tier - 1 and o.get("skills", []).has(s2[0]):
+				has_prev = true
+		if not has_prev:
+			return false
+	return true
+
+static func officer_skill(post: String, id: String) -> Array:
+	for sk in OFFICER_SKILLS.get(post, []):
+		if sk[0] == id:
+			return sk
+	return []
+
+## Captain skills come in tiers too: the n-th pair for a ship type needs n-1 skills of that type.
+static func skill_tier(id: String) -> int:
+	var cls: String = SKILLS[id][1]
+	if cls == "all":
+		return 1
+	var i := 0
+	for k in SKILLS:
+		if SKILLS[k][1] == cls:
+			if k == id:
+				return int(i / 2) + 1
+			i += 1
+	return 1
+
+static func can_learn(c: Dictionary, id: String) -> bool:
+	if c.skills.has(id) or skill_points_left(c) <= 0:
+		return false
+	var cls: String = SKILLS[id][1]
+	var tier := skill_tier(id)
+	if tier > 1:
+		var have := 0
+		for k in c.skills:
+			if SKILLS[k][1] == cls:
+				have += 1
+		if have < tier - 1:
+			return false
+	return true
+
+
 ## Refits: id -> [name, category, cost (supply), year, days in the yard, modifiers, description]
 const REFITS := {
 	"drill": ["Faster loading drill", "Main battery", 60, 1941, 2, {"gun_reload": 0.1}, "More ready ammunition and a well-drilled battery."],
@@ -132,7 +249,7 @@ static func fresh(difficulty := "officer") -> Dictionary:
 static func new_officer(post: String) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
-	return {"post": post, "name": "Lt. %s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()]], "xp": 0, "wounded": 0, "dead": false, "battles": 0}
+	return {"post": post, "name": "Lt. %s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()]], "xp": 0, "wounded": 0, "dead": false, "battles": 0, "skills": []}
 
 ## Give the career a ship (new crew, green) and make it the current command.
 static func take_command(c: Dictionary, type_id: String, name: String, day: int) -> void:
@@ -223,6 +340,10 @@ static func mod(key: String) -> float:
 			continue
 		if post_keys.get(o.post, []).has(key):
 			v += 0.03 * officer_level(o.xp)
+		for id in o.get("skills", []):
+			var sk := officer_skill(o.post, id)
+			if not sk.is_empty():
+				v += sk[3].get(key, 0.0)
 	return v
 
 ## Crew efficiency factor for the player's ship (training and morale).
@@ -286,7 +407,7 @@ static func apply_battle(c: Dictionary, tally: Dictionary, result: String, level
 	var ship_xp: int = int(tally.get("combat_min", 0.0) * 5) + int(tally.get("damage_done", 0.0) * 2) + tally.get("kills", 0) * 150 + int(tally.get("after_min", 0.0) * 3)
 	if not s.is_empty():
 		s.xp += ship_xp
-		s.training += ship_xp * 0.12
+		s.training += ship_xp * 0.12 * (1.0 + mod("training"))
 		s.kills += tally.get("kills", 0)
 		var lbl0 := training_label(s.training - ship_xp * 0.12)
 		if training_label(s.training) != lbl0:

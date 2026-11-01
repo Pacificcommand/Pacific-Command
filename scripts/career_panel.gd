@@ -10,7 +10,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(UI.backdrop())
 	var p := UI.panel(18)
-	p.custom_minimum_size = Vector2(820, 0)
+	p.custom_minimum_size = Vector2(1500, 0)
 	var v := UI.column(10)
 	var c: Dictionary = Game.career
 	v.add_child(UI.label("CAREER", 11, UI.BRASS))
@@ -21,11 +21,11 @@ func _ready() -> void:
 		sub += " · next rank (%s) at %d XP" % [Missions.RANKS[nxt], Career.RANK_XP[nxt]]
 	v.add_child(UI.label(sub, 13, UI.MUTED))
 	tabs = TabContainer.new()
-	tabs.custom_minimum_size = Vector2(780, 440)
+	tabs.custom_minimum_size = Vector2(1460, 560)
 	tabs.add_theme_font_size_override("font_size", 14)
+	tabs.add_child(_margin(_tree_tab(), "Skill tree"))
 	tabs.add_child(_margin(_ship_tab(), "Ship and crew"))
 	tabs.add_child(_margin(_officers_tab(), "Officers"))
-	tabs.add_child(_margin(_skills_tab(), "Captain skills"))
 	tabs.add_child(_margin(_medals_tab(), "Medals and log"))
 	v.add_child(tabs)
 	v.add_child(UI.row([UI.button("Close", func(): queue_free())]))
@@ -101,33 +101,88 @@ func _officers_tab() -> Control:
 	return v
 
 
-func _skills_tab() -> Control:
-	var v := UI.column(6)
+## The skill tree: the captain's column first, then one column per department head. Each
+## column shows level and XP, the points to spend, and the skills in tiers.
+func _tree_tab() -> Control:
 	var c: Dictionary = Game.career
-	var s := Career.ship(c)
-	var cls: String = Data.TYPES[s.type].cls if not s.is_empty() else "dd"
-	var pts := Career.skill_points_left(c)
-	v.add_child(UI.label("%d skill point%s to spend · ship type: %s" % [pts, "" if pts == 1 else "s", cls.to_upper()], 15))
+	var ship := Career.ship(c)
+	var cls: String = Data.TYPES[ship.type].cls if not ship.is_empty() else "dd"
+	var v := UI.column(6)
+	v.add_child(UI.wrap("Experience comes from doing the job: the captain's from every battle, each officer's from their own department. A level is a skill point for the captain; officers get one every two levels. Higher tiers open with level and with a skill from the tier below. Wounded or dead officers give nothing until replaced.", 1400, 12, UI.MUTED))
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(1440, 470)
+	sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	# the captain
+	row.add_child(_tree_column("CAPTAIN", "You · %s" % Missions.RANKS[clampi(c.rank, 0, 8)], Career.level_for(c.xp), c.xp, _xp_next_captain(c.xp), Career.skill_points_left(c), _captain_skill_rows(c, cls)))
+	for o in c.officers:
+		var sub: String = o.name + (" · killed" if o.dead else (" · wounded" if o.wounded > 0 else ""))
+		var pts: int = Career.officer_points_left(o)
+		var skills: Array = Career.OFFICER_SKILLS.get(o.post, [])
+		var rows := []
+		for sk in skills:
+			var have: bool = o.get("skills", []).has(sk[0])
+			var ok := Career.officer_can_learn(o, sk[0])
+			rows.append({"name": sk[1], "desc": sk[2], "tier": sk[4], "have": have, "ok": ok, "cb": (func(off, sid): off.skills.append(sid); Game.save_career(); _rebuild()).bind(o, sk[0])})
+		row.add_child(_tree_column(o.post.to_upper(), sub, Career.officer_level(o.xp), o.xp, _xp_next_officer(o.xp), pts, rows))
+	sc.add_child(row)
+	v.add_child(sc)
+	return v
+
+
+func _xp_next_captain(xp: int) -> int:
+	var lvl := Career.level_for(xp) + 1
+	return lvl * lvl * 120
+
+func _xp_next_officer(xp: int) -> int:
+	var lvl := mini(Career.officer_level(xp) + 1, 10)
+	return lvl * lvl * 60
+
+func _captain_skill_rows(c: Dictionary, cls: String) -> Array:
+	var rows := []
 	for id in Career.skills_for(cls):
 		var sk: Array = Career.SKILLS[id]
-		var have: bool = c.skills.has(id)
-		var row := UI.row([], 10)
-		var b := UI.button("Learned" if have else "Learn", (func(sid): c.skills[sid] = true; Game.save_career(); _rebuild()).bind(id))
-		b.disabled = have or pts <= 0
-		b.custom_minimum_size.x = 90
-		row.add_child(b)
-		var col := UI.column(0)
-		col.add_child(UI.label("%s%s" % [sk[0], "" if sk[1] != "all" else " (any ship)"], 14, UI.GREEN if have else UI.INK))
-		col.add_child(UI.label(sk[2], 12, UI.MUTED))
-		row.add_child(col)
-		v.add_child(row)
-	var learned_elsewhere := []
-	for id in c.skills:
-		if Career.SKILLS[id][1] != cls and Career.SKILLS[id][1] != "all":
-			learned_elsewhere.append(Career.SKILLS[id][0])
-	if not learned_elsewhere.is_empty():
-		v.add_child(UI.wrap("Learned for other ship types (work again when you command one): %s." % ", ".join(learned_elsewhere), 740, 12, UI.MUTED))
-	return v
+		rows.append({"name": sk[0] + ("" if sk[1] != "all" else " (any ship)"), "desc": sk[2], "tier": Career.skill_tier(id), "have": c.skills.has(id), "ok": Career.can_learn(c, id),
+			"cb": (func(sid): c.skills[sid] = true; Game.save_career(); _rebuild()).bind(id)})
+	rows.sort_custom(func(a, b): return a.tier < b.tier)
+	return rows
+
+
+func _tree_column(title: String, sub: String, level: int, xp: int, next_xp: int, pts: int, rows: Array) -> Control:
+	var p := UI.panel(8)
+	p.custom_minimum_size = Vector2(170, 0)
+	var v := UI.column(4)
+	v.add_child(UI.label(title, 10, UI.BRASS))
+	var nm := UI.wrap(sub, 160, 12)
+	v.add_child(nm)
+	v.add_child(UI.label("Level %d · %d XP" % [level, xp], 11, UI.MUTED))
+	var bar := ProgressBar.new()
+	bar.custom_minimum_size = Vector2(160, 6)
+	bar.show_percentage = false
+	bar.max_value = maxf(1.0, float(next_xp))
+	bar.value = float(xp)
+	v.add_child(bar)
+	v.add_child(UI.label("%d point%s to spend" % [pts, "" if pts == 1 else "s"], 12, UI.BRASS if pts > 0 else UI.MUTED))
+	var tier := 0
+	for r in rows:
+		if r.tier != tier:
+			tier = r.tier
+			v.add_child(UI.label("Tier %d" % tier, 10, UI.MUTED))
+		var b := UI.button(r.name, r.cb if r.ok else Callable(), false, 12)
+		b.custom_minimum_size.x = 160
+		b.disabled = not r.ok
+		if r.have:
+			b.set_pressed_no_signal(true)
+			b.toggle_mode = true
+			b.disabled = true
+			b.add_theme_color_override("font_disabled_color", UI.BRASS_INK)
+		b.tooltip_text = r.desc
+		v.add_child(b)
+		var d := UI.wrap(r.desc, 160, 10, UI.MUTED)
+		v.add_child(d)
+	p.add_child(v)
+	return p
 
 
 func _medals_tab() -> Control:

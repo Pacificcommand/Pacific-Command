@@ -1329,6 +1329,8 @@ func can_see(obs: Ship, tgt: Ship) -> bool:
 		return d < minf(W.vis * tgt.T.get("size_vis", 1.0), 5500.0) and los_clear(obs.x, obs.z, tgt.x, tgt.z)
 	# small, low craft are harder to see
 	var rng: float = W.vis * (obs.T.night_eye if W.night else 1.0) * tgt.T.get("size_vis", 1.0)
+	if tgt.is_player:
+		rng *= 1.0 - 0.5 * Career.mod("stealth")
 	if W.night or weather == "fog":
 		if t - tgt.last_fired < 3.0:
 			var flash: float = clampf(tgt.gun.size, 0.35, 1.0)
@@ -1668,7 +1670,7 @@ func damage(s: Ship, lx: float, lz: float, dmg: float, kind: String, shooter: Sh
 			var f2 := add_fire(s, best.x, 0.0, 1.2)
 			if f2 != "":
 				what.append("oil fire " + f2)
-		if best.kind == "magazine" and randf() < (0.12 if kind == "torpedo" else 0.035) * (mag_chance() if isp else 1.0):
+		if best.kind == "magazine" and randf() < (0.12 if kind == "torpedo" else 0.035) * ((mag_chance() * (1.0 - Career.mod("magazine"))) if isp else 1.0):
 			magazine_boom(s, best.x)
 			return
 	# shell holes near the waterline and torpedo hits let the sea in
@@ -1963,9 +1965,10 @@ func step_ship(s: Ship, dt: float) -> void:
 		var target_v: float = Data.TELE[s.tele].kn * Data.KN
 		var mx := s.max_kn() * Data.KN * (1.0 + (Career.mod("speed") if s.is_player else 0.0))
 		var want := clampf(target_v, -mx * 0.4, mx)
-		s.v += clampf(want - s.v, -0.4 * dt, 0.25 * dt)
+		var ag: float = 1.0 + (Career.mod("agility") if s.is_player else 0.0)
+		s.v += clampf(want - s.v, -0.4 * dt * ag, 0.25 * dt * ag)
 		if t > s.rud_jam_until:
-			s.rud += clampf(s.rud_cmd - s.rud, -4.0 * dt, 4.0 * dt)
+			s.rud += clampf(s.rud_cmd - s.rud, -4.0 * dt * ag, 4.0 * dt * ag)
 		var turn: float = (s.rud / 35.0) * deg_to_rad(TT.turn) * clampf(s.v / (25.0 * Data.KN), -0.5, 1.15)
 		s.h = fposmod(s.h + turn * dt, TAU)
 		# flooding, pumping and repairs
@@ -1987,7 +1990,7 @@ func step_ship(s: Ship, dt: float) -> void:
 		s.flood_fwd = lerpf(s.flood_fwd, fw / inflow if inflow > 0.0 else s.flood_fwd * 0.99, dt * 0.2)
 		# fires spread, hurt crew and equipment; damage control fights them
 		for f in s.fires:
-			f.int += dt * (0.025 - 0.06 * e)
+			f.int += dt * (0.025 - 0.06 * e * (1.0 + (Career.mod("fire_fight") if s.is_player else 0.0)))
 			# casualties from fire scale with how many men are aboard
 			if randf() < dt * 0.25 * f.int * clampf(sqrt(float(TT.crew) / 300.0), 0.2, 3.0):
 				s.crew = maxi(0, s.crew - 1)
@@ -1998,7 +2001,7 @@ func step_ship(s: Ship, dt: float) -> void:
 						m.ref.hp = m.hp
 					if m.hp <= 0.0 and (s.is_player or player.contact(s)):
 						say("%s%s burnt out by the fire." % ["" if s.is_player else s.ship_name + ": ", _pretty(m.label)], "bad" if s.is_player else "good")
-					if m.kind == "magazine" and f.int > 0.8 and randf() < dt * 0.0015 * (mag_chance() if s.is_player else 1.0):
+					if m.kind == "magazine" and f.int > 0.8 and randf() < dt * 0.0015 * ((mag_chance() * (1.0 - Career.mod("magazine"))) if s.is_player else 1.0):
 						magazine_boom(s, m.x)
 						return
 		var nf := s.fires.size()
@@ -2094,7 +2097,8 @@ func step_ship(s: Ship, dt: float) -> void:
 		if s.smoke_acc > 1.2:
 			s.smoke_acc = 0.0
 			var wp := s.to_world_xz(TT.get("smoke_x", -50.0) - 8.0, 0.0)
-			smokes.append({"x": wp.x, "z": wp.y, "r": 20.0, "rmax": 95.0, "density": 0.5, "age": 0.0, "life": 150.0})
+			var sk: float = 1.0 + (Career.mod("smoke") if s.is_player else 0.0)
+			smokes.append({"x": wp.x, "z": wp.y, "r": 20.0, "rmax": 95.0 * sk, "density": 0.5, "age": 0.0, "life": 150.0 * sk})
 	if s.alive and s.dest_dist > 0.0:
 		s.dest_dist -= absf(s.v) * dt
 		if s.dest_dist <= 0.0 and not s.escaped:
