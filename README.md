@@ -178,6 +178,13 @@ All keys can be changed in Settings › Controls.
 | `shaders/` | Sea and particle shaders |
 | `assets/models/` | Ship models (.glb) |
 
+## Skill tree
+The Career screen opens on the skill tree: your own column first (a skill point per captain
+level, in tiers by ship type plus general skills), then one column per department head -
+executive, gunnery, torpedo, engineering, navigator, damage control, air group. Officers
+earn XP doing their own job and a skill point every two levels; higher tiers need level
+and a skill from the tier below. Everything learned feeds the battle through modifiers.
+
 ## Encyclopedia
 From the main menu, the pause menu or the operations map: the real history of every ship
 class in the game (with a turning 3D model and the game's figures), the aircraft, the
