@@ -124,6 +124,8 @@ func _test_args() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv: PackedStringArray = a.trim_prefix("--").split("=")
 		_test[kv[0]] = kv[1] if kv.size() > 1 else "1"
+	if _test.has("seed"):
+		seed(int(_test.seed))   # repeatable battles for recording
 	if _test.has("scenario"):
 		set_scenario(_test.scenario)
 	if _test.has("load"):
@@ -159,6 +161,9 @@ func _test_args() -> void:
 			player.fire = true
 	if _test.has("view"):
 		set_view(_test.view)
+		camst.h = camst.th
+	if _test.has("height"):
+		camst.th = float(_test.height)
 		camst.h = camst.th
 	if _test.has("cam"):
 		if _test.cam == "shore":
@@ -208,6 +213,8 @@ func _test_args() -> void:
 				for hs in ships:
 					line += "| %s %s R=%d crew=%d fl=%d %s " % [hs.ship_name, hs.ai_state, int(player.range_to(hs)), hs.crew, int(hs.flood), "" if hs.alive else ("ESC" if hs.escaped else "SUNK")]
 				print(line)
+		var fs0 := focus_ship()
+		camst.x = fs0.x; camst.z = fs0.z
 		if _test.has("save"):
 			Game.save_slot(int(_test.save), save_state())
 			print("saved slot ", _test.save, " at t=", t)
@@ -228,6 +235,8 @@ func _test_args() -> void:
 		player.h = 0.0
 		for m in player.mounts:
 			m.ang = deg_to_rad(float(_test.train))
+	if _test.has("nohud"):
+		hud.visible = false
 	if _test.has("pause"):
 		hud.open_pause()
 	if _test.has("shot"):
@@ -881,6 +890,11 @@ func set_focus(which: String) -> void:
 
 ## The ship the camera is tracking right now.
 func focus_ship() -> Ship:
+	if _test.has("focus"):
+		# recording only: keep the camera on one named ship (underscores for spaces)
+		for s in ships:
+			if s.ship_name == String(_test.focus).replace("_", " ") and not s.gone:
+				return s
 	if camst.focus == "target":
 		var tg: Ship = player.target
 		if tg and not tg.gone and (tg.alive or tg.sink < 12.0):
@@ -2775,9 +2789,20 @@ func _update_camera(delta: float) -> void:
 	var hgt: float = camst.h
 	cam.near = maxf(0.5, hgt * 0.02)
 	cam.far = hgt * 4.0 + 2000.0
-	cam.look_at_from_position(Vector3(camst.x + sh_off.x, hgt, camst.z + sh_off.y), Vector3(camst.x + sh_off.x, 0.0, camst.z + sh_off.y), Vector3(0, 0, -1))
+	if _test.has("tilt"):
+		# recording only: look down at an angle from the south (yaw turns it round)
+		var tl := deg_to_rad(float(_test.tilt))
+		var yw := deg_to_rad(float(_test.get("yaw", "0"))) + t * float(_test.get("orbit", "0")) * 0.01
+		var back := hgt * tan(tl)
+		var eye := Vector3(camst.x + sh_off.x + sin(yw) * back, hgt, camst.z + sh_off.y + cos(yw) * back)
+		cam.far = hgt * 12.0 + 6000.0
+		cam.look_at_from_position(eye, Vector3(camst.x + sh_off.x, 0.0, camst.z + sh_off.y), Vector3.UP)
+	else:
+		cam.look_at_from_position(Vector3(camst.x + sh_off.x, hgt, camst.z + sh_off.y), Vector3(camst.x + sh_off.x, 0.0, camst.z + sh_off.y), Vector3(0, 0, -1))
 	# sea plane follows the camera and always fills the view
 	var span := hgt * 2.5 + 4000.0
+	if _test.has("tilt"):
+		span = hgt * 12.0 + 8000.0
 	ocean.position = Vector3(camst.x, 0.0, camst.z)
 	ocean.scale = Vector3(span, 1.0, span)
 	sun.directional_shadow_max_distance = clampf(hgt * 2.2, 300.0, 6000.0)
