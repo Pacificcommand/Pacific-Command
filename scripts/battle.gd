@@ -215,6 +215,7 @@ func _test_args() -> void:
 				print(line)
 		var fs0 := focus_ship()
 		camst.x = fs0.x; camst.z = fs0.z
+		_update_camera(1.0)   # snap the camera to its framing before the first frame
 		if _test.has("save"):
 			Game.save_slot(int(_test.save), save_state())
 			print("saved slot ", _test.save, " at t=", t)
@@ -362,6 +363,8 @@ func new_game() -> void:
 				_setup_bbs()
 			"duel":
 				_setup_duel()
+			"ddcv":
+				_setup_ddcv()
 			"fleet":
 				_setup_fleet()
 			"carriers":
@@ -378,6 +381,8 @@ func new_game() -> void:
 	_add_support()
 	for s in ships:
 		air.setup_ship(s)
+	if scenario == "ddcv":
+		air.sqs = air.sqs.filter(func(q): return q.team != "ijn")
 	if not brief.has("level"):
 		var et := []
 		for s in ships:
@@ -662,6 +667,25 @@ func _setup_duel() -> void:
 	_formation([["kongo", "Kirishima", 0.0, 0.0]], "ijn", "Bombardment Group", sin(brg) * dist, -cos(brg) * dist, deg_to_rad(200.0), 24.0, true)
 	brief = {"title": "Battleship duel", "escape_r": 30000.0, "threat": "Severe (a battleship)", "ships": [["north_carolina", "USS Washington"]],
 		"text": "Washington and Kirishima, gun to gun."}
+
+
+## Destroyers against a carrier (test/trailer scenario, not in the menu): two Fletchers make a torpedo attack on Shokaku, whose planes are away.
+func _setup_ddcv() -> void:
+	var tf := _formation([["fletcher", "USS Johnston", 0.0, 0.0], ["fletcher", "USS Hoel", -300.0, -400.0]], "us", "Taffy 3 screen", 0.0, 0.0, deg_to_rad(60.0), 30.0)
+	player = tf[0]
+	var dist := float(_test.get("cvrange", "2600"))
+	var brg := deg_to_rad(0.0)
+	_formation([["shokaku", "Shokaku", 0.0, 0.0]], "ijn", "Carrier Division 5", sin(brg) * dist, -cos(brg) * dist, deg_to_rad(270.0), 22.0, true)
+	if _test.has("torpat"):
+		# filming: both destroyers launch at the carrier at the given time
+		after(float(_test.torpat), func():
+			for o in ships:
+				if o.team == "us" and o.alive:
+					var n := launch_torps(o, ships.filter(func(q): return q.team == "ijn")[0])
+					if _test.has("trace"):
+						print("  [%.1f] %s launches %d torpedoes" % [t, o.ship_name, n]))
+	brief = {"title": "Torpedo attack", "escape_r": 30000.0, "threat": "Moderate (a carrier with her planes away)", "ships": [["fletcher", "USS Johnston"]],
+		"text": "Two destroyers against a carrier. Close and fire torpedoes."}
 
 
 ## Daylight fleet action: a US task force with a fast battleship, cruisers and destroyers against Yamato's force.
@@ -1053,7 +1077,9 @@ func _step(dt: float) -> void:
 		vis_timer = 0.5
 		update_visibility()
 	for s in ships:
-		if not s.is_player or autopilot:
+		if scenario == "ddcv" and s.team == "ijn":
+			s.fire = false   # filming scene: the carrier steams straight and holds fire
+		elif not s.is_player or autopilot:
 			step_ai(s, dt)
 		step_fire_control(s, dt)
 		step_ship(s, dt)
@@ -2000,6 +2026,8 @@ func step_torps(dt: float) -> void:
 						say("Torpedo hit %s, but it was a dud." % s.ship_name if tp.team == "us" else "Torpedo struck us but did not explode!", "" if tp.team == "us" else "good")
 					break
 				var l = s.to_local_xz(tp.x, tp.z)
+				if _test.has("trace"):
+					print("  [%.1f] torpedo from %s hits %s" % [t, tp.owner.ship_name if tp.owner else "?", s.ship_name])
 				fx.boom(tp.x, 2.0, tp.z, true)
 				for i in 20:
 					fx.add(Fx.SPLASH, tp.x + randf_range(-6, 6), 3.0, tp.z + randf_range(-6, 6), 0, 0, 0, randf_range(6, 10), 14.0, 3.5, 1.0, Color(0.95, 0.98, 1.0), 1.0)
@@ -2768,6 +2796,15 @@ func _update_camera(delta: float) -> void:
 	var tz: float = fs.z + camst.oz
 	if camst.free:
 		tx = camst.ox; tz = camst.oz   # dragged: ox/oz hold an absolute point on the sea
+	if _test.has("mid"):
+		# recording only: aim halfway between two named ships (--mid=Ship_A,Ship_B)
+		var nm: PackedStringArray = String(_test.mid).replace("_", " ").split(",")
+		var pts := []
+		for o in ships:
+			if o.ship_name in nm and not o.gone:
+				pts.append(Vector2(o.x, o.z))
+		if pts.size() == 2:
+			tx = (pts[0].x + pts[1].x) / 2.0; tz = (pts[0].y + pts[1].y) / 2.0
 	var sv = camst.salvo
 	if sv != null:
 		var live := []
