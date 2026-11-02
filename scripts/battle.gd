@@ -360,6 +360,8 @@ func new_game() -> void:
 				_setup_cruisers()
 			"bbs":
 				_setup_bbs()
+			"duel":
+				_setup_duel()
 			"fleet":
 				_setup_fleet()
 			"carriers":
@@ -649,6 +651,17 @@ func _setup_bbs() -> void:
 	report = {"x": ex + randf_range(-1500, 1500), "z": ez + randf_range(-1500, 1500), "h": eh + deg_to_rad(randf_range(-10, 10)), "v": 24.0 * Data.KN, "r": 4000.0, "t": 0.0, "active": true}
 	brief = {"title": "Battleship night action", "escape_r": 28000.0, "threat": "Severe (a battleship, two heavy cruisers, a light cruiser and destroyers)", "ships": choices,
 		"text": "Kirishima, with the heavy cruisers Atago and Takao and their escorts, is coming to bombard Henderson Field. She is reported bearing %s, about %s away, steering %s.\n\nYou command %s with %s astern and four destroyers screening ahead. Your 16-inch guns and radar fire control decide this fight: hold the range, let the screen draw the Long Lances, and put your salvos into the battleship. Sink or drive off Kirishima and the cruisers." % [U.deg3(U.bearing(0, 0, report.x, report.z)), U.yards(U.hyp(report.x, report.z)), U.deg3(report.h), player.ship_name, cname]}
+
+
+## Battleship duel (test/trailer scenario, not in the menu): Washington against Kirishima, alone.
+func _setup_duel() -> void:
+	var tf := _formation([["north_carolina", "USS Washington", 0.0, 0.0]], "us", "TF 64", 0.0, 0.0, deg_to_rad(300.0), 23.0)
+	player = tf[0]
+	var dist := float(_test.get("duelrange", "11000"))
+	var brg := deg_to_rad(330.0)
+	_formation([["kongo", "Kirishima", 0.0, 0.0]], "ijn", "Bombardment Group", sin(brg) * dist, -cos(brg) * dist, deg_to_rad(200.0), 24.0, true)
+	brief = {"title": "Battleship duel", "escape_r": 30000.0, "threat": "Severe (a battleship)", "ships": [["north_carolina", "USS Washington"]],
+		"text": "Washington and Kirishima, gun to gun."}
 
 
 ## Daylight fleet action: a US task force with a fast battleship, cruisers and destroyers against Yamato's force.
