@@ -1,7 +1,17 @@
 extends Node3D
-## Main menu: a destroyer at sea seen from above, with the menu over it.
+## Main menu: a close, low side view of a battleship (USS Washington, North Carolina
+## class) at sea, her turrets trained out to starboard and firing rippling salvos.
 
 var ship: Node3D
+var fx: Fx
+var cam: Camera3D
+var cam_base := Vector3.ZERO
+var shake := 0.0
+var next_salvo := 1.2
+var turrets := []        # [{node, x, y, ang}] trained main turrets
+const SHIP_MODEL := "res://assets/models/north_carolina.glb"
+## main turrets: name, x along the hull (m, + forward), height of the guns, training angle (rad, + to starboard)
+const TURRETS := [["Turret1", 74.0, 9.0, 1.05], ["Turret2", 54.0, 11.0, 1.15], ["Turret3", -70.0, 7.6, 2.05]]
 var ocean_mat: ShaderMaterial
 var t := 0.0
 var ui: Control
@@ -47,6 +57,13 @@ func _ready() -> void:
 func _shot(path: String) -> void:
 	for i in 40:
 		await get_tree().process_frame
+	if "--menufire" in OS.get_cmdline_user_args() and fx:
+		# screenshots of the salvo: one just after each turret fires
+		next_salvo = 99.0
+		_salvo()
+		for k in 4:
+			await get_tree().create_timer(0.1 + (0.35 if k > 0 else 0.0)).timeout
+			get_viewport().get_texture().get_image().save_png(path.replace(".png", "_%d.png" % k))
 	get_viewport().get_texture().get_image().save_png(path)
 	print("saved ", path)
 	get_tree().quit()
@@ -55,15 +72,22 @@ func _shot(path: String) -> void:
 func _build_scene() -> void:
 	var we := WorldEnvironment.new()
 	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.45, 0.58, 0.7)
+	env.background_mode = Environment.BG_SKY
+	var sky := Sky.new()
+	var sm := ProceduralSkyMaterial.new()
+	sm.sky_top_color = Color(0.22, 0.38, 0.62)
+	sm.sky_horizon_color = Color(0.66, 0.72, 0.78)
+	sm.ground_horizon_color = Color(0.6, 0.66, 0.7)
+	sm.ground_bottom_color = Color(0.2, 0.3, 0.36)
+	sky.sky_material = sm
+	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.6, 0.7, 0.8)
-	env.ambient_light_energy = 0.35
+	env.ambient_light_color = Color(0.62, 0.7, 0.78)
+	env.ambient_light_energy = 0.3
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.01, 0.02, 0.035)
-	env.fog_density = 0.0001
+	env.fog_light_color = Color(0.72, 0.77, 0.8)
+	env.fog_density = 0.00022
 	we.environment = env
 	add_child(we)
 	var sun := DirectionalLight3D.new()
@@ -74,27 +98,40 @@ func _build_scene() -> void:
 	sun.look_at_from_position(Vector3.ZERO, Vector3(-0.45, -0.8, -0.38), Vector3.UP)
 	var ocean := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
-	pm.size = Vector2(3000, 3000)
+	pm.size = Vector2(9000, 9000)
 	ocean.mesh = pm
 	ocean_mat = ShaderMaterial.new()
 	ocean_mat.shader = load("res://shaders/ocean.gdshader")
 	ocean_mat.set_shader_parameter("foam_tex", load("res://assets/textures/boujie/foam_2.png"))
 	ocean_mat.set_shader_parameter("detail_tex", load("res://assets/textures/boujie/ocean_albedo_2.png"))
 	var W: Dictionary = Data.WEATHER.clear
-	ocean_mat.set_shader_parameter("deep_color", W.deep)
-	ocean_mat.set_shader_parameter("shallow_color", W.shallow)
+	ocean_mat.set_shader_parameter("deep_color", W.deep.darkened(0.35))
+	ocean_mat.set_shader_parameter("shallow_color", W.shallow.darkened(0.45))
 	ocean_mat.set_shader_parameter("chop", 0.9)
 	ocean_mat.set_shader_parameter("spec", 0.45)
 	ocean.material_override = ocean_mat
 	add_child(ocean)
-	var scene: PackedScene = load("res://assets/models/fletcher_m21.glb")
+	var scene: PackedScene = load(SHIP_MODEL)
 	ship = scene.instantiate()
-	ship.position = Vector3(40.0, 0.0, 0.0)
+	# bow to +x (east), starboard side (+z) towards the camera
+	ship.rotation.y = -PI / 2.0
 	add_child(ship)
-	var cam := Camera3D.new()
-	cam.fov = 32.0
+	for tt in TURRETS:
+		var nd := ship.find_child(tt[0], true, false) as Node3D
+		var stow := PI if tt[1] < 0.0 else 0.0
+		if nd:
+			nd.rotation.y = -(tt[3] - stow)
+		turrets.append({"node": nd, "x": tt[1], "y": tt[2], "ang": tt[3]})
+	fx = Fx.new()
+	fx.billboard = true
+	add_child(fx)
+	fx.set_lit(1.0)
+	cam = Camera3D.new()
+	cam.fov = 30.0
 	add_child(cam)
-	cam.look_at_from_position(Vector3(0.0, 230.0, 60.0), Vector3(20.0, 0.0, 0.0), Vector3(0, 0, -1))
+	# low over the water abeam, the bow and both forward turrets right of the menu
+	cam_base = Vector3(36.0, 5.0, 165.0)
+	cam.look_at_from_position(cam_base, Vector3(36.0, 15.0, 0.0), Vector3.UP)
 	cam.make_current()
 
 
@@ -147,10 +184,75 @@ func _process(delta: float) -> void:
 		return
 	t += delta
 	if ship:
-		ship.rotation.y += delta * 0.03
-		ship.position.y = sin(t * 0.7) * 0.25
-		ship.rotation.z = sin(t * 0.55) * deg_to_rad(1.2)
+		# a gentle roll and heave; she steams slowly so the bow wave stays alive
+		ship.position.y = sin(t * 0.7) * 0.35
+		ship.rotation.x = sin(t * 0.37) * deg_to_rad(0.35)
+		ship.rotation.z = sin(t * 0.5) * deg_to_rad(0.9)
+		_bow_wave(delta)
+	next_salvo -= delta
+	if next_salvo <= 0.0:
+		_salvo()
+		next_salvo = randf_range(5.5, 8.0)
+	if fx:
+		fx.step(delta)
+		shake = maxf(shake - delta * 2.5, 0.0)
+		cam.position = cam_base + Vector3(randf_range(-1, 1), randf_range(-1, 1), 0.0) * shake * 0.6
+		fx.render(cam.position)
 	ocean_mat.set_shader_parameter("time_s", t)
+
+
+## World point beside the hull: lx metres forward of amidships, lz to starboard, at height y.
+func _hull_pt(lx: float, lz: float, y: float) -> Vector3:
+	return Vector3(lx, y + ship.position.y, lz)
+
+
+var _foam_t := 0.0
+func _bow_wave(delta: float) -> void:
+	_foam_t -= delta
+	if _foam_t > 0.0:
+		return
+	_foam_t = 0.12
+	for side in [-1.0, 1.0]:
+		fx.foam(108.0 + randf_range(-2, 2), side * randf_range(4, 8), randf_range(-3, -1), side * randf_range(2, 4), randf_range(3, 5), 2.5, randf_range(3, 5), 0.6)
+		fx.foam(randf_range(-100, 100), side * randf_range(15, 17), -1.5, side * 0.6, randf_range(2, 3.5), 1.2, 3.0, 0.3)
+
+
+## One broadside: the three turrets ripple-fire, each with a flash, a light, a smoke cloud.
+func _salvo() -> void:
+	# the two forward turrets are in the picture; the aft one is off the left edge
+	var order := [0, 1] if randf() < 0.5 else [1, 0]
+	for j in 2:
+		var tr: Dictionary = turrets[order[j]]
+		get_tree().create_timer(j * 0.35).timeout.connect(func(): _fire(tr))
+
+
+func _fire(tr: Dictionary) -> void:
+	var a: float = tr.ang
+	var dir := Vector3(cos(a), 0.0, sin(a))     # bow is +x, starboard +z
+	var mz := _hull_pt(tr.x, 0.0, tr.y) + dir * 22.0
+	# one burst per barrel, an orange core and a white-hot centre
+	var side := Vector3(-dir.z, 0.0, dir.x)
+	for b in [-1, 0, 1]:
+		var bp: Vector3 = mz + side * (b * 2.4)
+		fx.fire_puff(bp.x + dir.x * 4.0, bp.y, bp.z + dir.z * 4.0, 7.0)
+		fx.flash(bp.x + dir.x * 6.0, bp.y, bp.z + dir.z * 6.0, 7.0, 22.0, 0.35, Color(1.0, 0.7, 0.35))
+	fx.flash(mz.x + dir.x * 3.0, mz.y, mz.z + dir.z * 3.0, 5.0, 12.0, 0.16, Color(1.0, 0.95, 0.8))
+	fx.light(mz + Vector3(0, 3, 0), 260.0, Color(1.0, 0.7, 0.4), 6.0, 0.3)
+	for i in 5:
+		var d := dir * randf_range(6, 26) + Vector3(randf_range(-4, 4), randf_range(-1, 3), randf_range(-4, 4))
+		var p := mz + d * 0.4
+		fx.smoke(p.x, p.y, p.z, d.x * 0.9, d.z * 0.9, randf_range(4, 7), 3.2, randf_range(5, 8), 0.6, Color(0.5, 0.47, 0.42), 0.5)
+	# the blast flattens the sea under the muzzles
+	for i in 5:
+		fx.foam(mz.x + randf_range(-8, 8), mz.z + randf_range(-8, 8), dir.x * 6.0, dir.z * 6.0, randf_range(6, 10), 4.0, 3.0, 0.5)
+	if tr.node:
+		var n: Node3D = tr.node
+		var base_y: float = n.position.y
+		var tw := create_tween()
+		tw.tween_property(n, "position:y", base_y - 0.25, 0.05)
+		tw.tween_property(n, "position:y", base_y, 0.5)
+	shake = maxf(shake, 1.0)
+	Audio.ui("gun_large", 0.55)
 
 
 ## Headless check of the career rules (godot --headless --path . -- --careertest).

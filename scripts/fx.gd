@@ -34,6 +34,13 @@ var light_nodes: Array = []
 const LIGHT_POOL := 14
 
 var wind := Vector2(-1.4, 1.1)
+## Smoke, fire and flashes turn to face the camera (for low side views such as the title
+## screen); set before the node enters the tree. The battle's top-down view keeps them flat.
+var billboard := false
+const BILLBOARD_VERTEX := """
+	float bs = length(MODEL_MATRIX[0].xyz);
+	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0] * bs, INV_VIEW_MATRIX[2] * bs, -INV_VIEW_MATRIX[1] * bs, MODEL_MATRIX[3]);
+"""
 
 # PYROLUX Lite fire and explosion effects (free to use in the game; the addon files
 # themselves may not be shared or resold, see addons/pyrolux_fx/LICENSE.md)
@@ -57,10 +64,14 @@ func _ready() -> void:
 		arr.resize(CAP)
 	kind.resize(CAP)
 	var base: Shader = load("res://shaders/particle.gdshader")
+	var air_sh := base
+	if billboard:
+		air_sh = Shader.new()
+		air_sh.code = base.code.replace("seed = INSTANCE_CUSTOM.y;", "seed = INSTANCE_CUSTOM.y;" + BILLBOARD_VERTEX)
 	var add := Shader.new()
-	add.code = base.code.replace("blend_mix", "blend_add")
+	add.code = air_sh.code.replace("blend_mix", "blend_add")
 	mat_water = ShaderMaterial.new(); mat_water.shader = base; mat_water.render_priority = -2
-	mat_air = ShaderMaterial.new(); mat_air.shader = base; mat_air.render_priority = 0
+	mat_air = ShaderMaterial.new(); mat_air.shader = air_sh; mat_air.render_priority = 0
 	var mat_glow := ShaderMaterial.new(); mat_glow.shader = add; mat_glow.render_priority = 1
 	mat_glow.set_shader_parameter("additive", true)
 	var atlas: Texture2D = load("res://assets/fx/kenney/smoke_atlas.png")
