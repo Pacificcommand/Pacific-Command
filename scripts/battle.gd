@@ -222,6 +222,7 @@ func _test_args() -> void:
 			Game.save_slot(int(_test.save), save_state())
 			print("saved slot ", _test.save, " at t=", t)
 		print("debug ", _dbg)
+		print("tally kills=", tally.kills, " gun=", tally.gun_kills, " torp=", tally.torp_kills, " air=", tally.air_kills, " list=", tally.kill_list, " torps_seen=", tally.torps_seen, " hits=", tally.hits, " fires_out=", tally.fires_out, " sorties=", tally.sorties, " air_hits=", tally.get("air_hits", 0))
 		print("ran ", _test.run, "s: t=", t, " player crew ", player.crew, " flood ", player.flood, " salvos ", stats.salvos, " hits ", stats.hits, " sunk ", stats.sunk)
 		for s in ships:
 			print("  ", s.ship_name, " alive=", s.alive, " crew=", s.crew, " flood=", int(s.flood), " fires=", s.fires.size(), " range=", int(player.range_to(s)), " vis=", player.vis.get(s.ship_name, false), " radar=", player.radar.get(s.ship_name, false))
@@ -339,7 +340,8 @@ func new_game() -> void:
 	stats = {"salvos": 0, "shells": 0, "hits": 0, "torps": 0, "torp_hits": 0, "sunk": [], "escaped": [], "start_crew": 0, "rescued": 0}
 	log_lines.clear()
 	tally = {"salvos": 0, "hits": 0, "torps": 0, "torp_hits": 0, "kills": 0, "combat_min": 0.0, "underway_min": 0.0, "fires_out": 0, "holes_fixed": 0, "contacts": 0,
-		"damage_done": 0.0, "sorties": 0, "air_hits": 0, "air_kills": 0, "big_kill": false, "took_command": 0}
+		"damage_done": 0.0, "sorties": 0, "air_hits": 0, "air_kills": 0, "big_kill": false, "took_command": 0,
+		"gun_kills": 0, "torp_kills": 0, "kill_list": [], "torps_seen": 0, "torp_hits_taken": 0, "aa_kills": 0, "night": false}
 	pause_uses = 0
 	combat_t = -1.0
 	ai.reset()
@@ -1161,6 +1163,7 @@ func _settle() -> void:
 	if Game.campaign_active():
 		tally.crew_loss_frac = clampf(float(stats.start_crew - player.crew) / maxf(1.0, float(stats.start_crew)), 0.0, 1.0)
 		tally.saved = 1 if player.alive and player.flood > player.flood_cap() * 0.5 else 0
+		tally.night = weather == "night"
 		tally.summary = "%s: %s. %s" % [brief.get("title", "Battle"), {"won": "mission accomplished", "escaped": "the enemy got through", "lost_convoy": "mission failed"}.get(over, "ship lost"),
 			("Sunk %s." % ", ".join(stats.sunk)) if not stats.sunk.is_empty() else ""]
 		var day := int(Game.mission.get("day", 0))
@@ -1735,6 +1738,7 @@ func damage(s: Ship, lx: float, lz: float, dmg: float, kind: String, shooter: Sh
 		return
 	if shooter != null:
 		s.last_hit_by = shooter
+		s.last_hit_kind = kind
 	# armour: a shell that cannot get through the belt only scratches the ship
 	var ar := s.armor()
 	if kind != "torpedo" and ar > 0.0:
@@ -2055,12 +2059,15 @@ func step_torps(dt: float) -> void:
 				sfx.play("boom_big", Vector2(tp.x, tp.z), cam.position, 1.2)
 				if s.is_player:
 					shake = maxf(shake, 2.0)
+					tally.torp_hits_taken += 1
 				if tp.team == "us":
 					stats.torp_hits += 1
 					if tp.owner == player:
 						tally.torp_hits += 1
 						tally.damage_done += 8.0
 				damage(s, l.x, l.y, 1.0, "torpedo", tp.owner)
+				if tp.get("air", false):
+					s.last_hit_kind = "air_torpedo"     # dropped by a plane: the air group's work
 				break
 		# warn the player about wakes the lookouts can see
 		if not tp.warned and tp.team != player.team and player.alive:
@@ -2076,6 +2083,7 @@ func step_torps(dt: float) -> void:
 				if t - _torp_warn_t > 4.0 and U.hyp(tp.x - player.x, tp.z - player.z) < 4000.0:
 					_torp_warn_t = t
 					say("Torpedo wakes! Bearing %s." % U.deg3(player.bearing_to(tp.x, tp.z)), "bad")
+					tally.torps_seen += 1
 					sfx.play("alarm", Vector2(player.x, player.z), cam.position, 0.6)
 		if tp.left <= 0.0 or terrain.is_land(tp.x, tp.z):
 			tp.dead = true
@@ -2166,16 +2174,19 @@ func step_ship(s: Ship, dt: float) -> void:
 			sfx.play("creak", Vector2(s.x, s.z), cam.position, 0.9)
 			if s.team != player.team:
 				stats.sunk.append(s.ship_name)
+				if s.last_hit_by == player:
+					tally.kills += 1
+					var by := "torp" if s.last_hit_kind == "torpedo" else ("air" if s.last_hit_kind in ["bomb", "strafe", "air_torpedo"] else "gun")
+					tally[by + "_kills"] = int(tally.get(by + "_kills", 0)) + 1
+					tally.kill_list.append({"cls": s.cls(), "by": by, "name": s.ship_name})
+					if s.cls() in ["bb", "cv", "cvl"]:
+						tally.big_kill = true
+					if s.is_sub():
+						stats.sub_kill = true
 			elif s != player and s.T.get("crew", 0) >= 10:
 				stats.lost_friends = stats.get("lost_friends", [])
 				stats.lost_friends.append(s.ship_name)
 				_launch_rafts(s)
-				if s.last_hit_by == player:
-					tally.kills += 1
-					if s.cls() in ["bb", "cv"]:
-						tally.big_kill = true
-					if s.is_sub():
-						stats.sub_kill = true
 	else:
 		s.sinking += dt
 		var fast := 3.0 if s.mag_blown else 1.0

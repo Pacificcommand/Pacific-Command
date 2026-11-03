@@ -212,6 +212,8 @@ func _step_sq(sq: Dictionary, dt: float) -> void:
 			if sq.timer > per:
 				sq.timer = 0.0
 				sq.launch_left -= 1
+				if home == B.player:
+					B.tally.sorties = int(B.tally.get("sorties", 0)) + 1
 			sq.x = home.x; sq.z = home.z; sq.h = home.h
 			sq.v = home.v
 			sq.alt = 6.0
@@ -400,6 +402,8 @@ func _drop_bombs(sq: Dictionary, tgt: Ship, bomb: float) -> void:
 	var hits := 0
 	# hit chance: ship size, how hard she is turning, and the attackers' nerve under flak
 	var p: float = 0.12 * clampf(tgt.T.get("size_vis", 1.0), 0.5, 2.2) * (0.6 if absf(tgt.rud) > 15.0 else 1.0) * (1.0 - minf(0.5, tgt.aa_power() / 24.0))
+	if sq.home == B.player:
+		p *= 1.0 + Career.mod("strike_acc")
 	for i in sq.n:
 		var lx := randf_range(-tgt.T.L * 0.45, tgt.T.L * 0.45)
 		var lz := randf_range(-tgt.T.B * 0.4, tgt.T.B * 0.4)
@@ -409,6 +413,8 @@ func _drop_bombs(sq: Dictionary, tgt: Ship, bomb: float) -> void:
 			B.fx.boom(w.x, 8.0, w.y, false)
 			B.sfx.play("bomb", Vector2(w.x, w.y), B.cam.position, 0.8)
 			B.after(0.1 * i, func(): B.damage(tgt, lx, lz, bomb, "bomb", sq.home))
+			if sq.home == B.player:
+				B.tally.air_hits = int(B.tally.get("air_hits", 0)) + 1
 		else:
 			var miss := tgt.to_world_xz(lx + randf_range(-60, 60), lz + randf_range(-50, 50) * (1.0 if randf() < 0.5 else -1.0))
 			B.fx.splash(miss.x, miss.y, true)
@@ -433,7 +439,7 @@ func _drop_torps(sq: Dictionary, tgt: Ship, TT: Dictionary) -> void:
 		var a := brg + U.gauss() * deg_to_rad(3.0)
 		var ox: float = sq.x + cos(sq.h) * (i - sq.n / 2.0) * 25.0
 		var oz: float = sq.z + sin(sq.h) * (i - sq.n / 2.0) * 25.0
-		B.torps.append({"x": ox, "z": oz, "h": a, "v": spd, "left": TT.range, "team": sq.team, "owner": sq.home, "dud": randf() < TT.dud, "warned": false, "depth": 3.0})
+		B.torps.append({"x": ox, "z": oz, "h": a, "v": spd, "left": TT.range, "team": sq.team, "owner": sq.home, "dud": randf() < TT.dud, "warned": false, "depth": 3.0, "air": true})
 		B.fx.splash(ox, oz, false)
 	if sq.team == B.player.team or tgt.is_player or B.player.contact(tgt):
 		B.say("%s: %d torpedoes dropped at %s." % [sq.name, sq.n, "us" if tgt.is_player else tgt.ship_name], "good" if sq.team == B.player.team else "bad")
@@ -538,6 +544,8 @@ func _flak(dt: float) -> void:
 		if randf() < kills:
 			tgt.n -= 1
 			tgt.lost_aa = tgt.get("lost_aa", 0) + 1
+			if s == B.player:
+				B.tally.aa_kills = int(B.tally.get("aa_kills", 0)) + 1
 			var ang := randf() * TAU
 			B.fx.boom(tgt.x + cos(ang) * 30.0, tgt.alt, tgt.z + sin(ang) * 30.0, false)
 			B.fx.debris(tgt.x, tgt.alt, tgt.z, 6, 12.0)

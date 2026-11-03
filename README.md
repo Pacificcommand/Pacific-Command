@@ -1,10 +1,19 @@
-# Pacific Command (build 0.14)
+# Pacific Command (build 0.17)
 
 WWII Pacific naval game for PC, made in **Godot 4.7.2**.
 
 **Campaign:** from the main menu, start a campaign in December 1941, August 1942,
-November 1943 or October 1944. Every career starts in a PT boat; rank earned in battle
-unlocks bigger commands, requested in port. The operations map shows the Pacific from
+November 1943 or October 1944. Every career starts in a PT boat. Reputation earned in battle
+brings promotion; each promotion brings a letter from Naval Command offering ships to join
+your force (two PT boats or a submarine at first, up to Iowa and Essex), and unlocks
+bigger commands, requested in port. **In port is your home base:** your ship moored at the
+quay with her sailors hauling stores and ammunition aboard, mopping and sighting the guns;
+the captain and officers stand in a line on the quay, and picking one walks the camera up
+to them with their decorations over their heads. **Medals replace experience:** real WWII
+Navy decorations are awarded automatically for what is done in action (a Bronze Star for
+the gunnery officer's first kill, a Navy and Marine Corps Medal for the damage control
+officer who puts out four fires, a Navy Cross for sinking a battleship), and each one makes
+its holder's department a little better for good. The operations map shows the Pacific from
 Pearl Harbor to Japan: sea zones held by either side, bases, and **groups moving like
 you do** - our convoys, destroyer patrols, task forces and submarines (blue), and the
 Japanese Tokyo Express runs, convoys, task forces, barges and submarines (red, once

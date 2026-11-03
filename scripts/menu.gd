@@ -160,8 +160,14 @@ func _career_test() -> void:
 	var t := {"salvos": 30, "hits": 9, "torps": 5, "torp_hits": 1, "kills": 2, "combat_min": 12.0, "underway_min": 20.0, "fires_out": 2, "holes_fixed": 3, "contacts": 4, "damage_done": 40.0, "crew_loss_frac": 0.2, "saved": 0, "big_kill": false, "summary": "test"}
 	for i in 8:
 		var lines := Career.apply_battle(c, t, "won", 3, 240 + i)
-		print(i, " xp ", c.xp, " rank ", c.rank, " level ", Career.level_for(c.xp), " ", lines)
-	print("gunnery officer level ", Career.officer_level(Career.officer(c, "Gunnery officer").xp), " crew ", Career.training_label(Career.ship(c).training), " medals ", c.medals.size(), " supply ", c.supply)
+		print(i, " rank ", c.rank, " ", lines)
+	print("crew ", Career.training_label(Career.ship(c).training), " medals ", c.medals.size(), " supply ", c.supply)
+	for r in range(1, 9):
+		for y in [1942, 1944]:
+			var offs := []
+			for o in Career.offer_options(r, y):
+				offs.append(Career.describe_offer(o))
+			print("offer rank ", r, " ", y, ": ", " | ".join(offs))
 	get_tree().quit()
 
 

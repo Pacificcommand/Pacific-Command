@@ -58,6 +58,7 @@ func _ready() -> void:
 	speed_i = 0
 	_refresh_top()
 	_refresh_side()
+	_check_offers.call_deferred()
 	_log("Operations map. Click the sea to set a course. Blue: our groups; red: enemy groups our radar, aircraft or friends have found.")
 	# a few groups are already at sea when the campaign opens
 	if C.groups.is_empty():
@@ -67,6 +68,8 @@ func _ready() -> void:
 		if a.begins_with("--ops="):
 			speed_i = 3
 			_test_shot(a.split("=")[1])
+		if a.begins_with("--dock="):
+			_test_dock(a.split("=")[1])
 
 
 ## Older campaign saves get the new fields.
@@ -96,6 +99,49 @@ func _migrate() -> void:
 			C.islands[iid] = {"side": side, "garrison": isl.garrison if side == "ijn" else maxi(1, isl.garrison - 1), "grow": C.day}
 
 
+## Test: go alongside at the nearest friendly port and take a picture (--dock=PNG [--docksel=N] [--frames=N]).
+func _test_dock(path: String) -> void:
+	if _port_here() == "":
+		var best := ""
+		var bd := 1e9
+		for nm in War.BASES:
+			if _base_side(nm) == "us":
+				var b: Dictionary = War.BASES[nm]
+				var d := War.dist_nm(C.lon, C.lat, b.lon, b.lat)
+				if d < bd:
+					bd = d; best = nm
+		C.lon = War.BASES[best].lon; C.lat = War.BASES[best].lat; C.dest = null
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--dockship="):
+			var tid: String = a.split("=")[1]
+			Career.take_command(Game.career, tid, "USS Test", int(C.day))
+			C.ship = tid
+	if "--medals" in OS.get_cmdline_user_args():
+		var c: Dictionary = Game.career
+		var ln := []
+		for id in ["navy_cross", "silver_star", "bronze_star", "bronze_star", "asiatic_pacific"]:
+			Career.award(c, id, int(C.day), ln, "You")
+		for o in c.officers:
+			for id in Career.MEDAL_DEFS:
+				if Career.MEDAL_DEFS[id].who == o.post:
+					Career.award(o, id, int(C.day), ln, o.name)
+					Career.award(o, id, int(C.day), ln, o.name)
+	var selv := -1
+	var frames := 120
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--docksel="):
+			selv = int(a.split("=")[1])
+		if a.begins_with("--frames="):
+			frames = int(a.split("=")[1])
+	await get_tree().process_frame
+	open_dock(selv)
+	for i in frames:
+		await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png(path)
+	print("saved ", path)
+	get_tree().quit()
+
+
 func _test_shot(path: String) -> void:
 	var days := 0.3
 	for a in OS.get_cmdline_user_args():
@@ -113,6 +159,11 @@ func _test_shot(path: String) -> void:
 			_close_card()
 			speed_i = 3
 	speed_i = 0
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--offer="):
+			Game.career.offers = [int(a.split("=")[1])]
+			_close_card()
+			_check_offers()
 	if "--career" in OS.get_cmdline_user_args():
 		add_child(CareerPanel.new())
 		for i in 10:
@@ -274,13 +325,14 @@ func _refresh_side() -> void:
 	for c in side.get_children():
 		c.queue_free()
 	side.add_child(UI.label("OPERATIONS", 11, UI.BRASS))
-	side.add_child(UI.row([UI.button("Career", func(): add_child(CareerPanel.new())), UI.button("Encyclopedia", func(): add_child(EncyclopediaPanel.new())), UI.button("Mail (%d)" % Game.career.get("mail", []).size(), _show_mail), UI.label("%d skill point%s to spend" % [Career.skill_points_left(Game.career), "" if Career.skill_points_left(Game.career) == 1 else "s"], 12, UI.BRASS if Career.skill_points_left(Game.career) > 0 else UI.MUTED)]))
+	side.add_child(UI.row([UI.button("Career", _open_career), UI.button("Encyclopedia", func(): add_child(EncyclopediaPanel.new())), UI.button("Mail (%d)" % Game.career.get("mail", []).size(), _show_mail)]))
 	# squadron
 	if not C.squadron.is_empty():
 		side.add_child(UI.wrap("Squadron: %s." % _describe(C.squadron), 350, 12, Color(0.55, 0.85, 1.0)))
 	var port := _port_here()
 	if port != "":
 		side.add_child(UI.label("In port: %s" % port, 16))
+		side.add_child(UI.big_button("Go to the dock", func(): open_dock()))
 		var cs := Career.ship(Game.career)
 		var repair_days := _repair_days(cs)
 		if repair_days > 0:
@@ -289,7 +341,6 @@ func _refresh_side() -> void:
 		else:
 			side.add_child(UI.label("Ship in good order, crew at full strength.", 12, UI.GREEN))
 		side.add_child(UI.row([UI.button("Request a new command", _request_command), UI.button("Refit (%d supply)" % Game.career.get("supply", 0), _refit_menu)]))
-		side.add_child(UI.button("Recruit ships for the squadron (%d reputation)" % Game.career.reputation, _recruit_menu))
 	# attached to a friendly group
 	if C.attached != "":
 		var ag = _group(C.attached)
@@ -666,6 +717,10 @@ func _sail(hours: float) -> void:
 			speed_i = mini(speed_i, 1)
 			_log("Arrived. %s." % _where().capitalize())
 			_refresh_side()
+			if _port_here() != "":
+				# making port: go alongside, the home base
+				speed_i = 0
+				open_dock()
 
 
 ## Cruising speed of the player and squadron: the slowest ship sets it; small craft push
@@ -1628,6 +1683,78 @@ func _offer_operation(op: Dictionary) -> void:
 	_log("Operation: %s." % op.name)
 	if op.scenario == "":
 		C.war_over = true
+
+
+## A promotion brings a letter from Naval Command offering ships for the fleet; the player picks one.
+func _check_offers() -> void:
+	var c: Dictionary = Game.career
+	# older careers: rank already earned from experience stays, reputation takes over from here
+	Career.check_promotion(c, [])
+	var offers: Array = c.get("offers", [])
+	if offers.is_empty() or card != null:
+		return
+	var rank: int = int(offers[0])
+	var year := War.year_of(int(C.day))
+	var opts := Career.offer_options(rank, year)
+	speed_i = 0
+	Audio.ui("radio", 0.7, "Radio")
+	card = Control.new()
+	card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	card.add_child(UI.backdrop(0.5))
+	var p := UI.panel(22)
+	p.custom_minimum_size.x = 640
+	var v := UI.column(8)
+	v.add_child(UI.label("LETTER FROM COMMANDER IN CHIEF, PACIFIC FLEET · %s" % War.date_str(int(C.day)), 11, UI.BRASS))
+	v.add_child(UI.label("Promoted to %s" % Missions.RANKS[clampi(rank, 0, 8)], 26))
+	v.add_child(UI.wrap("%s %s,\n\nIn recognition of your conduct in command, you are promoted to the rank of %s with effect from this date. The service has asked a great deal of you and your ship's company, and you have given it.\n\nWith the rank comes a larger command. The following are available to join your force; signal your choice and they will report to you at once." % [Missions.RANKS[clampi(rank, 0, 8)], Career.captain_name(c), Missions.RANKS[clampi(rank, 0, 8)]], 600))
+	for opt in opts:
+		var b := UI.big_button("Take %s" % Career.describe_offer(opt), (func(o2): _accept_offer(o2)).bind(opt))
+		v.add_child(b)
+	v.add_child(UI.wrap("Ships that join sail with you on the map and fight under your orders until they are lost.", 600, 12, UI.MUTED))
+	p.add_child(v)
+	card.add_child(p)
+	UI.center(p)
+	add_child(card)
+
+
+func _accept_offer(opt: Array) -> void:
+	var c: Dictionary = Game.career
+	var offers: Array = c.get("offers", [])
+	if not offers.is_empty():
+		offers.pop_front()
+	var joined := []
+	for tid in opt:
+		var nm: String = _free_name(tid)
+		C.squadron.append([tid, nm])
+		joined.append("%s (%s)" % [nm, Data.TYPES[tid].name])
+	_log("Reporting for duty: %s." % ", ".join(joined))
+	_close_card()
+	Game.save_career()
+	_save()
+	_refresh_side()
+	_refresh_top()
+	_check_offers.call_deferred()
+
+
+## Career: in port it is the officers on the quay; at sea the career screen.
+func _open_career() -> void:
+	if _port_here() != "":
+		open_dock(0)
+	else:
+		add_child(CareerPanel.new())
+
+
+## The home base: the ship alongside the quay, the officers, the yard's business.
+func open_dock(select := -1) -> void:
+	var port := _port_here()
+	if port == "" or get_node_or_null("Dock") != null:
+		return
+	speed_i = 0
+	var d := DockPanel.new(self, port)
+	d.name = "Dock"
+	add_child(d)
+	if select != -1:
+		d._select.call_deferred(select)
 
 
 func _close_card() -> void:

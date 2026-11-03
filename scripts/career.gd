@@ -214,6 +214,83 @@ const REFITS := {
 
 const MEDALS := {"navy_cross": "Navy Cross", "silver_star": "Silver Star", "bronze_star": "Bronze Star", "purple_heart": "Purple Heart"}
 
+## Decorations (design doc: Medals). Awarded automatically for what is done in action; each
+## award gives a small, lasting buff to the holder's own work. A second award is a gold star
+## and adds the buff again, up to `max` awards. Draft list, to be refined with Matt.
+## id -> {name, who ("captain" or an officer post), how, buff {mod key: value per award}, max, ribbon [base, stripes...]}
+const MEDAL_DEFS := {
+	# the captain: the ship's whole fight
+	"asiatic_pacific": {"name": "Asiatic-Pacific Campaign Medal", "who": "captain", "how": "Served in action in the Pacific (a bronze star for every five actions).", "buff": {}, "max": 6, "ribbon": [Color(0.86, 0.6, 0.18), Color(0.15, 0.25, 0.55), Color(0.95, 0.95, 0.95), Color(0.72, 0.12, 0.16)]},
+	"bronze_star": {"name": "Bronze Star", "who": "captain", "how": "Led a successful action against a Serious threat or worse.", "buff": {"solution": 0.04}, "max": 3, "ribbon": [Color(0.72, 0.12, 0.16), Color(0.95, 0.95, 0.95), Color(0.15, 0.25, 0.55)]},
+	"silver_star": {"name": "Silver Star", "who": "captain", "how": "Led a successful action against a Severe threat or worse.", "buff": {"agility": 0.04, "solution": 0.03}, "max": 3, "ribbon": [Color(0.2, 0.3, 0.6), Color(0.95, 0.95, 0.95), Color(0.72, 0.12, 0.16)]},
+	"navy_cross": {"name": "Navy Cross", "who": "captain", "how": "Sank a battleship or a carrier.", "buff": {"gun_spread": 0.05, "agility": 0.03}, "max": 2, "ribbon": [Color(0.1, 0.15, 0.4), Color(0.95, 0.95, 0.95)]},
+	"medal_of_honor": {"name": "Medal of Honor", "who": "captain", "how": "Won the action with a third of the crew lost and two or more enemy ships sunk.", "buff": {"gun_spread": 0.06, "agility": 0.06, "dc_rate": 0.06, "survive": 0.2}, "max": 1, "ribbon": [Color(0.45, 0.65, 0.9), Color(0.97, 0.97, 0.97)]},
+	"legion_of_merit": {"name": "Legion of Merit", "who": "captain", "how": "Eight successful missions in command (again at sixteen and twenty-four).", "buff": {"cruise": 0.05, "training": 0.15}, "max": 3, "ribbon": [Color(0.66, 0.1, 0.2), Color(0.95, 0.95, 0.95)]},
+	"navy_dsm": {"name": "Navy Distinguished Service Medal", "who": "captain", "how": "Twenty-five successful missions in command.", "buff": {"map_eyes": 0.15, "radar": 0.05}, "max": 1, "ribbon": [Color(0.12, 0.18, 0.45), Color(0.9, 0.75, 0.2)]},
+	"purple_heart": {"name": "Purple Heart", "who": "captain", "how": "Fought on with a quarter of the crew lost.", "buff": {"survive": 0.1}, "max": 3, "ribbon": [Color(0.42, 0.16, 0.5), Color(0.95, 0.95, 0.95)]},
+	"presidential_unit_citation": {"name": "Presidential Unit Citation", "who": "captain", "how": "The ship won an action against an Extreme threat.", "buff": {"training": 0.2, "fire_fight": 0.05}, "max": 2, "ribbon": [Color(0.15, 0.25, 0.55), Color(0.9, 0.75, 0.2), Color(0.72, 0.12, 0.16)]},
+	# the executive officer: running the ship
+	"xo_commendation": {"name": "Navy Commendation Ribbon", "who": "Executive officer", "how": "Three successful actions as executive officer.", "buff": {"training": 0.1}, "max": 3, "ribbon": [Color(0.12, 0.4, 0.22), Color(0.95, 0.95, 0.95)]},
+	"xo_bronze_star": {"name": "Bronze Star", "who": "Executive officer", "how": "Kept the ship fighting through heavy losses (15% of the crew) to win a Serious action.", "buff": {"dc_rate": 0.04, "fire_fight": 0.04}, "max": 2, "ribbon": [Color(0.72, 0.12, 0.16), Color(0.95, 0.95, 0.95), Color(0.15, 0.25, 0.55)]},
+	"xo_legion_of_merit": {"name": "Legion of Merit", "who": "Executive officer", "how": "Twelve actions as executive officer.", "buff": {"training": 0.15}, "max": 1, "ribbon": [Color(0.66, 0.1, 0.2), Color(0.95, 0.95, 0.95)]},
+	# gunnery
+	"gun_commendation": {"name": "Navy Commendation Ribbon", "who": "Gunnery officer", "how": "Twelve or more shell hits in one action.", "buff": {"gun_spread": 0.03}, "max": 3, "ribbon": [Color(0.12, 0.4, 0.22), Color(0.95, 0.95, 0.95)]},
+	"gun_bronze_star": {"name": "Bronze Star", "who": "Gunnery officer", "how": "Sank an enemy ship by gunfire.", "buff": {"gun_reload": 0.04}, "max": 3, "ribbon": [Color(0.72, 0.12, 0.16), Color(0.95, 0.95, 0.95), Color(0.15, 0.25, 0.55)]},
+	"gun_silver_star": {"name": "Silver Star", "who": "Gunnery officer", "how": "Sank a cruiser or bigger by gunfire.", "buff": {"solution": 0.06}, "max": 2, "ribbon": [Color(0.2, 0.3, 0.6), Color(0.95, 0.95, 0.95), Color(0.72, 0.12, 0.16)]},
+	"gun_navy_cross": {"name": "Navy Cross", "who": "Gunnery officer", "how": "Sank a battleship by gunfire.", "buff": {"gun_spread": 0.06, "long_gun": 0.1}, "max": 1, "ribbon": [Color(0.1, 0.15, 0.4), Color(0.95, 0.95, 0.95)]},
+	# torpedoes
+	"torp_commendation": {"name": "Navy Commendation Ribbon", "who": "Torpedo officer", "how": "Two or more torpedo hits in one action.", "buff": {"torp_reload": 0.05}, "max": 3, "ribbon": [Color(0.12, 0.4, 0.22), Color(0.95, 0.95, 0.95)]},
+	"torp_bronze_star": {"name": "Bronze Star", "who": "Torpedo officer", "how": "Sank an enemy ship with torpedoes.", "buff": {"torp_dud": 0.25}, "max": 2, "ribbon": [Color(0.72, 0.12, 0.16), Color(0.95, 0.95, 0.95), Color(0.15, 0.25, 0.55)]},
+	"torp_navy_cross": {"name": "Navy Cross", "who": "Torpedo officer", "how": "Sank a battleship or a carrier with torpedoes.", "buff": {"torp_reload": 0.12}, "max": 1, "ribbon": [Color(0.1, 0.15, 0.4), Color(0.95, 0.95, 0.95)]},
+	# engineering
+	"eng_commendation": {"name": "Navy Commendation Ribbon", "who": "Engineering officer", "how": "Kept steam up through fifteen minutes or more of action.", "buff": {"speed": 0.02}, "max": 3, "ribbon": [Color(0.12, 0.4, 0.22), Color(0.95, 0.95, 0.95)]},
+	"eng_nmcm": {"name": "Navy and Marine Corps Medal", "who": "Engineering officer", "how": "Brought a sinking ship home (flooding past half of what she can take).", "buff": {"pump": 0.1}, "max": 2, "ribbon": [Color(0.12, 0.18, 0.45), Color(0.9, 0.75, 0.2), Color(0.72, 0.12, 0.16)]},
+	"eng_legion_of_merit": {"name": "Legion of Merit", "who": "Engineering officer", "how": "Fifteen actions as chief engineer.", "buff": {"speed": 0.03, "cruise": 0.05}, "max": 1, "ribbon": [Color(0.66, 0.1, 0.2), Color(0.95, 0.95, 0.95)]},
+	# navigation
+	"nav_commendation": {"name": "Navy Commendation Ribbon", "who": "Navigator", "how": "Three or more enemy torpedoes seen coming and none hit.", "buff": {"agility": 0.04}, "max": 3, "ribbon": [Color(0.12, 0.4, 0.22), Color(0.95, 0.95, 0.95)]},
+	"nav_bronze_star": {"name": "Bronze Star", "who": "Navigator", "how": "Won an action at night.", "buff": {"lookouts": 0.1, "night_gun": 0.05}, "max": 2, "ribbon": [Color(0.72, 0.12, 0.16), Color(0.95, 0.95, 0.95), Color(0.15, 0.25, 0.55)]},
+	"nav_legion_of_merit": {"name": "Legion of Merit", "who": "Navigator", "how": "Fifteen actions as navigator.", "buff": {"map_eyes": 0.1}, "max": 1, "ribbon": [Color(0.66, 0.1, 0.2), Color(0.95, 0.95, 0.95)]},
+	# damage control
+	"dc_commendation": {"name": "Navy Commendation Ribbon", "who": "Damage control officer", "how": "Patched five or more holes in one action.", "buff": {"pump": 0.06}, "max": 3, "ribbon": [Color(0.12, 0.4, 0.22), Color(0.95, 0.95, 0.95)]},
+	"dc_nmcm": {"name": "Navy and Marine Corps Medal", "who": "Damage control officer", "how": "Put out four or more fires in one action.", "buff": {"fire_fight": 0.08}, "max": 3, "ribbon": [Color(0.12, 0.18, 0.45), Color(0.9, 0.75, 0.2), Color(0.72, 0.12, 0.16)]},
+	"dc_silver_star": {"name": "Silver Star", "who": "Damage control officer", "how": "Saved the ship from sinking.", "buff": {"dc_rate": 0.08, "magazine": 0.1}, "max": 2, "ribbon": [Color(0.2, 0.3, 0.6), Color(0.95, 0.95, 0.95), Color(0.72, 0.12, 0.16)]},
+	# the air group
+	"air_medal": {"name": "Air Medal", "who": "Air group commander", "how": "Twelve or more sorties flown in one action.", "buff": {"strike_acc": 0.05}, "max": 3, "ribbon": [Color(0.12, 0.24, 0.6), Color(0.92, 0.6, 0.15)]},
+	"dfc": {"name": "Distinguished Flying Cross", "who": "Air group commander", "how": "Three or more bomb or torpedo hits by the air group in one action.", "buff": {"strike_acc": 0.08}, "max": 2, "ribbon": [Color(0.15, 0.25, 0.55), Color(0.95, 0.95, 0.95), Color(0.72, 0.12, 0.16)]},
+	"air_navy_cross": {"name": "Navy Cross", "who": "Air group commander", "how": "The air group sank a battleship or a carrier.", "buff": {"strike_acc": 0.12}, "max": 1, "ribbon": [Color(0.1, 0.15, 0.4), Color(0.95, 0.95, 0.95)]},
+	# any officer hurt in action
+	"officer_purple_heart": {"name": "Purple Heart", "who": "any", "how": "Wounded in action.", "buff": {}, "max": 3, "ribbon": [Color(0.42, 0.16, 0.5), Color(0.95, 0.95, 0.95)]},
+}
+
+## What each buff key means, for the medal cards.
+const BUFF_LABEL := {
+	"solution": "fire-control solutions build faster", "agility": "the ship turns quicker", "gun_spread": "tighter gunnery", "gun_reload": "guns reload faster",
+	"long_gun": "better gunnery at long range", "night_gun": "better gunnery at night", "torp_reload": "torpedo tubes reload faster", "torp_dud": "fewer torpedo duds",
+	"speed": "more top speed", "cruise": "faster cruising on the map", "pump": "pumps gain on flooding faster", "dc_rate": "holes are patched faster",
+	"fire_fight": "fires go out faster", "magazine": "magazines safer from fire", "survive": "less reputation lost if the ship goes down",
+	"training": "the crew trains faster", "lookouts": "lookouts see further", "map_eyes": "groups spotted further out on the map", "radar": "longer radar reach",
+	"strike_acc": "air strikes hit more often",
+}
+
+## Reputation needed for each rank (index into Missions.RANKS). A promotion never goes back.
+const RANK_REP := [0, 600, 1500, 2800, 4600, 7000, 10000, 14000, 19000]
+
+## Ships Naval Command offers for the fleet at each promotion (index = the new rank): options,
+## each a list of ship types. A class not yet in service is swapped for the nearest older one.
+const OFFERS := [
+	[],
+	[["pt_elco", "pt_elco"], ["gato"]],
+	[["fletcher"], ["buckley", "buckley"], ["benson", "mahan"]],
+	[["fletcher", "fletcher"], ["atlanta"], ["brooklyn"]],
+	[["cleveland"], ["new_orleans"], ["casablanca", "fletcher"]],
+	[["baltimore"], ["independence"], ["texas", "fletcher"]],
+	[["north_carolina"], ["yorktown"], ["south_dakota"]],
+	[["iowa"], ["essex"], ["baltimore", "cleveland", "fletcher"]],
+	[["iowa", "fletcher", "fletcher"], ["essex", "atlanta"], ["iowa", "essex"]],
+]
+const OLDER := {"buckley": "mahan", "fletcher": "benson", "atlanta": "brooklyn", "cleveland": "brooklyn", "casablanca": "northampton", "baltimore": "new_orleans",
+	"independence": "yorktown", "iowa": "south_dakota", "south_dakota": "north_carolina", "essex": "yorktown"}
+
 const DIFFICULTY := {
 	"ensign": {"name": "Ensign (easy)", "retry": true, "rep_loss": 0.5, "pause": -1, "lead": true, "officers_die": false, "ironman": false, "wound": false},
 	"officer": {"name": "Officer (normal)", "retry": false, "rep_loss": 1.0, "pause": -1, "lead": true, "officers_die": false, "ironman": false, "wound": false},
@@ -245,6 +322,14 @@ static func fresh(difficulty := "officer") -> Dictionary:
 	for post in POSTS:
 		c.officers.append(new_officer(post))
 	return c
+
+## The player's name as the captain (made up once and kept).
+static func captain_name(c: Dictionary) -> String:
+	if not c.has("captain") or String(c.captain) == "":
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		c.captain = "%s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()]]
+	return String(c.captain)
 
 static func new_officer(post: String) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
@@ -325,25 +410,24 @@ static func mod(key: String) -> float:
 	if c.is_empty() or not Game.campaign_active():
 		return 0.0
 	var v := 0.0
-	for id in c.skills:
-		var m: Dictionary = SKILLS[id][3]
-		v += m.get(key, 0.0)
 	var s := ship(c)
 	if not s.is_empty():
 		for id in s.refits:
 			v += REFITS[id][5].get(key, 0.0)
-	# officers: each level of the right post adds a little to its own keys
-	var post_keys := {"Gunnery officer": ["gun_spread", "gun_reload", "solution"], "Torpedo officer": ["torp_reload", "torp_spread"], "Engineering officer": ["speed", "pump"],
-		"Damage control officer": ["dc_rate", "pump"], "Navigator": ["agility"], "Executive officer": ["morale"], "Air group commander": ["strike_acc", "aircrew"]}
+	# decorations: the captain's apply to the whole ship, each officer's to his own work
+	v += medal_mod(c.get("medals", []), key)
 	for o in c.officers:
 		if o.dead or o.wounded > 0:
 			continue
-		if post_keys.get(o.post, []).has(key):
-			v += 0.03 * officer_level(o.xp)
-		for id in o.get("skills", []):
-			var sk := officer_skill(o.post, id)
-			if not sk.is_empty():
-				v += sk[3].get(key, 0.0)
+		v += medal_mod(o.get("medals", []), key)
+	return v
+
+static func medal_mod(medals: Array, key: String) -> float:
+	var v := 0.0
+	for m in medals:
+		var d: Dictionary = MEDAL_DEFS.get(m.get("id", ""), {})
+		if not d.is_empty():
+			v += float(d.buff.get(key, 0.0)) * int(m.get("n", 1))
 	return v
 
 ## Crew efficiency factor for the player's ship (training and morale).
@@ -361,35 +445,24 @@ static func crew_factor() -> float:
 # after a battle
 # =====================================================================
 
-## Apply a battle's tallies to officers, crew, captain, rank and medals. Returns a list of lines for the report.
+## Apply a battle's tallies to officers, crew, rank and medals. Returns a list of lines for the report.
 static func apply_battle(c: Dictionary, tally: Dictionary, result: String, level: int, day: int) -> Array:
 	var lines := []
 	var s := ship(c)
 	var diff: Dictionary = DIFFICULTY.get(c.difficulty, DIFFICULTY.officer)
-	# officer XP by post
-	var gains := {
-		"Gunnery officer": tally.get("salvos", 0) * 2 + tally.get("hits", 0) * 6 + tally.get("gun_kills", 0) * 60,
-		"Torpedo officer": tally.get("torps", 0) * 5 + tally.get("torp_hits", 0) * 40 + tally.get("torp_kills", 0) * 80,
-		"Engineering officer": int(tally.get("combat_min", 0.0) * 4) + tally.get("saved", 0) * 80,
-		"Damage control officer": tally.get("fires_out", 0) * 15 + tally.get("holes_fixed", 0) * 10 + tally.get("saved", 0) * 100,
-		"Navigator": int(tally.get("underway_min", 0.0) * 2) + tally.get("contacts", 0) * 8,
-		"Executive officer": tally.get("took_command", 0) * 80 + (40 if result == "won" else 10),
-		"Air group commander": tally.get("sorties", 0) * 4 + tally.get("air_hits", 0) * 25 + tally.get("air_kills", 0) * 80,
-	}
-	var total := 0
+	var won := result == "won"
+	c.actions = int(c.get("actions", 0)) + 1
+	# officers serve the action; the wounded sit this one out
 	for o in c.officers:
 		if o.dead:
 			continue
+		o._sat_out = o.wounded > 0
 		if o.wounded > 0:
 			o.wounded = maxi(0, o.wounded - 1)
 			continue
-		var g: int = gains.get(o.post, 0)
-		var before := officer_level(o.xp)
-		o.xp += g
 		o.battles += 1
-		total += g
-		if officer_level(o.xp) > before:
-			lines.append("%s (%s) is now level %d." % [o.name, o.post, officer_level(o.xp)])
+		if won:
+			o.won = int(o.get("won", 0)) + 1
 	# wounds and deaths
 	var crew_loss_frac: float = tally.get("crew_loss_frac", 0.0)
 	if crew_loss_frac > 0.15:
@@ -403,45 +476,230 @@ static func apply_battle(c: Dictionary, tally: Dictionary, result: String, level
 				else:
 					o.wounded = 2
 					lines.append("%s, %s, was wounded and will miss the next two actions." % [o.name, o.post])
-	# ship and crew
+					award(o, "officer_purple_heart", day, lines, o.name)
+	# the crew still learns their trade by doing it
 	var ship_xp: int = int(tally.get("combat_min", 0.0) * 5) + int(tally.get("damage_done", 0.0) * 2) + tally.get("kills", 0) * 150 + int(tally.get("after_min", 0.0) * 3)
 	if not s.is_empty():
 		s.xp += ship_xp
+		var lbl0 := training_label(s.training)
 		s.training += ship_xp * 0.12 * (1.0 + mod("training"))
 		s.kills += tally.get("kills", 0)
-		var lbl0 := training_label(s.training - ship_xp * 0.12)
 		if training_label(s.training) != lbl0:
 			lines.append("The crew of %s is now rated %s." % [s.name, training_label(s.training)])
-		s.morale = clampf(s.morale + (0.1 if result == "won" else -0.15) - crew_loss_frac * 0.5 + mod("morale") * 0.1, 0.1, 1.0)
-		# losses bring green replacements
+		s.morale = clampf(s.morale + (0.1 if won else -0.15) - crew_loss_frac * 0.5, 0.1, 1.0)
 		if crew_loss_frac > 0.0:
 			s.training = maxf(0.0, s.training * (1.0 - crew_loss_frac * 0.6))
-		total += ship_xp
-	# the captain's cut of everything
-	var captain_xp := int(total * 0.3) + (level * 60 if result == "won" else 0)
-	var old_rank: int = c.rank
-	var old_level := level_for(c.xp)
-	c.xp += captain_xp
-	c.rank = maxi(c.rank, rank_for_xp(c.xp))
-	if c.rank > old_rank:
-		lines.append("Promoted to %s." % Missions.RANKS[c.rank])
-	if level_for(c.xp) > old_level:
-		lines.append("Captain level %d: %d skill point%s to spend." % [level_for(c.xp), skill_points_left(c), "" if skill_points_left(c) == 1 else "s"])
-	c.supply = c.get("supply", 0) + (level * 30 if result == "won" else level * 8)
-	# medals
-	if result == "won":
-		if tally.get("big_kill", false) and not _has_medal(c, "navy_cross"):
-			_medal(c, "navy_cross", day, lines)
-		elif level >= 4 and randf() < 0.5 and _medals_since(c, day) == 0:
-			_medal(c, "silver_star", day, lines)
-		elif level >= 3 and randf() < 0.4 and _medals_since(c, day) == 0:
-			_medal(c, "bronze_star", day, lines)
-	if crew_loss_frac > 0.25 and diff.wound and not _has_medal(c, "purple_heart"):
-		_medal(c, "purple_heart", day, lines)
+	c.supply = c.get("supply", 0) + (level * 30 if won else level * 8)
+	_award_medals(c, tally, result, level, day, lines)
+	# rank follows reputation (the battle has already added this action's)
+	check_promotion(c, lines)
 	c.log.append({"day": day, "text": tally.get("summary", ""), "result": result})
 	if c.log.size() > 300:
 		c.log.pop_front()
 	return lines
+
+
+## Every decoration whose deed was done in this action.
+static func _award_medals(c: Dictionary, tally: Dictionary, result: String, level: int, day: int, lines: Array) -> void:
+	var won := result == "won"
+	var loss: float = tally.get("crew_loss_frac", 0.0)
+	var kills: Array = tally.get("kill_list", [])
+	var big := func(by: String, classes: Array) -> bool:
+		for k in kills:
+			if (by == "" or k.by == by) and k.cls in classes:
+				return true
+		return false
+	var any_by := func(by: String) -> bool:
+		for k in kills:
+			if k.by == by:
+				return true
+		return false
+	var me := "You"
+	# the captain
+	if int(c.actions) % 5 == 1:
+		award(c, "asiatic_pacific", day, lines, me)
+	if won and level >= 3:
+		award(c, "bronze_star", day, lines, me)
+	if won and level >= 4:
+		award(c, "silver_star", day, lines, me)
+	if big.call("", ["bb", "cv", "cvl"]):
+		award(c, "navy_cross", day, lines, me)
+	if won and loss >= 0.33 and kills.size() >= 2:
+		award(c, "medal_of_honor", day, lines, me)
+	if won and int(c.get("won", 0)) > 0 and int(c.won) % 8 == 0:
+		award(c, "legion_of_merit", day, lines, me)
+	if won and int(c.get("won", 0)) == 25:
+		award(c, "navy_dsm", day, lines, me)
+	if loss >= 0.25:
+		award(c, "purple_heart", day, lines, me)
+	if won and level >= 5:
+		award(c, "presidential_unit_citation", day, lines, me)
+	# the officers, each for his own part
+	for o in c.officers:
+		if o.dead or o.get("_sat_out", false):
+			continue
+		match String(o.post):
+			"Executive officer":
+				if won and int(o.get("won", 0)) % 3 == 0:
+					award(o, "xo_commendation", day, lines, o.name)
+				if won and level >= 3 and loss >= 0.15:
+					award(o, "xo_bronze_star", day, lines, o.name)
+				if int(o.battles) == 12:
+					award(o, "xo_legion_of_merit", day, lines, o.name)
+			"Gunnery officer":
+				if int(tally.get("hits", 0)) >= 12:
+					award(o, "gun_commendation", day, lines, o.name)
+				if any_by.call("gun"):
+					award(o, "gun_bronze_star", day, lines, o.name)
+				if big.call("gun", ["ca", "cl", "bb", "cv", "cvl"]):
+					award(o, "gun_silver_star", day, lines, o.name)
+				if big.call("gun", ["bb"]):
+					award(o, "gun_navy_cross", day, lines, o.name)
+			"Torpedo officer":
+				if int(tally.get("torp_hits", 0)) >= 2:
+					award(o, "torp_commendation", day, lines, o.name)
+				if any_by.call("torp"):
+					award(o, "torp_bronze_star", day, lines, o.name)
+				if big.call("torp", ["bb", "cv", "cvl"]):
+					award(o, "torp_navy_cross", day, lines, o.name)
+			"Engineering officer":
+				if float(tally.get("combat_min", 0.0)) >= 15.0:
+					award(o, "eng_commendation", day, lines, o.name)
+				if int(tally.get("saved", 0)) > 0:
+					award(o, "eng_nmcm", day, lines, o.name)
+				if int(o.battles) == 15:
+					award(o, "eng_legion_of_merit", day, lines, o.name)
+			"Navigator":
+				if int(tally.get("torps_seen", 0)) >= 3 and int(tally.get("torp_hits_taken", 0)) == 0:
+					award(o, "nav_commendation", day, lines, o.name)
+				if won and tally.get("night", false):
+					award(o, "nav_bronze_star", day, lines, o.name)
+				if int(o.battles) == 15:
+					award(o, "nav_legion_of_merit", day, lines, o.name)
+			"Damage control officer":
+				if int(tally.get("holes_fixed", 0)) >= 5:
+					award(o, "dc_commendation", day, lines, o.name)
+				if int(tally.get("fires_out", 0)) >= 4:
+					award(o, "dc_nmcm", day, lines, o.name)
+				if int(tally.get("saved", 0)) > 0:
+					award(o, "dc_silver_star", day, lines, o.name)
+			"Air group commander":
+				if int(tally.get("sorties", 0)) >= 12:
+					award(o, "air_medal", day, lines, o.name)
+				if int(tally.get("air_hits", 0)) >= 3:
+					award(o, "dfc", day, lines, o.name)
+				if big.call("air", ["bb", "cv", "cvl"]):
+					award(o, "air_navy_cross", day, lines, o.name)
+
+
+## Pin a decoration on someone (the career for the captain, or an officer). A repeat award is a
+## gold star in lieu of a second medal, up to the medal's maximum.
+static func award(holder: Dictionary, id: String, day: int, lines: Array, who: String) -> void:
+	var d: Dictionary = MEDAL_DEFS.get(id, {})
+	if d.is_empty():
+		return
+	if not holder.has("medals"):
+		holder.medals = []
+	for m in holder.medals:
+		if m.get("id", "") == id:
+			if int(m.get("n", 1)) >= int(d.max):
+				return
+			m.n = int(m.get("n", 1)) + 1
+			m.day = day
+			lines.append("%s: a gold star in lieu of a second %s." % [who, d.name] if m.n == 2 else "%s: %s, award number %d." % [who, d.name, m.n])
+			return
+	holder.medals.append({"id": id, "name": d.name, "day": day, "n": 1})
+	lines.append(("You are awarded the %s." % d.name) if who == "You" else ("%s is awarded the %s." % [who, d.name]))
+
+
+## One line for a medal card: what it was for and what it does now.
+static func medal_buff_text(m: Dictionary) -> String:
+	var d: Dictionary = MEDAL_DEFS.get(m.get("id", ""), {})
+	if d.is_empty():
+		return ""
+	var n := int(m.get("n", 1))
+	var parts := []
+	for k in d.buff:
+		parts.append("%s (+%d%%)" % [BUFF_LABEL.get(k, k), int(round(float(d.buff[k]) * n * 100.0))])
+	var effect := ", ".join(parts)
+	if effect == "":
+		effect = "a mark of honour"
+	return "%s %s" % [d.how, ("Now: " + effect + ".") if not parts.is_empty() else ""]
+
+
+static func medal_ribbon(id: String) -> Array:
+	var d: Dictionary = MEDAL_DEFS.get(id, {})
+	return d.get("ribbon", [Color(0.5, 0.5, 0.5), Color(0.9, 0.85, 0.3)])
+
+
+# ---------- rank from reputation; Naval Command's letters ----------
+
+static func rank_for_rep(rep: int) -> int:
+	var r := 0
+	for i in RANK_REP.size():
+		if rep >= RANK_REP[i]:
+			r = i
+	return r
+
+## Promote when reputation has reached the next rank; each promotion queues a letter with ships to choose from.
+static func check_promotion(c: Dictionary, lines: Array) -> void:
+	var r := rank_for_rep(int(c.get("reputation", 0)))
+	while int(c.rank) < r:
+		c.rank = int(c.rank) + 1
+		lines.append("Promoted to %s." % Missions.RANKS[clampi(int(c.rank), 0, Missions.RANKS.size() - 1)])
+		if not c.has("offers"):
+			c.offers = []
+		c.offers.append(int(c.rank))
+
+## The options in a promotion letter for the given rank and year: lists of ship types in service.
+static func offer_options(rank: int, year: int) -> Array:
+	var out := []
+	for opt in OFFERS[clampi(rank, 0, OFFERS.size() - 1)]:
+		var o := []
+		for tid in opt:
+			o.append(in_service(tid, year))
+		out.append(o)
+	return out
+
+## "two Fletcher-class destroyers and an Atlanta-class AA cruiser" for a letter's option.
+static func describe_offer(opt: Array) -> String:
+	var counts := {}
+	var order := []
+	for tid in opt:
+		if not counts.has(tid):
+			order.append(tid)
+		counts[tid] = int(counts.get(tid, 0)) + 1
+	var words := ["", "a", "two", "three", "four"]
+	var parts := []
+	for tid in order:
+		var lbl: String = String(Data.TYPES[tid].name)
+		for it in Missions.SUPPORT:
+			if it[0] == tid:
+				lbl = it[1]
+		var n: int = counts[tid]
+		if n > 1:
+			lbl += "s"
+		var art: String = words[mini(n, 4)]
+		if n == 1 and lbl.substr(0, 1).to_lower() in ["a", "e", "i", "o", "u"]:
+			art = "an"
+		if lbl.begins_with("USS"):
+			parts.append(lbl)
+			continue
+		parts.append("%s %s" % [art, lbl])
+	return " and ".join(parts)
+
+static func in_service(tid: String, year: int) -> String:
+	var t := tid
+	for i in 6:
+		var y := 1941
+		for it in Missions.SUPPORT:
+			if it[0] == t:
+				y = it[3]
+		if y <= year or not OLDER.has(t):
+			return t
+		t = OLDER[t]
+	return t
+
 
 static func _medals_since(c: Dictionary, day: int) -> int:
 	var n := 0

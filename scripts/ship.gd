@@ -83,6 +83,7 @@ var protect := false         # a friendly ship the mission is about (convoy esco
 var rescued := false         # survivors picked up (rafts)
 var aground := false
 var last_hit_by: Ship = null
+var last_hit_kind := ""
 var tactic := ""             # current solo tactic
 var tactic_until := 0.0
 var zig := 0.0
