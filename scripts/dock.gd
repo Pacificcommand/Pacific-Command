@@ -481,7 +481,7 @@ func _figure(look: Dictionary) -> Dictionary:
 		hip.position = Vector3(0, 0.78, 0.12 * s)
 		n.add_child(hip)
 		_capsule(0.1, 0.72, Vector3(0, -0.36, 0), pants, hip)
-		_box(Vector3(0.24, 0.1, 0.14), Vector3(0.05, -0.74, 0), Color(0.08, 0.07, 0.06), hip)
+		_box(Vector3(0.24, 0.1, 0.14), Vector3(0.05, -0.74, 0), look.get("shoes", Color(0.08, 0.07, 0.06)), hip)
 		parts["leg%d" % s] = hip
 	var body := Node3D.new()
 	n.add_child(body)
@@ -496,6 +496,8 @@ func _figure(look: Dictionary) -> Dictionary:
 		_capsule(0.075, 0.6, Vector3(0, -0.28, 0), shirt, sh)
 		_sphere(0.075, Vector3(0, -0.6, 0), skin, sh)
 		parts["arm%d" % s] = sh
+	if look.has("uniform"):
+		_uniform(String(look.uniform), look, parts)
 	var head := Node3D.new()
 	head.position = Vector3(0, 1.72, 0)
 	body.add_child(head)
@@ -515,6 +517,78 @@ func _figure(look: Dictionary) -> Dictionary:
 	return {"node": n, "parts": parts, "prop": prop, "ph": randf() * TAU}
 
 
+## Low-detail uniform touches on the torso and arms (the figure faces +x, its right is +z).
+## style: "khaki" officers' working khakis, "coveralls", "flight" (leather jacket and Mae West),
+## "kapok" (khakis under a grey life jacket); extras by look: "rank" (silver bars or eagle),
+## "ribbons" (colours for a small rack over the left pocket), "gasbag", "pencils".
+func _uniform(style: String, look: Dictionary, parts: Dictionary) -> void:
+	var body: Node3D = parts.body
+	var shirt: Color = look.get("shirt", KHAKI)
+	var dark := shirt.darkened(0.22)
+	var silver := Color(0.82, 0.84, 0.86)
+	var brass := Color(0.9, 0.72, 0.25)
+	# rolled sleeves: a cuff band above each hand
+	for s in [-1, 1]:
+		_cyl(0.082, 0.06, Vector3(0, -0.47, 0), shirt.darkened(0.12), parts["arm%d" % s])
+	match style:
+		"khaki", "kapok":
+			# collar points, a black tie, two breast pockets with flaps, a belt with a brass buckle
+			for s in [-1, 1]:
+				var cp := _box(Vector3(0.03, 0.09, 0.1), Vector3(0.2, 1.47, 0.075 * s), dark, body)
+				cp.rotation.x = 0.5 * s
+				if look.get("rank", "") != "":
+					var ins := _box(Vector3(0.02, 0.025, 0.04 if look.rank == "eagle" else 0.022), Vector3(0.215, 1.45, 0.085 * s), silver, body)
+					ins.rotation.x = 0.5 * s
+			_box(Vector3(0.02, 0.3, 0.05), Vector3(0.245, 1.28, 0), Color(0.06, 0.06, 0.07), body)
+			_box(Vector3(0.022, 0.05, 0.06), Vector3(0.247, 1.42, 0), Color(0.06, 0.06, 0.07), body)
+			for s in [-1, 1]:
+				_box(Vector3(0.025, 0.11, 0.1), Vector3(0.232, 1.3, 0.12 * s), shirt.darkened(0.06), body)
+				_box(Vector3(0.032, 0.035, 0.11), Vector3(0.236, 1.355, 0.12 * s), dark, body)
+			_cyl(0.247, 0.055, Vector3(0, 0.9, 0), look.get("pants", KHAKI_D).darkened(0.25), body)
+			_box(Vector3(0.025, 0.06, 0.07), Vector3(0.25, 0.9, 0), brass, body)
+			if style == "kapok":
+				# the grey kapok life jacket over the shirt, open at the front
+				var kap := _cyl(0.275, 0.4, Vector3(-0.03, 1.2, 0), Color(0.42, 0.46, 0.44), body)
+				kap.scale = Vector3(1.0, 1.0, 1.0)
+				for yy in [1.08, 1.3]:
+					_box(Vector3(0.03, 0.035, 0.14), Vector3(0.245, yy, 0), Color(0.3, 0.33, 0.32), body)
+		"coveralls":
+			# zip down the front, a chest pocket, a grease smudge, knee patches
+			_box(Vector3(0.015, 0.6, 0.025), Vector3(0.245, 1.12, 0), Color(0.72, 0.74, 0.76), body)
+			_box(Vector3(0.025, 0.12, 0.11), Vector3(0.232, 1.3, -0.12), shirt.darkened(0.12), body)
+			var smudge := _sphere(0.045, Vector3(0.235, 1.02, 0.11), shirt.darkened(0.45), body)
+			smudge.scale = Vector3(0.2, 0.6, 1.0)
+			for s in [-1, 1]:
+				_box(Vector3(0.03, 0.12, 0.13), Vector3(0.09, -0.38, 0), shirt.darkened(0.18), parts["leg%d" % s])
+		"flight":
+			# leather jacket with a fleece collar, the yellow Mae West, a squadron patch
+			_cyl(0.21, 0.09, Vector3(0, 1.47, 0), Color(0.86, 0.8, 0.66), body)
+			_box(Vector3(0.015, 0.55, 0.02), Vector3(0.247, 1.14, 0), Color(0.25, 0.17, 0.1), body)
+			for s in [-1, 1]:
+				_box(Vector3(0.07, 0.24, 0.13), Vector3(0.225, 1.28, 0.115 * s), Color(0.96, 0.78, 0.15), body)
+			_cyl(0.25, 0.06, Vector3(0, 1.15, 0), Color(0.9, 0.72, 0.13), body)
+			var patch := _cyl(0.045, 0.02, Vector3(0.0, 1.22, -0.25), Color(0.2, 0.3, 0.65), body)
+			patch.rotation.x = PI / 2.0
+	# medal ribbons over the left breast pocket: the holder's real decorations
+	var rib: Array = look.get("ribbons", [])
+	for i in mini(rib.size(), 6):
+		var cols: Array = rib[i]
+		var row := int(i / 3)
+		var col_i := i % 3
+		var cz := -0.12 + (col_i - 1) * 0.045
+		_box(Vector3(0.012, 0.022, 0.042), Vector3(0.247, 1.405 + row * 0.026, cz), cols[0], body)
+		if cols.size() > 1:
+			_box(Vector3(0.014, 0.022, 0.01), Vector3(0.248, 1.405 + row * 0.026, cz), cols[1], body)
+	if look.get("gasbag", false):
+		# gas mask bag on a strap over the right shoulder
+		_box(Vector3(0.14, 0.16, 0.09), Vector3(0.08, 0.98, -0.29), Color(0.38, 0.4, 0.28), body)
+		var strap := _box(Vector3(0.02, 0.7, 0.04), Vector3(0.2, 1.2, 0.0), Color(0.34, 0.36, 0.25), body)
+		strap.rotation.x = -0.55
+	if look.get("pencils", false):
+		for k in 2:
+			_cyl(0.008, 0.09, Vector3(0.238, 1.38, 0.1 + k * 0.025), Color(0.95, 0.8, 0.2) if k == 0 else Color(0.2, 0.3, 0.6), body)
+
+
 func _hat(kind: String, col: Color, head: Node3D) -> void:
 	match kind:
 		"dixie":
@@ -525,6 +599,9 @@ func _hat(kind: String, col: Color, head: Node3D) -> void:
 			_cyl(0.25, 0.12, Vector3(0, 0.19, 0), Color(0.1, 0.1, 0.12), head)
 			_box(Vector3(0.18, 0.03, 0.34), Vector3(0.26, 0.15, 0), Color(0.08, 0.08, 0.08), head)
 			_sphere(0.05, Vector3(0.29, 0.22, 0), Color(0.95, 0.78, 0.25), head)
+			if col.v > 0.9:
+				# a commander's "scrambled eggs": gold oak leaves on the visor
+				_box(Vector3(0.12, 0.012, 0.3), Vector3(0.29, 0.168, 0), Color(0.92, 0.74, 0.22), head)
 		"garrison":
 			_box(Vector3(0.44, 0.12, 0.22), Vector3(0, 0.24, 0), col, head)
 		"helmet", "dc_helmet":
@@ -801,15 +878,16 @@ func _along(pts: Array, k: float) -> Vector3:
 const KHAKI := Color(0.6, 0.54, 0.38)
 const KHAKI_D := Color(0.5, 0.44, 0.3)
 const LOOKS := {
-	"captain": {"shirt": KHAKI, "pants": KHAKI_D, "hat": "officer", "hat_col": Color(0.98, 0.98, 0.96), "prop": "binoculars", "scale": 1.06},
-	"Executive officer": {"shirt": KHAKI, "pants": KHAKI_D, "hat": "garrison", "hat_col": KHAKI_D, "prop": "clipboard"},
-	"Gunnery officer": {"shirt": KHAKI, "pants": KHAKI_D, "hat": "helmet", "hat_col": Color(0.42, 0.45, 0.46), "prop": "phones"},
-	"Torpedo officer": {"shirt": KHAKI, "pants": KHAKI_D, "hat": "ballcap", "hat_col": Color(0.14, 0.18, 0.32), "prop": "torpedo"},
-	"Engineering officer": {"shirt": Color(0.3, 0.4, 0.58), "pants": Color(0.3, 0.4, 0.58), "hat": "garrison", "hat_col": KHAKI_D, "prop": "wrench"},
-	"Navigator": {"shirt": KHAKI, "pants": KHAKI_D, "hat": "officer", "hat_col": KHAKI, "prop": "chart"},
-	"Damage control officer": {"shirt": KHAKI, "pants": KHAKI_D, "hat": "dc_helmet", "hat_col": Color(0.92, 0.92, 0.9), "prop": "axe"},
-	"Air group commander": {"shirt": Color(0.42, 0.28, 0.17), "pants": KHAKI_D, "hat": "flight", "hat_col": Color(0.36, 0.24, 0.15), "prop": ""},
+	"captain": {"shirt": KHAKI, "pants": KHAKI_D, "hat": "officer", "hat_col": Color(0.98, 0.98, 0.96), "prop": "binoculars", "scale": 1.06, "uniform": "khaki", "rank": "eagle", "shoes": Color(0.3, 0.18, 0.1)},
+	"Executive officer": {"shirt": KHAKI, "pants": KHAKI_D, "hat": "garrison", "hat_col": KHAKI_D, "prop": "clipboard", "uniform": "khaki", "rank": "bars", "shoes": Color(0.3, 0.18, 0.1)},
+	"Gunnery officer": {"shirt": KHAKI, "pants": KHAKI_D, "hat": "helmet", "hat_col": Color(0.42, 0.45, 0.46), "prop": "phones", "uniform": "kapok", "rank": "bars", "shoes": Color(0.3, 0.18, 0.1)},
+	"Torpedo officer": {"shirt": KHAKI, "pants": KHAKI_D, "hat": "ballcap", "hat_col": Color(0.14, 0.18, 0.32), "prop": "torpedo", "uniform": "khaki", "rank": "bars", "shoes": Color(0.3, 0.18, 0.1)},
+	"Engineering officer": {"shirt": Color(0.3, 0.4, 0.58), "pants": Color(0.3, 0.4, 0.58), "hat": "garrison", "hat_col": KHAKI_D, "prop": "wrench", "uniform": "coveralls"},
+	"Navigator": {"shirt": KHAKI, "pants": KHAKI_D, "hat": "officer", "hat_col": KHAKI, "prop": "chart", "uniform": "khaki", "rank": "bars", "pencils": true, "shoes": Color(0.3, 0.18, 0.1)},
+	"Damage control officer": {"shirt": KHAKI, "pants": KHAKI_D, "hat": "dc_helmet", "hat_col": Color(0.92, 0.92, 0.9), "prop": "axe", "uniform": "khaki", "rank": "bars", "gasbag": true, "shoes": Color(0.3, 0.18, 0.1)},
+	"Air group commander": {"shirt": Color(0.42, 0.28, 0.17), "pants": KHAKI_D, "hat": "flight", "hat_col": Color(0.36, 0.24, 0.15), "prop": "", "uniform": "flight", "shoes": Color(0.22, 0.14, 0.08)},
 }
+
 
 
 ## Officers serving now (the air group post only on carriers).
@@ -832,6 +910,11 @@ func _build_lineup() -> void:
 		var key: String = "captain" if typeof(who) == TYPE_STRING else String(who.post)
 		var look: Dictionary = LOOKS.get(key, LOOKS["Executive officer"]).duplicate()
 		look.skin = SKIN[(i * 3 + 1) % SKIN.size()]
+		var meds: Array = Game.career.get("medals", []) if key == "captain" else (who as Dictionary).get("medals", [])
+		var rib := []
+		for m in meds:
+			rib.append(Career.medal_ribbon(String(m.get("id", ""))))
+		look.ribbons = rib
 		var f := _figure(look)
 		var pos := Vector3(x0 + i * gap, QUAY_Y, quay_z - 5.5)
 		(f.node as Node3D).position = pos
