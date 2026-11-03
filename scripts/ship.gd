@@ -85,6 +85,8 @@ var aground := false
 var last_hit_by: Ship = null
 var last_hit_kind := ""
 var tactic := ""             # current solo tactic
+var park: Array = []         # parked deck aircraft: {node, lx, ly, lz} (ship local, bow +x, stbd +z)
+var floats: Array = []       # floatplanes on the catapults, same shape
 var tactic_until := 0.0
 var zig := 0.0
 var zig_t := 0.0
@@ -161,6 +163,21 @@ func load_model(scheme: String) -> void:
 				m.deck_y = rel.origin.y + bottom
 	for t in torps:
 		t.node = parts.get(t.g)
+	# aircraft parked on deck (Park1..) and floatplanes on their catapults (Float1..): the air
+	# war hides them one by one as planes take off and shows them again as they come back
+	park.clear(); floats.clear()
+	var names := parts.keys()
+	names.sort_custom(func(a, b): return String(a).naturalnocasecmp_to(String(b)) < 0)
+	for nm in names:
+		var key := String(nm)
+		if key.begins_with("Park") or key.begins_with("Float"):
+			var nd: Node3D = parts[nm]
+			var rel: Transform3D = model.global_transform.affine_inverse() * nd.global_transform
+			var e := {"node": nd, "lx": -rel.origin.z, "ly": rel.origin.y, "lz": rel.origin.x}
+			if key.begins_with("Park"):
+				park.append(e)
+			else:
+				floats.append(e)
 	_dead_mat = StandardMaterial3D.new()
 	_dead_mat.albedo_color = Color(0.05, 0.05, 0.05, 0.6)
 	_dead_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA

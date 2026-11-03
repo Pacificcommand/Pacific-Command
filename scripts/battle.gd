@@ -1654,7 +1654,10 @@ func _draw_shells() -> void:
 		var main: bool = sh.get("main", true)
 		var tail := clampf(camst.h * 0.05, 6.0, 120.0)
 		var col: Color
-		if sh.team == "us":
+		if sh.salvo.shooter == player:
+			# your own shells are orange so you can follow them among the friendlies' fire
+			col = Color(1.0, 0.6, 0.15) if main else Color(0.85, 0.42, 0.1)
+		elif sh.team == "us":
 			col = Color(1.0, 0.92, 0.7) if main else Color(0.8, 0.52, 0.28)
 		else:
 			col = Color(1.0, 0.6, 0.4) if main else Color(0.75, 0.38, 0.25)

@@ -760,14 +760,24 @@ def _crane(c, x, y, z, h=9.0, reach=8.0, side=1):
 def _catapult(c, x, y, z, L=20.0, angle=0.0):
     catapult(c['S'], c['P'], x, y, z, L, angle)
 def _floatplane(c, x, y, z, heading=0.0, twin=False, span=11.0):
-    floatplane(c['S'], c['P'], x, y, z, heading, span=span, twin_float=twin)
+    # each floatplane is its own node (Float1, Float2...) so the game can hide it when it is away
+    c['floats'] = c.get('floats', 0) + 1
+    G = Builder(c['M'], 'Float%d' % c['floats'], c['P']['plane'], pivot=(x, y, z))
+    floatplane(G, c['P'], x, y, z, heading, span=span, twin_float=twin)
 def _aircraft(c, x, y, z, heading=0.0, folded=False, span=12.0):
     aircraft(c['S'], c['P'], x, y, z, heading, span=span, folded=folded)
-def _deck_park(c, x0, x1, y, cols, spacing=11.0, heading=0.0, folded=True):
-    """Rows of folded aircraft parked between x0 and x1 (x1 > x0)."""
+PARK_MAX = 10
+def _deck_park(c, x0, x1, y, cols, spacing=14.0, heading=0.0, folded=True):
+    """A deck park of folded aircraft between x0 and x1 (x1 > x0), stern rows first. Each plane
+    is its own node (Park1, Park2...) so the game can take them off the deck one by one; at most
+    PARK_MAX per ship, the rest are below in the hangar."""
     for x in np.arange(x0, x1, spacing):
         for z in cols:
-            aircraft(c['S'], c['P'], x, y, z, heading, span=12.0, folded=folded)
+            if c.get('parked', 0) >= PARK_MAX:
+                return
+            c['parked'] = c.get('parked', 0) + 1
+            G = Builder(c['M'], 'Park%d' % c['parked'], c['P']['plane'], pivot=(x, y, z))
+            aircraft(G, c['P'], x, y, z, heading, span=12.0, folded=folded)
 def _flight_deck(c, x_front, x_back, half, y, thick=1.2, elevators=(), nose=4.0, round_down=6.0):
     flight_deck(c['S'], c['P'], x_front, x_back, half, y, thick, round_down, nose, elevators=elevators, hull_width=c['hull'].width)
 def _island(c, x, y, half, L, levels=3, funnel_h=9.0, z=None, funnel=True):

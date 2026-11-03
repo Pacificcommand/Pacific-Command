@@ -17,6 +17,7 @@ var _cache := {}                # model path -> PackedScene
 var aa_mode := "self"           # player's AA priority: self, carrier, bombers
 
 const ALT_CRUISE := 170.0
+const ALT_FORM := 120.0         # where a launching squadron forms up
 const ALT_LOW := 35.0
 
 
@@ -54,7 +55,8 @@ func _new_sq(home: Ship, type: String, n: int, state: String) -> Dictionary:
 	var A: Dictionary = Data.AIRCRAFT[type]
 	var sq := {"id": _id, "team": home.team, "type": type, "kind": A.kind, "n": n, "n0": n, "x": home.x, "z": home.z, "h": home.h, "alt": 0.0,
 		"v": A.speed * Data.KN, "state": state, "home": home, "target": null, "aim": Vector2(home.x, home.z), "node": null, "timer": 0.0,
-		"launch_left": 0, "aloft_t": 0.0, "attacked": false, "rearm": 0.0, "hits": 0, "name": "%s squadron %d" % [A.name, _id], "orbit": 0.0, "aim_update_t": -99.0, "warned": false}
+		"launch_left": 0, "aloft_t": 0.0, "attacked": false, "rearm": 0.0, "hits": 0, "name": "%s squadron %d" % [A.name, _id], "orbit": 0.0, "aim_update_t": -99.0, "warned": false,
+		"solos": [], "landed": 0, "show_n": -1}
 	sqs.append(sq)
 	return sq
 
@@ -117,7 +119,11 @@ func _launch(sq: Dictionary, state: String, target: Ship, aim: Vector2) -> void:
 	sq.aim = aim
 	sq.launch_left = sq.n
 	sq.timer = 0.0
-	sq.x = home.x; sq.z = home.z; sq.h = home.h; sq.alt = 2.0
+	sq.landed = 0
+	sq.show_n = 0
+	# the squadron forms up ahead of the ship while the planes come off the deck one by one
+	var f0 := U.fwd(home.h)
+	sq.x = home.x + f0.x * 900.0; sq.z = home.z + f0.y * 900.0; sq.h = home.h; sq.alt = ALT_FORM
 	sq.v = home.v
 	sq.attacked = false
 	sq.aloft_t = 0.0
@@ -138,6 +144,7 @@ func step(dt: float) -> void:
 				sq.rearm = maxf(0.0, sq.rearm - dt * k)
 			continue
 		_step_sq(sq, dt)
+	_sync_decks()
 	_radar_warnings()
 	_flak(dt)
 	_dogfights(dt)
@@ -204,21 +211,27 @@ func _step_sq(sq: Dictionary, dt: float) -> void:
 	var want_alt: float = ALT_CRUISE
 	match sq.state:
 		"launching":
-			# planes take off one by one down the deck; the squadron forms up ahead of the ship
+			# planes take off one by one down the deck (or off the catapult) and fly up to the
+			# squadron forming ahead of the ship
 			if not home.alive:
 				_lose(sq); return
+			var carrier := home.T.has("aircraft")
 			sq.timer += dt * (0.5 + 0.5 * home.mod_health("deck"))
-			var per := 6.0 if home.T.has("aircraft") else 20.0
-			if sq.timer > per:
+			var per := 3.0 if carrier else 20.0
+			# two planes can be rolling at once on a carrier deck; a catapult takes one
+			if sq.launch_left > 0 and sq.timer > per and _deck_busy(home, ["roll", "cat"]) < (3 if carrier else 1):
 				sq.timer = 0.0
 				sq.launch_left -= 1
-				if home == B.player:
-					B.tally.sorties = int(B.tally.get("sorties", 0)) + 1
-			sq.x = home.x; sq.z = home.z; sq.h = home.h
+				_solo_takeoff(sq, carrier)
+			# the rendezvous point rides 900 m ahead of the ship
+			var f0 := U.fwd(home.h)
+			sq.x = home.x + f0.x * 900.0; sq.z = home.z + f0.y * 900.0; sq.h = home.h
+			sq.alt = ALT_FORM
 			sq.v = home.v
-			sq.alt = 6.0
-			if sq.launch_left <= 0:
+			_step_solos(sq, dt, spd)
+			if sq.launch_left <= 0 and sq.solos.is_empty():
 				sq.state = sq.next
+				sq.show_n = -1
 				sq.v = spd
 				sq.launched_t = B.t
 				if home.is_player:
@@ -278,19 +291,33 @@ func _step_sq(sq: Dictionary, dt: float) -> void:
 				sq.state = "landing"
 				sq.timer = 0.0
 		"landing":
-			sq.x = home.x; sq.z = home.z; sq.h = home.h; sq.v = home.v
-			sq.alt = 8.0
-			sq.timer += dt * (0.3 + 0.7 * home.mod_health("deck")) if home.T.has("aircraft") else dt * 0.5
-			if sq.timer > 6.0 * sq.n:
+			# the squadron circles astern while the planes peel off and land one at a time
+			var carrier := home.T.has("aircraft")
+			var f0 := U.fwd(home.h)
+			var wx: float = home.x - f0.x * 1100.0
+			var wz: float = home.z - f0.y * 1100.0
+			var dh := U.hyp(wx - sq.x, wz - sq.z)
+			want_h = U.bearing(sq.x, sq.z, wx, wz) + (deg_to_rad(70.0) if dh < 500.0 else 0.0)
+			want_alt = ALT_FORM * 0.7
+			sq.v = spd * 0.6
+			var queued: int = sq.n - sq.landed - sq.solos.size()
+			sq.show_n = maxi(queued, 0)
+			sq.timer += dt * (0.3 + 0.7 * home.mod_health("deck")) if carrier else dt * 0.5
+			var per := 5.0 if carrier else 12.0
+			# one plane in the groove at a time, the deck clear before the next comes down
+			if queued > 0 and sq.timer > per and dh < 700.0 and _deck_busy(home, ["rollout", "taxi"]) == 0 and _deck_busy(home, ["approach"]) < 1:
+				sq.timer = 0.0
+				_solo_land(sq, carrier)
+			_step_solos(sq, dt, spd)
+			if sq.landed >= sq.n and sq.solos.is_empty():
 				sq.state = "ready"
-				sq.rearm = 240.0 if home.T.has("aircraft") else 400.0
+				sq.show_n = -1
+				sq.rearm = 240.0 if carrier else 400.0
 				if sq.node:
 					sq.node.queue_free(); sq.node = null
 				if home.is_player:
 					B.say("%s recovered: %d of %d planes back aboard." % [sq.name, sq.n, sq.n0], "good")
 				return
-			_place_node(sq)
-			return
 		"cap":
 			sq.v = spd * 0.8
 			var intr = _nearest_enemy_sq(sq, 7000.0, ["dive", "torpedo", "fighter"])
@@ -667,6 +694,7 @@ func _lose(sq: Dictionary) -> void:
 	if sq.node != null and is_instance_valid(sq.node):
 		sq.node.queue_free()
 	sq.node = null
+	_clear_solos(sq)
 
 
 # =====================================================================
@@ -745,11 +773,195 @@ func _place_node(sq: Dictionary) -> void:
 		var c: Node = n.get_child(n.get_child_count() - 1)
 		n.remove_child(c)
 		c.queue_free()
+	var show: int = sq.get("show_n", -1)
+	for i in n.get_child_count():
+		n.get_child(i).visible = show < 0 or i < show
 	n.position = Vector3(sq.x, sq.alt, sq.z)
 	var bank := clampf(U.ang_d(sq.h, sq.get("prev_h", sq.h)) * 8.0, -0.6, 0.6)
 	sq.prev_h = sq.h
 	n.transform.basis = Basis(Vector3.UP, -sq.h) * Basis(Vector3.BACK, bank)
 	n.visible = sq.state != "ready" and sq.state != "lost"
+
+
+# ---------- single planes on the deck: take-off and landing ----------
+
+func _plane_scene(sq: Dictionary) -> PackedScene:
+	var path: String = Data.AIRCRAFT[sq.type].model
+	if not _cache.has(path):
+		_cache[path] = load(path)
+	return _cache[path]
+
+
+## Ship-local deck geometry: the flight deck height and where the roll starts and ends.
+func _deck_y(home: Ship) -> float:
+	if not home.park.is_empty():
+		return home.park[0].ly
+	if not home.floats.is_empty():
+		return home.floats[0].ly
+	return 12.0
+
+
+func _solo_takeoff(sq: Dictionary, carrier: bool) -> void:
+	var home: Ship = sq.home
+	var p: Node3D = _plane_scene(sq).instantiate()
+	add_child(p)
+	var so := {"node": p, "phase": "roll", "t": 0.0, "lx": 0.0, "ly": _deck_y(home), "lz": 0.0, "v": 0.0,
+		"x": 0.0, "z": 0.0, "y": 0.0, "h": home.h}
+	if carrier:
+		so.lx = -home.T.L * 0.18          # from the deck park, rolling forward to the bow
+		so.v = 4.0
+	else:
+		# off the catapult: a short, hard shove
+		var cat: Dictionary = home.floats[0] if not home.floats.is_empty() else {"lx": -home.T.L * 0.3, "lz": 0.0}
+		so.lx = cat.lx; so.lz = cat.lz
+		so.phase = "cat"
+		so.v = 10.0
+	sq.solos.append(so)
+
+
+func _solo_land(sq: Dictionary, carrier: bool) -> void:
+	var p: Node3D = _plane_scene(sq).instantiate()
+	add_child(p)
+	var so := {"node": p, "phase": "approach", "t": 0.0, "lx": 0.0, "ly": 0.0, "lz": 0.0, "v": 0.0,
+		"x": sq.x, "z": sq.z, "y": sq.alt, "h": sq.h, "carrier": carrier}
+	sq.solos.append(so)
+
+
+## How many single planes of this ship are in the given phases (all its squadrons).
+func _deck_busy(home: Ship, phases: Array) -> int:
+	var n := 0
+	for sq in sqs:
+		if sq.home != home:
+			continue
+		for so in sq.solos:
+			if so.phase in phases:
+				n += 1
+	return n
+
+
+func _clear_solos(sq: Dictionary) -> void:
+	for so in sq.solos:
+		if so.node != null and is_instance_valid(so.node):
+			so.node.queue_free()
+	sq.solos.clear()
+
+
+func _step_solos(sq: Dictionary, dt: float, spd: float) -> void:
+	var home: Ship = sq.home
+	var L: float = home.T.L
+	var done := []
+	for so in sq.solos:
+		so.t += dt
+		match so.phase:
+			"roll":
+				# down the deck, throttle up, wheels off near the bow
+				so.v = minf(so.v + 14.0 * dt, 42.0)
+				so.lx += (so.v - home.v * 0.0) * dt
+				so.h = home.h
+				var w := home.to_world_xz(so.lx, so.lz)
+				so.x = w.x; so.z = w.y; so.y = home.global_position.y + so.ly + (maxf(so.lx - L * 0.3, 0.0) * 0.08)
+				if so.lx > L * 0.47:
+					so.phase = "climb"
+			"cat":
+				so.v = minf(so.v + 60.0 * dt, 38.0)
+				so.lx += so.v * dt
+				so.h = home.h
+				var w := home.to_world_xz(so.lx, so.lz)
+				so.x = w.x; so.z = w.y; so.y = home.global_position.y + so.ly
+				if so.t > 1.4:
+					so.phase = "climb"
+			"climb":
+				# up and away to the squadron forming ahead
+				so.v = minf(so.v + 12.0 * dt, spd * 0.85)
+				var want := U.bearing(so.x, so.z, sq.x, sq.z)
+				var turn := deg_to_rad(30.0) * dt
+				so.h = fposmod(so.h + clampf(U.ang_d(so.h, want), -turn, turn), TAU)
+				var f := U.fwd(so.h)
+				so.x += f.x * so.v * dt; so.z += f.y * so.v * dt
+				so.y = minf(so.y + 9.0 * dt, sq.alt)
+				var d := U.hyp(sq.x - so.x, sq.z - so.z)
+				if d < 90.0 or so.t > 60.0:
+					sq.show_n = mini(int(sq.show_n) + 1, sq.n)
+					done.append(so)
+			"approach":
+				# down the glide path to the stern (carrier) or the water alongside (floatplane)
+				var aim: Vector2
+				var aim_y: float
+				if so.carrier:
+					aim = home.to_world_xz(-L * 0.46, 0.0)
+					aim_y = home.global_position.y + _deck_y(home) + 1.0
+				else:
+					aim = home.to_world_xz(-L * 0.2, 70.0)
+					aim_y = 0.4
+				so.v = maxf(so.v - 10.0 * dt, spd * 0.45) if so.v > spd * 0.45 else spd * 0.45
+				var want := U.bearing(so.x, so.z, aim.x, aim.y)
+				var turn := deg_to_rad(32.0) * dt
+				so.h = fposmod(so.h + clampf(U.ang_d(so.h, want), -turn, turn), TAU)
+				var f := U.fwd(so.h)
+				so.x += f.x * so.v * dt; so.z += f.y * so.v * dt
+				var d := U.hyp(aim.x - so.x, aim.y - so.z)
+				# glide: height proportional to distance, never below the aim point
+				so.y = maxf(aim_y, minf(so.y, aim_y + d * 0.09))
+				if d < 25.0 or so.t > 90.0:
+					if so.carrier:
+						so.phase = "rollout"
+						so.lx = -L * 0.46; so.lz = 0.0; so.ly = _deck_y(home)
+					else:
+						so.phase = "taxi"
+						var lp := home.to_local_xz(so.x, so.z)
+						so.lx = lp.x; so.lz = lp.y; so.ly = 0.4
+					so.v = 30.0
+					so.t = 0.0
+			"rollout":
+				# wire caught: a hard stop up the deck
+				so.v = maxf(so.v - 14.0 * dt, 0.0)
+				so.lx += so.v * dt
+				so.h = home.h
+				var w := home.to_world_xz(so.lx, so.lz)
+				so.x = w.x; so.z = w.y; so.y = home.global_position.y + so.ly
+				if so.v <= 0.0 or so.lx > L * 0.1:
+					sq.landed += 1
+					done.append(so)
+			"taxi":
+				# on the water, taxiing in to the crane
+				so.v = 6.0
+				var tgt := Vector2(-L * 0.2, home.half_width_at(-L * 0.2) + 10.0)
+				var dd := tgt - Vector2(so.lx, so.lz)
+				if dd.length() < 6.0 or so.t > 40.0:
+					sq.landed += 1
+					done.append(so)
+				else:
+					var step: Vector2 = dd.normalized() * so.v * dt
+					so.lx += step.x; so.lz += step.y
+					so.h = home.h + atan2(dd.y, dd.x)
+					var w := home.to_world_xz(so.lx, so.lz)
+					so.x = w.x; so.z = w.y; so.y = 0.4
+		if so.node != null and is_instance_valid(so.node):
+			so.node.position = Vector3(so.x, so.y, so.z)
+			so.node.transform.basis = Basis(Vector3.UP, -so.h)
+	for so in done:
+		if so.node != null and is_instance_valid(so.node):
+			so.node.queue_free()
+		sq.solos.erase(so)
+
+
+## Parked planes on each deck: as many hidden as are away from the ship.
+func _sync_decks() -> void:
+	for sh in B.ships:
+		if sh.park.is_empty() and sh.floats.is_empty():
+			continue
+		var away := 0
+		for sq in sqs:
+			if sq.home != sh:
+				continue
+			match sq.state:
+				"ready", "lost": pass
+				"launching": away += sq.n - int(sq.launch_left)
+				"landing": away += sq.n - int(sq.landed)
+				_: away += sq.n
+		var slots: Array = sh.park if not sh.park.is_empty() else sh.floats
+		for i in slots.size():
+			slots[slots.size() - 1 - i].node.visible = i >= away
 
 
 func _kind_word(kind: String) -> String:
