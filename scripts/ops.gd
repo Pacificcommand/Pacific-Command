@@ -102,6 +102,9 @@ func _test_shot(path: String) -> void:
 		if a.begins_with("--days="):
 			days = float(a.split("=")[1])
 	var start_day: float = C.day
+	var start_pos := {}
+	for g in C.groups:
+		start_pos[g.id] = [g.lon, g.lat]
 	var frames := 0
 	while C.day < start_day + days and frames < 6000:
 		frames += 1
@@ -121,7 +124,10 @@ func _test_shot(path: String) -> void:
 			seen += 1
 	print("groups ", C.groups.size(), " (enemy seen ", seen, ") fights ", C.fights.size(), " day ", C.day, " ops ", C.done_ops)
 	for g in C.groups:
-		print("  %s %s %s [%s] at %.1f,%.1f -> %s %s" % [g.side, g.kind, g.name, _describe(g.ships), g.lon, g.lat, _dest_name(g), g.state])
+		var moved := -1.0
+		if start_pos.has(g.id):
+			moved = War.dist_nm(start_pos[g.id][0], start_pos[g.id][1], g.lon, g.lat)
+		print("  %s %s %s [%s] at %.1f,%.1f -> %s %s (moved %d nm)" % [g.side, g.kind, g.name, _describe(g.ships), g.lon, g.lat, _dest_name(g), g.state, int(moved)])
 	if "--assault" in OS.get_cmdline_user_args():
 		var best := ""
 		var bd := 1e9
@@ -708,7 +714,21 @@ func _advance(o: Dictionary, dest: Array, step: float) -> bool:
 	var course := atan2(dx, dy)
 	var step_deg := step / 60.0
 	var near_port := d < 40.0
-	for turn in [0.0, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5, 2.1, -2.1, 2.6, -2.6]:
+	var turns := [0.0, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5, 2.1, -2.1, 2.6, -2.6, PI]
+	# Harbours sit on the coast, so a group leaving port can start inside the land outline.
+	# Steer for the nearest open water first (looking a few miles ahead), then carry on.
+	if not near_port and Geo.on_land(o.lon, o.lat):
+		for probe in [0.1, 0.25, 0.5]:
+			for turn in turns:
+				var a0: float = course + float(turn)
+				if not Geo.on_land(o.lon + sin(a0) * probe / cos(deg_to_rad(o.lat)), o.lat + cos(a0) * probe):
+					o.lon += sin(a0) * step_deg / cos(deg_to_rad(o.lat))
+					o.lat += cos(a0) * step_deg
+					return false
+		o.lon += sin(course) * step_deg / cos(deg_to_rad(o.lat))   # deep inland: head straight out
+		o.lat += cos(course) * step_deg
+		return false
+	for turn in turns:
 		var a: float = course + float(turn)
 		var nlon: float = o.lon + sin(a) * step_deg / cos(deg_to_rad(o.lat))
 		var nlat: float = o.lat + cos(a) * step_deg

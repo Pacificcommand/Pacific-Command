@@ -48,6 +48,7 @@ var autopilot := false         # test option: the AI also drives the player's sh
 # ---------- scene parts ----------
 var cam: Camera3D
 var sun: DirectionalLight3D
+var fill: DirectionalLight3D     # soft light from behind the cinematic camera
 var env: Environment
 var ocean: MeshInstance3D
 var ocean_mat: ShaderMaterial
@@ -64,7 +65,8 @@ var _spent := 0
 var hud
 ## Camera: x/z where it looks, h height now, th wanted height. focus = "player" or "target" (the
 ## ship it tracks); free = true after the player drags the view, until Esc or a view button.
-var camst := {"x": 0.0, "z": 0.0, "h": 420.0, "th": 420.0, "ox": 0.0, "oz": 0.0, "salvo": null, "hold": 0.0, "impact": null, "focus": "player", "free": false}
+var camst := {"x": 0.0, "z": 0.0, "h": 420.0, "th": 420.0, "ox": 0.0, "oz": 0.0, "salvo": null, "hold": 0.0, "impact": null, "focus": "player", "free": false,
+	"yaw": 0.0, "tilt": 0.0, "cine": false, "cine_yaw": 0.0, "cine_elev": 9.0, "cine_zoom": 1.0, "cine_hand_t": -99.0}
 const VIEWS := {"close": 160.0, "ship": 420.0, "wide": 2200.0, "tac": 9000.0}
 const FOV := 32.0
 
@@ -236,6 +238,11 @@ func _test_args() -> void:
 		player.h = 0.0
 		for m in player.mounts:
 			m.ang = deg_to_rad(float(_test.train))
+	if _test.has("rot"):
+		# test: player camera turned and tilted (--rot=YAW_DEG,TILT_DEG)
+		var rp: PackedStringArray = String(_test.rot).split(",")
+		camst.yaw = deg_to_rad(float(rp[0]))
+		camst.tilt = float(rp[1]) if rp.size() > 1 else 0.0
 	if _test.has("nohud"):
 		hud.visible = false
 	if _test.has("pause"):
@@ -273,6 +280,10 @@ func _build_world() -> void:
 	sun.shadow_enabled = true
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 	add_child(sun)
+	fill = DirectionalLight3D.new()
+	fill.shadow_enabled = false
+	fill.visible = false
+	add_child(fill)
 	cam = Camera3D.new()
 	cam.fov = FOV
 	add_child(cam)
@@ -906,6 +917,16 @@ func set_speed(v: float) -> void:
 
 
 func set_view(mode: String) -> void:
+	if mode == "cine":
+		# drop down beside the ship at sea level; it slowly circles until the player drags it round
+		if not camst.cine:
+			var fs := focus_ship()
+			camst.cine_yaw = fs.h + deg_to_rad(120.0)
+			camst.cine_hand_t = -99.0
+		camst.cine = true
+		camst.salvo = null
+		return
+	camst.cine = false
 	camst.th = VIEWS[mode]
 	camst.ox = 0.0; camst.oz = 0.0
 	camst.free = false
@@ -1045,7 +1066,7 @@ func _process(delta: float) -> void:
 		sim -= h
 		_step(h)
 	_update_camera(delta)
-	var ts := clampf(speed, 0.0, 4.0) if started else 0.0
+	var ts := clampf(speed, 0.0, 5.0) if started else 0.0
 	for n in get_tree().get_nodes_in_group("pyro"):
 		n.time_scale = ts
 	for s in ships:
@@ -2839,7 +2860,40 @@ func _update_camera(delta: float) -> void:
 	var hgt: float = camst.h
 	cam.near = maxf(0.5, hgt * 0.02)
 	cam.far = hgt * 4.0 + 2000.0
-	if _test.has("tilt"):
+	# held rotate keys turn the view (or swing the cinematic camera round the ship)
+	var rot := 0.0
+	if Input.is_action_pressed("rotate_left"):
+		rot -= 1.0
+	if Input.is_action_pressed("rotate_right"):
+		rot += 1.0
+	if rot != 0.0:
+		if camst.cine:
+			camst.cine_yaw += rot * delta * 1.1
+			camst.cine_hand_t = Time.get_ticks_msec() / 1000.0
+		else:
+			camst.yaw = wrapf(camst.yaw + rot * delta * 1.1, -PI, PI)
+	var yaw: float = camst.yaw
+	var dist := hgt      # eye-to-target distance: sets the haze and shadow reach
+	var fog_ref := hgt
+	if camst.cine:
+		var fs2 := focus_ship()
+		var L: float = fs2.T.L
+		var D: float = clampf(L * 1.7, 45.0, 520.0) * camst.cine_zoom
+		# circles slowly on its own; a drag or the rotate keys take over for a few seconds
+		if Time.get_ticks_msec() / 1000.0 - camst.cine_hand_t > 4.0:
+			camst.cine_yaw += delta * 0.09
+		var el := deg_to_rad(camst.cine_elev)
+		var cy: float = camst.cine_yaw
+		var look := Vector3(fs2.x, 3.0 + L * 0.03 - fs2.sink, fs2.z)
+		var eye := look + Vector3(-sin(cy) * D * cos(el), D * sin(el), cos(cy) * D * cos(el))
+		eye.y = maxf(eye.y, 2.5)
+		cam.near = 0.5
+		cam.far = 26000.0
+		cam.look_at_from_position(eye + Vector3(sh_off.x * 0.3, 0.0, sh_off.y * 0.3), look, Vector3.UP)
+		camst.x = fs2.x; camst.z = fs2.z
+		dist = D
+		fog_ref = clampf(D * 6.0, 900.0, 4000.0)
+	elif _test.has("tilt"):
 		# recording only: look down at an angle from the south (yaw turns it round)
 		var tl := deg_to_rad(float(_test.tilt))
 		var yw := deg_to_rad(float(_test.get("yaw", "0"))) + t * float(_test.get("orbit", "0")) * 0.01
@@ -2848,26 +2902,75 @@ func _update_camera(delta: float) -> void:
 		cam.far = hgt * 12.0 + 6000.0
 		cam.look_at_from_position(eye, Vector3(camst.x + sh_off.x, 0.0, camst.z + sh_off.y), Vector3.UP)
 	else:
-		cam.look_at_from_position(Vector3(camst.x + sh_off.x, hgt, camst.z + sh_off.y), Vector3(camst.x + sh_off.x, 0.0, camst.z + sh_off.y), Vector3(0, 0, -1))
+		var target := Vector3(camst.x + sh_off.x, 0.0, camst.z + sh_off.y)
+		var tl := deg_to_rad(camst.tilt)
+		if tl < 0.01:
+			# straight down; yaw turns which way is up on the screen (0 = north up)
+			cam.look_at_from_position(target + Vector3(0.0, hgt, 0.0), target, Vector3(sin(yaw), 0.0, -cos(yaw)))
+		else:
+			var back := hgt * tan(tl)
+			cam.far = hgt * 12.0 + 6000.0
+			cam.look_at_from_position(target + Vector3(-sin(yaw) * back, hgt, cos(yaw) * back), target, Vector3.UP)
+			dist = hgt / cos(tl)
+			fog_ref = dist
 	# sea plane follows the camera and always fills the view
 	var span := hgt * 2.5 + 4000.0
-	if _test.has("tilt"):
+	if _test.has("tilt") or camst.tilt > 0.5:
 		span = hgt * 12.0 + 8000.0
+	if camst.cine:
+		span = 40000.0
 	ocean.position = Vector3(camst.x, 0.0, camst.z)
 	ocean.scale = Vector3(span, 1.0, span)
-	sun.directional_shadow_max_distance = clampf(hgt * 2.2, 300.0, 6000.0)
+	sun.directional_shadow_max_distance = clampf(dist * 2.2, 150.0, 6000.0)
 	# haze looks the same at every zoom: thicker per meter when the camera is low
-	env.fog_density = Data.WEATHER[weather].fog_k / hgt
+	env.fog_density = Data.WEATHER[weather].fog_k / fog_ref
+	# from the side the hulls face away from the high sun: a soft light from behind the camera
+	fill.visible = camst.cine
+	if camst.cine:
+		var Wd: Dictionary = Data.WEATHER[weather]
+		fill.light_color = Wd.sun.lerp(Color(1, 1, 1), 0.4)
+		fill.light_energy = Wd.sun_energy * 0.45
+		fill.global_transform = Transform3D(cam.global_transform.basis.rotated(Vector3.UP, 0.35), Vector3.ZERO)
 
 
 func zoom(factor: float) -> void:
+	if camst.cine:
+		camst.cine_zoom = clampf(camst.cine_zoom * factor, 0.35, 4.0)
+		return
 	camst.th = clampf(camst.th * factor, 90.0, 14000.0)
 	camst.salvo = null
 
 
+## Middle-mouse drag: turn the view (sideways) and tilt it (up/down). In the cinematic
+## camera any drag swings the camera round the ship and raises or lowers it.
+func rotate_view(dx_px: float, dy_px: float) -> void:
+	if camst.cine:
+		camst.cine_yaw += dx_px * 0.006
+		camst.cine_elev = clampf(camst.cine_elev - dy_px * 0.08, 2.0, 50.0)
+		camst.cine_hand_t = Time.get_ticks_msec() / 1000.0
+		return
+	camst.yaw = wrapf(camst.yaw + dx_px * 0.005, -PI, PI)
+	camst.tilt = clampf(camst.tilt - dy_px * 0.15, 0.0, 60.0)
+
+
+## Back to straight down, north up.
+func reset_view() -> void:
+	camst.yaw = 0.0
+	camst.tilt = 0.0
+
+
 ## Dragging the view unlocks the camera from the ship it was tracking; Esc or a view button locks it again.
 func pan(dx_px: float, dz_px: float) -> void:
+	if camst.cine:
+		rotate_view(dx_px, dz_px)
+		return
 	var k = 2.0 * tan(deg_to_rad(FOV) / 2.0) * camst.h / get_viewport().get_visible_rect().size.y
+	# a turned view: screen right and down point along the turned axes
+	var cy := cos(camst.yaw)
+	var sy := sin(camst.yaw)
+	var wx := cy * dx_px - sy * dz_px
+	var wz := sy * dx_px + cy * dz_px
+	dx_px = wx; dz_px = wz
 	if not camst.free:
 		camst.free = true
 		camst.ox = camst.x; camst.oz = camst.z

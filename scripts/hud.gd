@@ -211,7 +211,7 @@ func _build_plates() -> void:
 	var trv := VBoxContainer.new()
 	trv.add_theme_constant_override("separation", 6)
 	var p1 := _panel()
-	p1.add_child(_row([_caps("Time"), _seg("time", [[0.0, "Pause"], [0.25, "Slow ¼×"], [1.0, "Normal"], [3.0, "Fast 3×"]], func(v): B.set_speed(v))]))
+	p1.add_child(_row([_caps("Time"), _seg("time", [[0.0, "Pause"], [0.25, "Slow ¼×"], [1.0, "Normal"], [3.0, "Fast 3×"], [5.0, "Fast 5×"]], func(v): B.set_speed(v))]))
 	trv.add_child(p1)
 	var p2 := _panel()
 	btn.follow = _button("Follow salvos (V)", func(): B.follow = btn.follow.button_pressed, true)
@@ -343,7 +343,7 @@ func _build_plates() -> void:
 	var vp := _panel()
 	var vpv := VBoxContainer.new()
 	vpv.add_theme_constant_override("separation", 4)
-	vpv.add_child(_row([_caps("View"), _seg("view", [["close", "Close"], ["ship", "Ship"], ["wide", "Wide"], ["tac", "Tactical"]], _on_view)]))
+	vpv.add_child(_row([_caps("View"), _seg("view", [["close", "Close"], ["ship", "Ship"], ["wide", "Wide"], ["tac", "Tactical"], ["cine", "Cinematic (B)"]], _on_view)]))
 	vpv.add_child(_row([_caps("Camera on"), _seg("cam", [["player", "Own ship"], ["target", "Enemy target (C)"]], _on_focus)]))
 	vp.add_child(vpv)
 	brv.add_child(vp)
@@ -357,10 +357,11 @@ func _build_plates() -> void:
 
 func _update_keys_help() -> void:
 	var k := Game.key_name
-	lbl.keys.text = "%s/%s engines · %s/%s rudder · %s center · %s crew/manual aim\n%s fire · %s torpedo aim · %s smoke · %s next target · %s follow salvos\n%s camera on target · %s pause · %s/%s/%s slow/normal/fast · %s menu\nWheel zoom · drag to look around (%s locks the camera back on)\nLeft-click: target (crew aim) or fire (manual) · right-click: target" % [
+	lbl.keys.text = "%s/%s engines · %s/%s rudder · %s center · %s crew/manual aim\n%s fire · %s torpedo aim · %s smoke · %s next target · %s follow salvos\n%s camera on target · %s pause · %s/%s/%s/%s slow/normal/3×/5× · %s menu\nWheel zoom · drag to look around (%s locks the camera back on) · middle drag or %s/%s turn and tilt · %s reset · %s cinematic\nLeft-click: target (crew aim) or fire (manual) · right-click: target" % [
 		k.call("tele_up"), k.call("tele_down"), k.call("rudder_left"), k.call("rudder_right"), k.call("rudder_center"), k.call("aim_mode"),
 		k.call("fire"), k.call("torpedo"), k.call("smoke"), k.call("next_target"), k.call("follow"),
-		k.call("camera"), k.call("pause"), k.call("slow"), k.call("normal"), k.call("fast"), k.call("menu"), k.call("recenter")]
+		k.call("camera"), k.call("pause"), k.call("slow"), k.call("normal"), k.call("fast"), k.call("faster"), k.call("menu"), k.call("recenter"),
+		k.call("rotate_left"), k.call("rotate_right"), k.call("cam_reset"), k.call("cinematic")]
 
 
 func _build_log() -> void:
@@ -1006,8 +1007,12 @@ func _p(x: float, z: float, y := 0.0) -> Vector2:
 
 var _edge_used: Array = []
 
+var rdrag := {}
+
 func _draw_overlay() -> void:
 	_edge_used.clear()
+	if B.camst.cine:
+		return      # the cinematic camera shows the ships, not the plot
 	var p: Ship = B.player
 	if p == null:
 		return
@@ -1347,6 +1352,10 @@ func _unhandled_input(e: InputEvent) -> void:
 		elif Game.pressed(e, "slow"): B.set_speed(0.25)
 		elif Game.pressed(e, "normal"): B.set_speed(1.0)
 		elif Game.pressed(e, "fast"): B.set_speed(3.0)
+		elif Game.pressed(e, "faster"): B.set_speed(5.0)
+		elif Game.pressed(e, "cam_reset"): B.reset_view()
+		elif Game.pressed(e, "cinematic"):
+			_on_view("ship" if B.camst.cine else "cine")
 		elif Game.pressed(e, "strike"): B.order_strike()
 		elif Game.pressed(e, "star"): B.order_star()
 		elif Game.pressed(e, "dive"): B.order_depth(p.depth + 1)
@@ -1363,6 +1372,9 @@ func _unhandled_input(e: InputEvent) -> void:
 			B.zoom(1.0 / 1.15)
 		elif e.button_index == MOUSE_BUTTON_WHEEL_DOWN and e.pressed:
 			B.zoom(1.15)
+		elif e.button_index == MOUSE_BUTTON_MIDDLE:
+			# middle drag turns and tilts the camera
+			rdrag = {"last": e.position} if e.pressed else {}
 		elif e.button_index == MOUSE_BUTTON_LEFT or e.button_index == MOUSE_BUTTON_RIGHT:
 			var pan_btn: int = MOUSE_BUTTON_LEFT if Game.settings.get("pan_left", false) else MOUSE_BUTTON_RIGHT
 			if e.button_index == pan_btn:
@@ -1390,6 +1402,10 @@ func _unhandled_input(e: InputEvent) -> void:
 						B.pick_target_at(w)
 	elif e is InputEventMouseMotion:
 		B.mouse_w = B.screen_to_world(e.position)
+		if not rdrag.is_empty():
+			var rd: Vector2 = e.position - rdrag.last
+			rdrag.last = e.position
+			B.rotate_view(rd.x, rd.y)
 		if not drag.is_empty():
 			var d: Vector2 = e.position - drag.last
 			drag.last = e.position
