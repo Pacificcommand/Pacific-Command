@@ -809,6 +809,9 @@ def build_spec(spec, scheme=None):
     for part in spec.get('parts', []):
         if part[0] in ('funnel',):
             paint.funnels.append((part[1], part[2] + part[3]))
+    if spec.get('sub'):
+        # a submarine's whole top is hull: rust streaks read as orange bands from above, so keep them to dark grime
+        paint.rust = '#26292b'
     M.paint = paint
     hull = WarHull(L, B, T, deck, breaks=[b[0] for b in spec.get('breaks', [])], rake=spec.get('rake', 4.0),
                    entry=spec.get('entry', 0.34), run=spec.get('run', 0.30), flare=spec.get('flare', 0.22), stern=spec.get('stern', 'cruiser'),
@@ -901,16 +904,26 @@ def _funnel(c, x, base, h, rx, rz, rake=0.9, trunk=False):
     funnel(c['S'], c['P'], x, base, h, rx, rz, rake=rake, trunk=trunk)
 def _funnel_down(c, x, y, z, h, r, side=1):
     funnel_downturned(c['S'], c['P'], x, y, z, h, r, side)
-def _pole(c, x, y0, h, yard=4.0):
-    mast_pole(c['S'], c['P'], x, y0, h, yard=yard)
-def _tripod(c, x, y0, h, spread=3.0, yard=5.0):
-    mast_tripod(c['S'], c['P'], x, y0, h, spread=spread, yard=yard)
+def _at_z(c, z, fn):
+    """Build a centreline part offset sideways by z (masts and radars on a carrier's island)."""
+    S = c['S']
+    old = S.xf
+    if z:
+        S.xf = (np.eye(3), np.array([0.0, 0.0, float(z)]))
+    try:
+        fn()
+    finally:
+        S.xf = old
+def _pole(c, x, y0, h, yard=4.0, z=0.0):
+    _at_z(c, z, lambda: mast_pole(c['S'], c['P'], x, y0, h, yard=yard))
+def _tripod(c, x, y0, h, spread=3.0, yard=5.0, z=0.0):
+    _at_z(c, z, lambda: mast_tripod(c['S'], c['P'], x, y0, h, spread=spread, yard=yard))
 def _lattice(c, x, y0, h, w=2.2):
     mast_lattice(c['S'], c['P'], x, y0, h, w)
-def _bedspring(c, x, y, w=4.0, h=2.0):
-    radar_bedspring(c['S'], c['P'], x, y, w, h)
-def _radome(c, x, y):
-    radome(c['S'], c['P'], x, y)
+def _bedspring(c, x, y, w=4.0, h=2.0, z=0.0):
+    _at_z(c, z, lambda: radar_bedspring(c['S'], c['P'], x, y, w, h))
+def _radome(c, x, y, z=0.0):
+    _at_z(c, z, lambda: radome(c['S'], c['P'], x, y))
 def _tower(c, x, y0, h, half, levels=4, taper=0.08):
     """Stacked tower bridge (US fast battleships: a smooth tower; IJN: pagoda when taper is high)."""
     S, P = c['S'], c['P']

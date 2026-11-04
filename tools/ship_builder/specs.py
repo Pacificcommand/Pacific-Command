@@ -126,7 +126,7 @@ L = 106.2
 spec('benson', nation='us', L=L, B=11.0, T=3.6, deck=(6.8, 4.1, 4.0), breaks=[(12.0, 1.7)], rake=3.2, entry=0.4, run=0.3, stern='transom', fine=1.8,
      bollards=[46, 26, -8, -34, -49], vents=[(2, 3.4), (2, -3.4), (-22, 3.5), (-22, -3.5)],
      parts=[('deckhouse', 31.0, 9.0, 4.2, 5.5, 8.1, 2.5), ('deckhouse', 26.0, 13.0, 3.8, 8.1, 10.5, 3.0), ('glass', 25.6, 15.0, 3.5, 10.5),
-            ('block', 8.0, -2.0, 2.0, 4.1, 13.5), ('block', -8.0, -16.0, 2.0, 4.1, 13.2),       # flat-sided funnels
+            ('block', 9.0, 4.0, 1.35, 4.1, 13.5), ('block', -7.0, -12.0, 1.35, 4.1, 13.2),       # flat-sided funnels
             ('box', 6.5, 13.6, 0.0, 3.6, 0.3, 3.9, 'black'), ('box', -9.5, 13.3, 0.0, 3.6, 0.3, 3.9, 'black'),
             ('block', 11.0, -4.0, 2.8, 4.1, 6.5), ('tripod', 14.0, 10.5, 14.0, 2.2, 4.0), ('bedspring', 14.0, 22.5, 3.2, 1.8),
             ('block', -22.0, -36.0, 3.5, 4.0, 6.4), ('pole', -18.0, 4.0, 11.0, 3.0),
@@ -219,7 +219,7 @@ DATA['atlanta'] = dict(name='Atlanta class', nation='us', cls='cl', L=165.0, B=1
 L = 185.4
 spec('brooklyn', nation='us', L=L, B=18.8, T=7.0, deck=(8.4, 5.8, 6.4), rake=4.5, entry=0.36, run=0.26, stern='transom', fine=1.7,
      bollards=[84, 66, 40, -30, -60], vents=[(15, 6.5), (15, -6.5)],
-     parts=[('block', 56.0, 44.0, 5.6, 5.8, 8.4), ('deckhouse', 34.0, -30.0, 7.0, 5.8, 9.0, 3.0), ('tower', 26.0, 9.0, 11.0, 4.2, 4, 0.06),
+     parts=[('block', 61.0, 50.0, 5.6, 5.8, 8.4), ('deckhouse', 34.0, -30.0, 7.0, 5.8, 9.0, 3.0), ('tower', 26.0, 9.0, 11.0, 4.2, 4, 0.06),
             ('funnel', 10.0, 9.0, 11.0, 2.4, 1.7, 0.6), ('funnel', -2.0, 9.0, 11.0, 2.4, 1.7, 0.6),
             ('tripod', 18.0, 9.0, 22.0, 3.0, 6.0), ('bedspring', 18.0, 29.0, 4.0, 2.2), ('pole', -8.0, 9.0, 17.0, 4.0),
             ('block', -48.0, -70.0, 7.5, 6.4, 10.0),             # stern hangar
@@ -422,6 +422,7 @@ L = 174.7
 spec('texas', nation='us', L=L, B=29.0, T=9.4, deck=(8.4, 6.2, 5.6), rake=1.5, entry=0.3, run=0.28, fine=1.9, flare=0.1, bulge=1.6, deck_mat='wood',
      bollards=[78, 60, -50, -76], vents=[(30, 8), (30, -8), (-30, 8), (-30, -8)],
      parts=[('block', 50.0, 36.0, 8.0, 6.2, 8.8), ('deckhouse', 36.0, 8.0, 9.0, 6.2, 9.4, 3.0), ('deckhouse', 30.0, 12.0, 6.0, 9.4, 12.0, 3.0), ('glass', 29.6, 14.0, 5.4, 12.0),
+            ('deckhouse', 29.0, 17.0, 4.4, 12.9, 15.8, 2.0), ('glass', 28.6, 18.0, 4.2, 15.8), ('deckhouse', 28.0, 19.0, 3.4, 16.7, 18.6, 1.6),
             ('tripod', 22.0, 9.4, 22.0, 4.0, 7.0), ('box', 22.0, 32.0, 0.0, 4.5, 2.2, 4.5), ('bedspring', 22.0, 36.0, 4.5, 2.4),
             ('funnel', 2.0, 9.4, 11.0, 3.0, 2.2, 0.4), ('block', 10.0, -8.0, 7.0, 6.2, 9.4),
             ('tripod', -16.0, 6.2, 22.0, 4.0, 7.0), ('box', -16.0, 28.0, 0.0, 4.0, 2.0, 4.0),
@@ -450,12 +451,12 @@ DATA['texas'] = dict(name='USS Texas (New York class)', nation='us', cls='bb', L
 # US carriers
 # =====================================================================
 
-def cv_spec(name, L, B, T, fd_half, fd_y, fd_front, fd_back, island_x, island_half, island_L, levels, hull_deck, parts_extra, weapons, elevators, park, nation='us', funnel=True, island_z=None, hangar_half=None):
+def cv_spec(name, L, B, T, fd_half, fd_y, fd_front, fd_back, island_x, island_half, island_L, levels, hull_deck, parts_extra, weapons, elevators, park, nation='us', funnel=True, island_z=None, hangar_half=None, funnel_h=9.0):
     h_half = hangar_half if hangar_half is not None else B / 2 - 0.8
     parts = [('hangar', fd_front - 14.0, fd_back + 12.0, h_half, hull_deck, fd_y - 1.2),
              ('flight_deck', fd_front, fd_back, fd_half, fd_y, 1.2, elevators)]
     if island_x is not None:
-        parts.append(('island', island_x, fd_y, island_half, island_L, levels, 9.0, island_z if island_z is not None else fd_half - island_half * 0.5 - 0.3, funnel))
+        parts.append(('island', island_x, fd_y, island_half, island_L, levels, funnel_h, island_z if island_z is not None else fd_half - island_half * 0.5 - 0.3, funnel))
     parts += parts_extra
     for x0, x1, cols in park:
         parts.append(('deck_park', x0, x1, fd_y, cols, 11.0, 0.0, True))
@@ -467,8 +468,8 @@ def hull_deck_fn(h):
 
 # ---- Yorktown class (Enterprise): island with single funnel starboard amidships, 5-inch singles in gun galleries at
 #      the four corners, 40 mm quads in sponsons ----
-cv_spec('yorktown', 251.4, 33.4, 7.9, 16.5, 19.0, 122.0, -124.0, 10.0, 3.2, 20.0, 3, 9.0,
-        [('tripod', 10.0, 29.0, 20.0, 2.4, 5.0), ('bedspring', 10.0, 46.0, 5.0, 2.8), ('boat', -60.0, 11.0, 15.5, 9.0, 2.4)],
+cv_spec('yorktown', 251.4, 33.4, 7.9, 16.5, 19.0, 122.0, -124.0, 10.0, 6.0, 22.0, 4, 9.0,
+        [('tripod', 10.0, 30.3, 16.0, 2.0, 4.0, 15.2), ('bedspring', 10.0, 44.3, 5.0, 2.8, 15.2), ('boat', -60.0, 11.0, 15.5, 9.0, 2.4)],
         [('dp_single', 'Mount51', 96.0, 12.0, 14.0, PI / 2, 127, False), ('dp_single', 'Mount52', 86.0, 12.0, 14.0, PI / 2, 127, False),
          ('dp_single', 'Mount53', 96.0, 12.0, -14.0, -PI / 2, 127, False), ('dp_single', 'Mount54', 86.0, 12.0, -14.0, -PI / 2, 127, False),
          ('dp_single', 'Mount55', -96.0, 12.0, 14.0, PI / 2, 127, False), ('dp_single', 'Mount56', -106.0, 12.0, 14.0, PI / 2, 127, False),
@@ -477,7 +478,7 @@ cv_spec('yorktown', 251.4, 33.4, 7.9, 16.5, 19.0, 122.0, -124.0, 10.0, 3.2, 20.0
          ('bofors', 'Bofors1', 40.0, 17.5, 17.5, PI / 2, True, False, True), ('bofors', 'Bofors2', 40.0, 17.5, -17.5, -PI / 2, True, False, True),
          ('bofors', 'Bofors3', -40.0, 17.5, 17.5, PI / 2, True, False, True), ('bofors', 'Bofors4', -40.0, 17.5, -17.5, -PI / 2, True, False, True),
          ('bofors', 'Bofors5', 118.0, 17.5, 0.0, 0.0, True, False, True), ('bofors', 'Bofors6', -122.0, 17.5, 0.0, PI, True, False, True)],
-        [(70.0, 16.0, 13.0), (-10.0, 16.0, 13.0), (-90.0, 16.0, 13.0)], [(-110.0, -30.0, (-10.0, -3.0, 4.0, 11.0))])
+        [(70.0, 16.0, 13.0), (-10.0, 16.0, 13.0), (-90.0, 16.0, 13.0)], [(-110.0, -30.0, (-10.0, -3.0, 4.0, 11.0))], island_z=15.2, funnel_h=12.0)
 DATA['yorktown'] = dict(name='Yorktown class', nation='us', cls='cv', L=251.4, B=33.4, max_kn=32.5, turn=1.4, crew=2217, displacement=25500.0,
     gun='us5in38', draft=7.9, size_vis=2.1, radar=11000.0, smoke=False, night_eye=1.0, funnels=[-4.0], funnel_top=30.0, aircraft=72, hangar='us',
     mounts=mounts([('Mount5%d' % (i + 1), x, PI / 2 if z > 0 else -PI / 2, 'stbd' if z > 0 else 'port') for i, (x, z) in enumerate([(96, 1), (86, 1), (96, -1), (86, -1), (-96, 1), (-106, 1), (-96, -1), (-106, -1)])], 'us5in38') +
@@ -487,8 +488,8 @@ DATA['yorktown'] = dict(name='Yorktown class', nation='us', cls='cv', L=251.4, B
 
 # ---- Essex class (1943): longer deck, open bow, island with twin 5-inch fore and aft of it, 40 mm quads at the stern,
 #      full deck park ----
-cv_spec('essex', 265.8, 28.3, 8.4, 22.0, 20.0, 128.0, -134.0, 6.0, 3.4, 26.0, 4, 9.0,
-        [('tripod', 6.0, 30.4, 22.0, 2.4, 6.0), ('bedspring', 6.0, 50.0, 5.0, 2.8), ('radome', 6.0, 53.0), ('boat', -70.0, 11.0, 12.5, 9.0, 2.4)],
+cv_spec('essex', 265.8, 28.3, 8.4, 22.0, 20.0, 128.0, -134.0, 6.0, 6.5, 28.0, 4, 9.0,
+        [('tripod', 6.0, 31.3, 18.0, 2.2, 5.0, 20.0), ('bedspring', 6.0, 46.8, 5.0, 2.8, 20.0), ('radome', 6.0, 50.0, 20.0), ('boat', -70.0, 11.0, 12.5, 9.0, 2.4)],
         [('dp_twin', 'Mount51', 30.0, 20.0, 20.0, PI / 2), ('dp_twin', 'Mount52', 24.0, 20.0, 20.0, PI / 2), ('dp_twin', 'Mount53', -14.0, 20.0, 20.0, PI / 2), ('dp_twin', 'Mount54', -20.0, 20.0, 20.0, PI / 2),
          ('dp_single', 'Mount55', 70.0, 13.0, -14.0, -PI / 2, 127, False), ('dp_single', 'Mount56', 60.0, 13.0, -14.0, -PI / 2, 127, False),
          ('dp_single', 'Mount57', -60.0, 13.0, -14.0, -PI / 2, 127, False), ('dp_single', 'Mount58', -70.0, 13.0, -14.0, -PI / 2, 127, False),
@@ -496,7 +497,7 @@ cv_spec('essex', 265.8, 28.3, 8.4, 22.0, 20.0, 128.0, -134.0, 6.0, 3.4, 26.0, 4,
          ('bofors', 'Bofors1', 50.0, 18.5, -23.0, -PI / 2, True, False, True), ('bofors', 'Bofors2', -40.0, 18.5, -23.0, -PI / 2, True, False, True),
          ('bofors', 'Bofors3', 100.0, 18.5, 20.0, PI / 2, True, False, True), ('bofors', 'Bofors4', -100.0, 18.5, 20.0, PI / 2, True, False, True),
          ('bofors', 'Bofors5', -130.0, 18.5, 5.0, PI, True, False, True), ('bofors', 'Bofors6', -130.0, 18.5, -5.0, PI, True, False, True), ('bofors', 'Bofors7', 126.0, 12.0, 0.0, 0.0, True, False, True)],
-        [(80.0, 16.0, 14.0), (-40.0, 16.0, 14.0), (-20.0, 10.0, 18.0)], [(-125.0, -40.0, (-14.0, -5.0, 4.0, 13.0)), (-40.0, 10.0, (-14.0, -4.0))])
+        [(80.0, 16.0, 14.0), (-40.0, 16.0, 14.0), (-20.0, 10.0, 18.0)], [(-125.0, -40.0, (-14.0, -5.0, 4.0, 13.0)), (-40.0, 10.0, (-14.0, -4.0))], island_z=20.0, funnel_h=12.0)
 DATA['essex'] = dict(DATA['yorktown'], name='Essex class', L=265.8, B=28.3, max_kn=33.0, crew=2600, displacement=36000.0, draft=8.4, funnels=[-10.0], aircraft=90,
     mounts=mounts([('Mount51', 30.0, PI / 2, 'stbd'), ('Mount52', 24.0, PI / 2, 'stbd'), ('Mount53', -14.0, PI / 2, 'stbd'), ('Mount54', -20.0, PI / 2, 'stbd')], 'us5in38tw') +
            mounts([('Mount55', 70.0, -PI / 2, 'port'), ('Mount56', 60.0, -PI / 2, 'port'), ('Mount57', -60.0, -PI / 2, 'port'), ('Mount58', -70.0, -PI / 2, 'port')], 'us5in38') +
@@ -505,10 +506,11 @@ DATA['essex'] = dict(DATA['yorktown'], name='Essex class', L=265.8, B=28.3, max_
         ['Steering', 'steering', -126.0, 4.0], ['Forward magazine', 'magazine', 84.0, 6.0], ['Aft magazine', 'magazine', -84.0, 6.0], ['Aviation gasoline', 'fuel', 64.0, 5.0], ['Hangar', 'hangar', 0.0, 9.0], ['Flight deck forward', 'deck', 64.0, 6.0], ['Flight deck aft', 'deck', -64.0, 6.0]])
 
 # ---- Independence class (Bataan): narrow deck on a cruiser hull, small starboard island, four small angled funnels ----
+ISL_Z_IND = 10.8
 cv_spec('independence', 189.7, 21.8, 7.9, 11.5, 16.0, 86.0, -96.0, 30.0, 1.8, 8.0, 2, 8.0,
         [('cyl', (x, 9.0, 9.6), (x - 1.0, 17.5, 12.6), 1.2, 1.0, 'sup') for x in (-10.0, -17.0, -24.0, -31.0)] +
         [('cyl', (x - 1.0, 17.5, 12.6), (x - 1.1, 18.2, 12.8), 1.25, 1.1, 'black') for x in (-10.0, -17.0, -24.0, -31.0)] +
-        [('pole', 30.0, 22.0, 14.0, 3.0), ('bedspring', 30.0, 32.0, 3.5, 2.0)],
+        [('pole', 30.0, 22.1, 12.0, 3.0, ISL_Z_IND), ('bedspring', 30.0, 31.5, 3.5, 2.0, ISL_Z_IND)],
         [('bofors', 'Bofors1', 80.0, 14.5, 10.5, PI / 2, True, False, True), ('bofors', 'Bofors2', 80.0, 14.5, -10.5, -PI / 2, True, False, True),
          ('bofors', 'Bofors3', -84.0, 14.5, 10.5, PI / 2, True, False, True), ('bofors', 'Bofors4', -84.0, 14.5, -10.5, -PI / 2, True, False, True),
          ('bofors', 'Bofors5', 0.0, 14.5, -12.5, -PI / 2, True, True, True), ('bofors', 'Bofors6', -50.0, 14.5, -12.5, -PI / 2, True, True, True),
@@ -525,8 +527,9 @@ DATA['independence'] = dict(name='Independence class', nation='us', cls='cvl', L
 
 # ---- Casablanca class escort carrier: short square deck, big hull number forward, island at the deck edge,
 #      one 5-inch/38 on the stern, 40 mm twins along the galleries ----
+ISL_Z_CVE = 15.2
 cv_spec('casablanca', 156.1, 19.9, 6.3, 16.0, 14.0, 70.0, -78.0, 20.0, 1.6, 7.0, 2, 7.0,
-        [('pole', 20.0, 19.0, 12.0, 2.5), ('bedspring', 20.0, 28.0, 3.0, 1.8), ('marking', 50.0, 14.06, 0.0, 14.0, 6.0, 'mark'),
+        [('pole', 20.0, 20.1, 10.0, 2.5, ISL_Z_CVE), ('bedspring', 20.0, 27.5, 3.0, 1.8, ISL_Z_CVE), ('marking', 50.0, 14.06, 0.0, 14.0, 6.0, 'mark'),
          ('marking', 50.0, 14.1, -4.5, 12.0, 1.4, 'fdeck'), ('marking', 50.0, 14.1, 4.5, 12.0, 1.4, 'fdeck')],
         [('dp_single', 'Mount51', -76.0, 7.2, 0.0, PI, 127, False), ('director', 'Director', 20.0, 19.0, 15.4, False, 0.6),
          ('bofors', 'Bofors1', 50.0, 12.5, 16.6, PI / 2, True, True, True), ('bofors', 'Bofors2', 50.0, 12.5, -16.6, -PI / 2, True, True, True),
@@ -664,7 +667,9 @@ def ijn_ca(name, L, B, T, bridge_x, bridge_h, bridge_half, funnels, turret_x, to
 ijn_ca('myoko', 203.8, 20.7, 6.4, 34.0, 14.0, 4.2, [(14.0, 14.0, 2.8), (0.0, 12.0, 2.2)], (72.0, 58.0, 44.0, -56.0, -72.0), (-10.0, -20.0), -36.0,
        [(26.0, 9.0, 5.6, PI / 2), (26.0, 9.0, -5.6, -PI / 2), (-30.0, 9.0, 5.0, PI / 2), (-30.0, 9.0, -5.0, -PI / 2), (46.0, 8.4, 0.0, 0.0)], crew=920, disp=13000.0, kn=36.0)
 ijn_ca('takao', 203.8, 20.7, 6.1, 36.0, 17.0, 5.4, [(14.0, 13.0, 2.8), (0.0, 12.0, 2.2)], (72.0, 58.0, 44.0, -56.0, -72.0), (-10.0, -20.0), -36.0,
-       [(24.0, 9.0, 5.6, PI / 2), (24.0, 9.0, -5.6, -PI / 2), (-30.0, 9.0, 5.0, PI / 2), (-30.0, 9.0, -5.0, -PI / 2), (46.0, 8.4, 0.0, 0.0)], crew=773, disp=13400.0, kn=35.5)
+       [(24.0, 9.0, 5.6, PI / 2), (24.0, 9.0, -5.6, -PI / 2), (-30.0, 9.0, 5.0, PI / 2), (-30.0, 9.0, -5.0, -PI / 2), (46.0, 8.4, 0.0, 0.0)], crew=773, disp=13400.0, kn=35.5,
+       # Takao's 'castle': a massive, wide, square-fronted bridge block around the foot of the tower
+       extra_parts=[('deckhouse', 43.0, 29.0, 6.6, 9.0, 15.5, 1.6), ('deckhouse', 42.0, 30.5, 5.4, 15.5, 20.5, 1.4), ('glass', 41.6, 31.0, 5.2, 19.2)])
 ijn_ca('mogami', 200.6, 20.5, 5.9, 34.0, 13.0, 4.4, [(10.0, 15.0, 3.2)], (70.0, 56.0, 42.0, -54.0, -70.0), (-6.0, -18.0), -36.0,
        [(24.0, 9.0, 5.4, PI / 2), (24.0, 9.0, -5.4, -PI / 2), (-28.0, 9.0, 5.0, PI / 2), (-28.0, 9.0, -5.0, -PI / 2), (44.0, 8.4, 0.0, 0.0)], crew=850, disp=13000.0, kn=35.0)
 DATA['myoko']['name'] = 'Myoko class'; DATA['takao']['name'] = 'Takao class'; DATA['mogami']['name'] = 'Mogami class'
@@ -790,7 +795,7 @@ def ijn_cv(name, L, B, T, fd_half, fd_y, fd_front, fd_back, island, funnels_down
     if island is not None:
         ix, iz, ihalf, iL, lv = island
         parts.append(('island', ix, fd_y, ihalf, iL, lv, 8.0, iz, False))
-        parts.append(('pole', ix, fd_y + lv * 2.6 + 0.9, 10.0, 3.0))
+        parts.append(('pole', ix, fd_y + lv * 2.6 + 0.9, 10.0, 3.0, iz))
     for fx, side in funnels_down:
         parts.append(('funnel_down', fx, fd_y - 2.0, side * (B / 2 - 0.5), 5.0, 1.8, side))
     if casemates:
@@ -842,14 +847,14 @@ ijn_cv('zuiho', 205.5, 18.2, 6.6, 11.5, 15.0, 94.0, -100.0, None, [(10.0, 1)],
        [(50.0, 9.4), (50.0, -9.4), (-60.0, 9.4), (-60.0, -9.4)],
        [(20.0, 11.5, 12.0, PI / 2), (20.0, 11.5, -12.0, -PI / 2), (-30.0, 11.5, 12.0, PI / 2), (-30.0, 11.5, -12.0, -PI / 2)],
        [(60.0, 12.0, 10.0), (-60.0, 12.0, 10.0)], [(-90.0, -20.0, (-6.0, 1.0, 7.0))], hull_deck=7.0, crew=785, disp=11200.0, kn=28.0, aircraft=30,
-       extra=[('pole', 30.0, 15.0, 6.0, 0.0), ('pole', -20.0, 15.0, 6.0, 0.0)])
+       extra=[('pole', 30.0, 15.0, 6.0, 0.0, 11.8), ('pole', -20.0, 15.0, 6.0, 0.0, 11.8)])
 DATA['zuiho']['name'] = 'Zuiho class light carrier'; DATA['zuiho']['cls'] = 'cvl'
 
 # ---- I-10 (Type A1 cruiser submarine): long wooden casing, tall conning tower, hangar and catapult forward of the tower ----
 L = 113.7
 spec('i_boat', nation='ijn', L=L, B=9.5, T=5.3, deck=(1.4, 1.4, 1.4), sub=dict(casing=2.2, deck_y=1.6, sail_x=-2.0, sail_L=12.0, sail_h=4.6),
      palette=dict(hull='#2b2d2f', sup='#4d5255', wood='#5a4a38'),
-     parts=[('cyl', (18.0, 2.4, 0.0), (6.0, 2.4, 0.0), 1.7, 1.7, 'sup'), ('catapult', 30.0, 1.6, 0.0, 18.0, 0.0), ('disc', 6.0, 3.0, -3.2, 1.2, 'red'), ('disc', 6.0, 3.0, 3.2, 1.2, 'red')],
+     parts=[('cyl', (18.0, 2.4, 0.0), (6.0, 2.4, 0.0), 1.7, 1.7, 'sup'), ('catapult', 30.0, 1.6, 0.0, 18.0, 0.0), ('cyl', (-1.5, 4.2, 1.41), (-1.5, 4.2, 1.47), 0.85, 0.85, 'red'), ('cyl', (-1.5, 4.2, -1.41), (-1.5, 4.2, -1.47), 0.85, 0.85, 'red')],
      weapons=[('casemate', 'DeckGun', -14.0, 1.6, 0.0, PI), ('jp25', 'AA1', -3.0, 4.2, 0.0, PI, 2)])
 DATA['i_boat'] = dict(name='I-boat (Type A1 submarine)', nation='ijn', cls='ss', L=113.7, B=9.5, max_kn=23.5, turn=2.4, crew=100, displacement=2900.0,
     gun='jp140', draft=5.3, size_vis=0.5, radar=0.0, smoke=False, night_eye=1.3, funnels=[], funnel_top=3.0, sub=True, dive_kn=8.0,
