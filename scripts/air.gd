@@ -656,10 +656,10 @@ func _flak(dt: float) -> void:
 			for ri in 7:
 				B.after(0.06 * ri, func(): _fire_round(from2, to, 820.0, col2, 0.6, 25.0))
 			B.sfx.play("aa_mg", mp2, B.cam.position, 0.5)
-		if s.T.L > 60.0 and d > 900.0 and randf() < dt * 0.9 * light:
+		if s.T.L > 60.0 and d > 900.0 and randf() < dt * 1.2 * light:
 			# heavy flak: 5-inch time-fuzed shells burst in black puffs around the formation
 			var bp := to + Vector3(randf_range(-110, 110), randf_range(-30, 30), randf_range(-110, 110))
-			_flak_burst(bp)
+			_flak_burst(bp, s.team == "ijn")
 			B.sfx.play("flak", Vector2(bp.x, bp.z), B.cam.position, 0.7)
 	_step_rounds(dt)
 
@@ -686,14 +686,15 @@ func _step_rounds(dt: float) -> void:
 		B.fx.tracer(tail, r.pos, r.col, r.w)
 		if r.life < 0.3 and randf() < dt * 8.0:
 			r.life = 0.0
+		if r.life <= 0.0 and r.w >= 1.0 and r.pos.y > 20.0 and randf() < 0.5:
+			# a Bofors round's self-destruct: a small grey puff
+			B.fx.flak_burst(r.pos.x, r.pos.y, r.pos.z, false)
 	rounds = rounds.filter(func(r): return r.life > 0.0 and r.pos.y > 0.0)
 
 
-## A time-fuzed burst: orange flash, then a dark puff that hangs and drifts.
-func _flak_burst(p: Vector3) -> void:
-	B.fx.flash(p.x, p.y, p.z, 6.0, 20.0, 0.12, Color(1.0, 0.75, 0.4))
-	for k in 3:
-		B.fx.smoke(p.x + randf_range(-4, 4), p.y + randf_range(-3, 3), p.z + randf_range(-4, 4), B.fx.wind.x * 0.5, B.fx.wind.y * 0.5, randf_range(7, 10), 2.0, randf_range(16, 26), 0.75, Color(0.1, 0.1, 0.1), 0.05, 400.0, true)
+## A time-fuzed burst (see Fx.flak_burst).
+func _flak_burst(p: Vector3, ijn := false) -> void:
+	B.fx.flak_burst(p.x, p.y, p.z, true, ijn)
 
 
 ## Which squadron a ship shoots at: by default the nearest enemy planes threatening itself;

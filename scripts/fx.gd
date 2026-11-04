@@ -258,6 +258,42 @@ func oil_fire(x: float, z: float, intensity: float) -> void:
 func oil(x: float, z: float, rad: float) -> void:
 	add(OIL, x, 0.1, z, randf_range(-0.1, 0.1), randf_range(-0.1, 0.1), 0.0, rad, 0.35, randf_range(140, 220), 0.55, Color(0.02, 0.025, 0.03), 0.0)
 
+## Flak. heavy: a 5-inch (US) or 12.7 cm (IJN) time-fuzed shell: a hot flash, a black core that
+## bursts open, then a ragged cloud that hangs in the sky for most of a minute, greying as it
+## spreads, with wisps flung out. Light: a 40 mm / 25 mm round's self-destruct puff. A long raid
+## leaves the sky over the fleet pocked with old bursts.
+func flak_burst(x: float, y: float, z: float, heavy: bool, ijn := false) -> void:
+	var wx := wind.x * 0.5
+	var wz := wind.y * 0.5
+	if not heavy:
+		flash(x, y, z, 1.6, 9.0, 0.08, Color(1.0, 0.8, 0.5))
+		var c0 := Color(0.34, 0.33, 0.31).lerp(Color(0.46, 0.45, 0.43), randf())
+		add(SMOKE, x, y, z, wx, wz, 0.05, randf_range(1.6, 2.4), 0.9, randf_range(9.0, 15.0), 0.55, c0, 0.3, 0.0, 400.0)
+		return
+	flash(x, y, z, 5.0, 34.0, 0.12, Color(1.0, 0.72, 0.38))
+	flash(x, y, z, 2.5, 14.0, 0.06, Color(1.0, 0.95, 0.8))
+	var dark := Color(0.04, 0.035, 0.03) if not ijn else Color(0.12, 0.1, 0.08)
+	var body := Color(0.09, 0.085, 0.08) if not ijn else Color(0.2, 0.18, 0.15)
+	# the core: thick and black, snapping open in a second or two
+	for j in 3:
+		var a := randf() * TAU
+		add(SMOKE, x + cos(a) * 1.5, y + randf_range(-1, 1), z + sin(a) * 1.5, wx + cos(a) * 2.0, wz + sin(a) * 2.0, 0.0,
+			randf_range(3.5, 5.0), 7.0, randf_range(1.8, 2.6), 0.95, dark, 0.3, 0.0, 400.0)
+	# the cloud that stays: lumpy, slowly spreading and drifting downwind
+	for j in 5:
+		var a := randf() * TAU
+		var o := randf_range(1.0, 6.0)
+		add(SMOKE, x + cos(a) * o, y + randf_range(-3, 3), z + sin(a) * o, wx + cos(a) * 0.8, wz + sin(a) * 0.8, 0.05,
+			randf_range(5.0, 8.0), randf_range(1.1, 1.7), randf_range(32.0, 50.0), randf_range(0.6, 0.78), body.lerp(dark, randf() * 0.5),
+			0.3, 0.0, 400.0)
+	# ragged wisps thrown out of the burst
+	for j in 3:
+		var a := randf() * TAU
+		var e := randf_range(-0.5, 0.5)
+		var sp := randf_range(3.0, 5.0)
+		add(SMOKE, x, y, z, wx + cos(a) * sp, wz + sin(a) * sp, e * sp, randf_range(1.8, 2.8), 0.9, randf_range(8.0, 13.0), 0.5, body,
+			0.3, 0.0, 400.0)
+
 func flash(x: float, y: float, z: float, rad: float, grow: float, lf: float, col: Color) -> void:
 	add(FLASH, x, y, z, 0, 0, 0, rad, grow, lf, 1.0, col, 2.0)
 
@@ -409,7 +445,8 @@ func _alpha(i: int) -> float:
 		FOAM, OIL:
 			a *= minf(1.0, age[i] * 4.0) * (1.0 - t) * (1.0 - t * 0.3)
 		SMOKE:
-			a *= minf(1.0, age[i] * 1.5) * (1.0 - t) * (1.0 + 0.6 * t)
+			# flak (shape 0.3) pops open at once; other smoke billows in
+			a *= minf(1.0, age[i] * (10.0 if (shape[i] > 0.25 and shape[i] < 0.35) else 1.5)) * (1.0 - t) * (1.0 + 0.6 * t)
 		SPLASH:
 			a *= (1.0 - t) * (1.0 - t)
 		FIRE, FLASH:
