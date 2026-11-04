@@ -29,6 +29,7 @@ var player: Ship
 var shells: Array = []
 var torps: Array = []
 var smokes: Array = []         # smoke screen clouds that block sight lines
+var wrecks: Array = []         # where ships went down: burning oil and smoke for a few minutes
 var stars: Array = []          # star shells
 var events: Array = []         # [time, Callable]
 var salvo_n := 0
@@ -233,7 +234,7 @@ func _test_args() -> void:
 			print("saved slot ", _test.save, " at t=", t)
 		print("debug ", _dbg)
 		print("tally kills=", tally.kills, " gun=", tally.gun_kills, " torp=", tally.torp_kills, " air=", tally.air_kills, " list=", tally.kill_list, " torps_seen=", tally.torps_seen, " hits=", tally.hits, " fires_out=", tally.fires_out, " sorties=", tally.sorties, " air_hits=", tally.get("air_hits", 0))
-		print("ran ", _test.run, "s: t=", t, " player crew ", player.crew, " flood ", player.flood, " salvos ", stats.salvos, " hits ", stats.hits, " sunk ", stats.sunk)
+		print("ran ", _test.run, "s: t=", t, " player crew ", player.crew, " flood ", player.flood, " salvos ", stats.salvos, " hits ", stats.hits, " sunk ", stats.sunk, " particles ", fx.n, " ", fx.kind_counts())
 		for s in ships:
 			print("  ", s.ship_name, " alive=", s.alive, " crew=", s.crew, " flood=", int(s.flood), " fires=", s.fires.size(), " range=", int(player.range_to(s)), " vis=", player.vis.get(s.ship_name, false), " radar=", player.radar.get(s.ship_name, false))
 		if _test.has("quit") and not _test.has("shot"):
@@ -311,6 +312,7 @@ func _build_world() -> void:
 	ocean.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(ocean)
 	fx = Fx.new()
+	fx.billboard = true    # smoke and flashes face the camera in the tilted and cinematic views too
 	add_child(fx)
 
 
@@ -338,7 +340,7 @@ func apply_weather() -> void:
 func new_game() -> void:
 	for s in ships:
 		s.queue_free()
-	ships.clear(); shells.clear(); torps.clear(); smokes.clear(); stars.clear(); events.clear(); charges.clear()
+	ships.clear(); shells.clear(); torps.clear(); smokes.clear(); stars.clear(); events.clear(); charges.clear(); wrecks.clear()
 	fx.clear()
 	t = 0.0; salvo_n = 0; over = ""; shake = 0.0; started = false
 	set_meta("settled", false)
@@ -1020,7 +1022,7 @@ func save_state() -> Dictionary:
 func load_state(d: Dictionary) -> void:
 	for sh in ships:
 		sh.queue_free()
-	ships.clear(); shells.clear(); torps.clear(); smokes.clear(); stars.clear(); events.clear()
+	ships.clear(); shells.clear(); torps.clear(); smokes.clear(); stars.clear(); events.clear(); wrecks.clear()
 	fx.clear()
 	ai.reset()
 	air.reset()
@@ -1084,7 +1086,14 @@ func _process(delta: float) -> void:
 	for s in ships:
 		s.update_visual(t)
 	_draw_shells()
+	var _fx_t0 := Time.get_ticks_usec()
 	fx.render(cam.position)
+	if _test.has("fxprof"):
+		_dbg["fx_us"] = _dbg.get("fx_us", 0) + Time.get_ticks_usec() - _fx_t0
+		_dbg["fx_frames"] = _dbg.get("fx_frames", 0) + 1
+		if _dbg.fx_frames % 120 == 0:
+			print("fx render avg %.2f ms over %d particles" % [_dbg.fx_us / 120000.0, fx.n])
+			_dbg.fx_us = 0
 	crew.step(delta * (speed if started else 0.0))
 	crew.render(cam.position)
 	sfx.step(delta)
@@ -1256,6 +1265,17 @@ func _step_smokes(dt: float) -> void:
 		s.z += fx.wind.y * dt
 		s.r = minf(s.rmax, s.r + dt * 2.2)
 	smokes = smokes.filter(func(s): return s.age < s.life)
+	# burning oil where ships went down, dying away over a few minutes
+	for w in wrecks:
+		w.age += dt
+		w.x += fx.wind.x * dt * 0.3
+		w.z += fx.wind.y * dt * 0.3
+		var k: float = w.k * (1.0 - w.age / w.life)
+		if randf() < dt * 2.2 * k:
+			fx.oil_fire(w.x + randf_range(-w.r, w.r), w.z + randf_range(-w.r, w.r), k)
+		if randf() < dt * 0.6:
+			fx.oil(w.x + randf_range(-w.r, w.r), w.z + randf_range(-w.r, w.r), randf_range(8, 16))
+	wrecks = wrecks.filter(func(w): return w.age < w.life)
 	for st in stars:
 		st.age += dt
 	stars = stars.filter(func(s): return s.age < s.life)
@@ -1618,8 +1638,8 @@ func _launch_shells(s: Ship, sv: Dictionary, ready: Array, aim: Vector2, sig_r: 
 			var wb: float = s.h + m.ang
 			fx.flash(fp.x, muzzle_y + 1.0, fp.y, 7.0 * sz, 30.0 * sz, 0.25 * maxf(sz, 0.5), Color(1.0, 0.85, 0.55))
 			fx.light(Vector3(fp.x, muzzle_y + 2.0, fp.y), 520.0 * sz, Color(1.0, 0.7, 0.4), 5.0 * sz, 0.28)
-			for i in (3 if sz >= 0.5 else 1):
-				fx.smoke(fp.x + sin(wb) * 4.0 * sz, muzzle_y + 1.0, fp.y - cos(wb) * 4.0 * sz, sin(wb) * randf_range(4, 9) * sz, -cos(wb) * randf_range(4, 9) * sz, randf_range(2.5, 4) * sz, 1.8 * sz, randf_range(5, 8), 0.4 * maxf(sz, 0.5), Color(0.6, 0.56, 0.48), 0.3)
+			# cordite smoke blown out ahead of the guns; it hangs over the line of battle and drifts
+			fx.gun_smoke(fp.x, muzzle_y + 1.0, fp.y, sin(wb), -cos(wb), sz)
 			sfx.gun(sz, fp, cam.position)
 		)
 	s.last_fired = t
@@ -1969,7 +1989,7 @@ func magazine_boom(s: Ship, mx: float) -> void:
 	fx.light(Vector3(w.x, 60.0, w.y), 3200.0, Color(1.0, 0.6, 0.25), 16.0, 2.5)
 	for i in 40:
 		var c := Color(0.1 + randf() * 0.08, 0.09 + randf() * 0.07, 0.08 + randf() * 0.06)
-		fx.smoke(w.x + randf_range(-25, 25), randf_range(10, 40), w.y + randf_range(-25, 25), randf_range(-4, 4), randf_range(-4, 4), randf_range(8, 16), randf_range(1.5, 3), randf_range(40, 70), randf_range(0.5, 0.8), c, 3.0)
+		fx.smoke(w.x + randf_range(-25, 25), randf_range(10, 60), w.y + randf_range(-25, 25), randf_range(-4, 4), randf_range(-4, 4), randf_range(10, 18), randf_range(0.8, 1.4), randf_range(70, 120), randf_range(0.6, 0.85), c, 3.0, 160.0, true)
 	s.mag_blown = true
 	s.crew = maxi(0, int(round(s.crew * 0.08)))
 	s.flood = s.T.displacement * 2.0
@@ -2211,8 +2231,14 @@ func step_ship(s: Ship, dt: float) -> void:
 			fx.oil(s.x + randf_range(-20, 20), s.z + randf_range(-20, 20), randf_range(8, 18))
 		if randf() < dt * 0.8:
 			fx.debris(s.x + randf_range(-30, 30), 2.0, s.z + randf_range(-30, 30), 2, 4.0)
+		if (not s.fires.is_empty() or s.mag_blown) and randf() < dt * 1.2:
+			fx.plume(s.x + randf_range(-TT.L * 0.25, TT.L * 0.25), 4.0, s.z + randf_range(-10, 10), 0.9)
 		if s.sink > 16.0:
 			s.gone = true
+			# burning fuel on the water where she went down
+			if TT.L > 60.0 and (not s.fires.is_empty() or s.mag_blown or randf() < 0.5):
+				wrecks.append({"x": s.x, "z": s.z, "r": clampf(TT.L * 0.25, 15.0, 60.0), "k": clampf(TT.L / 180.0, 0.4, 1.2) * (1.4 if s.mag_blown else 1.0),
+					"age": 0.0, "life": randf_range(160.0, 260.0)})
 		for f in s.fires:
 			f.int *= exp(-dt * 0.1)
 	var fv := U.fwd(s.h)
@@ -2245,14 +2271,17 @@ func step_ship(s: Ship, dt: float) -> void:
 		var wp := s.to_world_xz(fr.lx, fr.lz)
 		if randf() < dt * 9.0 * fr.int:
 			fx.fire_puff(wp.x + randf_range(-2, 2), 7.0, wp.y + randf_range(-2, 2), randf_range(2, 4) * (0.6 + fr.int))
-		if randf() < dt * 5.0 * fr.int:
-			fx.smoke(wp.x, 10.0, wp.y, 0, 0, randf_range(4, 7), 3.5, randf_range(14, 22), 0.75, Color(0.08, 0.075, 0.07), 1.2)
+		if randf() < dt * 1.6 * fr.int:
+			# a plume that climbs, leans downwind and trails across the sea
+			fx.plume(wp.x, 10.0, wp.y, fr.int)
 		if fr.int > 0.2 and randf() < dt * 6.0:
 			fx.light(Vector3(wp.x, 14.0, wp.y), 320.0 * (0.6 + fr.int), Color(1.0, 0.5, 0.18), 4.0, 0.3)
-	if s.alive and randf() < dt * 3.0:
+	var eng_dmg := 1.0 - s.mod_health("engine")
+	if s.alive and randf() < dt * (1.6 + eng_dmg * 2.0):
+		var power := clampf(absf(s.v) / (TT.max_kn * Data.KN), 0.0, 1.2)
 		for fxp in TT.funnels:
 			var wp := s.to_world_xz(fxp, 0.0)
-			fx.smoke(wp.x, TT.funnel_top, wp.y, 0, 0, randf_range(2.0, 3.0), 1.1, randf_range(7, 10), 0.12 + 0.14 * (s.v / (36.0 * Data.KN)), Color(0.42, 0.42, 0.4), 0.4)
+			fx.funnel_smoke(wp.x, TT.funnel_top, wp.y, power, eng_dmg, s.team == "ijn")
 	if s.smoke_on and s.alive:
 		if randf() < dt * 5.0:
 			for fxp in TT.funnels:

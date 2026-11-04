@@ -693,7 +693,7 @@ func _step_rounds(dt: float) -> void:
 func _flak_burst(p: Vector3) -> void:
 	B.fx.flash(p.x, p.y, p.z, 6.0, 20.0, 0.12, Color(1.0, 0.75, 0.4))
 	for k in 3:
-		B.fx.smoke(p.x + randf_range(-4, 4), p.y + randf_range(-3, 3), p.z + randf_range(-4, 4), B.fx.wind.x * 0.5, B.fx.wind.y * 0.5, randf_range(7, 10), 4.0, randf_range(5, 8), 0.75, Color(0.1, 0.1, 0.1), 0.05)
+		B.fx.smoke(p.x + randf_range(-4, 4), p.y + randf_range(-3, 3), p.z + randf_range(-4, 4), B.fx.wind.x * 0.5, B.fx.wind.y * 0.5, randf_range(7, 10), 2.0, randf_range(16, 26), 0.75, Color(0.1, 0.1, 0.1), 0.05, 400.0, true)
 
 
 ## Which squadron a ship shoots at: by default the nearest enemy planes threatening itself;
