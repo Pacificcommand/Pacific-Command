@@ -3,6 +3,7 @@ Sources for layout: plan drawings and photos in the Ship references tab (Fletche
 LOA 114.8 m, beam 12.0 m, draft 4.2 m."""
 import numpy as np
 from geom import Mesh, Builder, rounded_plan, rot_y
+from detail import Paint, portholes, door, ladder, window_strip, hatch, locker, raft, raft_on_wall, capstan, reel, stays, railing, mix
 
 LOA = 114.8
 XB, XS = 57.4, -57.4          # bow (stem at deck), stern
@@ -54,8 +55,13 @@ PAL = {
 }
 
 def build(scheme='m21', train=None):
-    P = PAL[scheme]
+    # m21 = Measure 21 navy blue; m22 = Measure 32 dazzle painted over the same base colours
+    P = dict(PAL['m21'])
+    P['rim'] = '#9aa3a8'
     M = Mesh()
+    paint = Paint(P, LOA, 4.1, 'dazzle' if scheme == 'm22' else 'plain', seed=445)
+    paint.funnels = [(7.2, 16.0), (-7.4, 15.6)]
+    M.paint = paint
     H = Builder(M, 'Hull', P['hull'])
 
     # ---------------- hull ----------------
@@ -70,7 +76,7 @@ def build(scheme='m21', train=None):
         a, b = sections[i], sections[i + 1]
         for k in range(levels - 1):
             ya = a[k][1]
-            mat = P['bottom'] if ya < -0.05 else (P['boot'] if ya < 0.45 else (P['band'] if ('band' in P and ya < 3.35) else P['hull']))
+            mat = P['bottom'] if ya < -0.05 else (P['boot'] if ya < 0.45 else P['hull'])
             H.set_mat(mat)
             for s in (1, -1):
                 H.quad((a[k][0], a[k][1], s * a[k][2]), (b[k][0], b[k][1], s * b[k][2]),
@@ -91,17 +97,24 @@ def build(scheme='m21', train=None):
         H.quad((XS, st[k][1], -st[k][2]), (XS, st[k][1], st[k][2]), (XS, st[k + 1][1], st[k + 1][2]), (XS, st[k + 1][1], -st[k + 1][2]))
     # deck with camber
     D = Builder(M, 'Hull', P['deck'])
+    D.raw = True
+    tones = [P['deck'], mix(P['deck'], '#ffffff', 0.04), mix(P['deck'], '#000000', 0.04)]
     ncam = 8
     for i in range(len(sections) - 1):
         xa, xb = sections[i][-1][0], sections[i + 1][-1][0]
         wa, wb = sections[i][-1][2], sections[i + 1][-1][2]
         ya, yb = sections[i][-1][1], sections[i + 1][-1][1]
         for k in range(ncam):
+            D.set_mat(tones[(k // 2 + i // 5) % 3])
             z0, z1 = -1 + 2 * k / ncam, -1 + 2 * (k + 1) / ncam
             cam = lambda z: 0.16 * (1 - z * z)
             D.quad((xa, ya + cam(z0), z0 * wa), (xb, yb + cam(z0), z0 * wb), (xb, yb + cam(z1), z1 * wb), (xa, ya + cam(z1), z1 * wa))
     xl = sections[-1][-1][0]; yl = sections[-1][-1][1]; wl = sections[-1][-1][2]
+    D.set_mat(P['deck'])
     D.tri((xl, yl, -wl), (stem_x(deck_y(XB)), deck_y(XB), 0), (xl, yl, wl))
+    # scuttles along the hull under the deck edge
+    for s in (1, -1):
+        portholes(H, P, [(x, deck_y(x) - 1.2, s * half_breadth(x, deck_y(x) - 1.2)) for x in np.arange(-44.0, 38.0, 2.6)], 'z+' if s > 0 else 'z-', size=0.36)
 
     # ---------------- deck fittings ----------------
     F = Builder(M, 'Hull', P['gun'])
@@ -138,6 +151,11 @@ def build(scheme='m21', train=None):
     fwd = rounded_plan(34.5, 11.0, 4.6, 3.0)
     S.prism(fwd, dy(22) - 0.2, dy(22) + 2.5)
     L1 = dy(22) + 2.5
+    portholes(S, P, [(x, dy(22) + 1.4, 4.6) for x in np.arange(13.0, 30.0, 2.2)], 'z+', size=0.34)
+    portholes(S, P, [(x, dy(22) + 1.4, -4.6) for x in np.arange(13.0, 30.0, 2.2)], 'z-', size=0.34)
+    for sg, nm in ((1, 'z+'), (-1, 'z-')):
+        door(S, P, (12.5, dy(22) + 0.8, sg * 4.6), nm, h=1.6)
+    ladder(S, P, (11.0, dy(22) + 1.1, 2.0), 'x-', 2.4)
     # bridge levels with the round front
     S.prism(rounded_plan(27.0, 15.0, 4.2, 4.0), L1, L1 + 2.6)
     L2 = L1 + 2.6
@@ -145,9 +163,20 @@ def build(scheme='m21', train=None):
     S.prism(rounded_plan(26.6, 18.5, 3.9, 3.8), L2, L2 + 0.9)
     S.set_mat(P['sup'])
     S.prism(rounded_plan(26.4, 18.5, 3.9, 3.8), L2 + 0.9, L2 + 1.3)
-    # open bridge wings
+    # window frames and a visor over the pilot house glass
+    S.raw = True
+    S.set_mat(P['sup'])
+    for z in np.arange(-3.3, 3.4, 1.1):
+        S.box((26.5, L2 + 0.45, z), (0.3, 0.9, 0.12))
+    S.box((26.6, L2 + 0.95, 0), (1.4, 0.1, 8.0))
+    S.raw = False
+    window_strip(S, P, 16.0, 26.0, L1 + 1.5, 4.2, 'z+', h=0.55, pitch=0.9)
+    window_strip(S, P, 16.0, 26.0, L1 + 1.5, -4.2, 'z-', h=0.55, pitch=0.9)
+    # open bridge wings with their rails
     for s in (1, -1):
         S.box((22.0, L2 + 0.1, s * 4.6), (3.2, 0.2, 1.6))
+        railing(S, P, [(23.6, L2 + 0.2, s * 5.4), (20.4, L2 + 0.2, s * 5.4)], h=0.9, mid=False)
+        railing(S, P, [(23.6, L2 + 0.2, s * 4.0), (23.6, L2 + 0.2, s * 5.4)], h=0.9, mid=False)
     # director platform pedestal
     S.cyl((21.2, L2 + 1.3, 0), (21.2, L2 + 2.6, 0), 1.6, n=18)
     L3 = L2 + 2.6
@@ -155,6 +184,10 @@ def build(scheme='m21', train=None):
     mid = [(11.0, 3.3), (-11.0, 3.3), (-11.0, -3.3), (11.0, -3.3)]
     S.prism(mid, dy(0) - 0.2, dy(0) + 2.4)
     Lmid = dy(0) + 2.4
+    for sg, nm in ((1, 'z+'), (-1, 'z-')):
+        door(S, P, (-9.5, dy(0) + 0.75, sg * 3.3), nm, h=1.6)
+        door(S, P, (9.0, dy(0) + 0.75, sg * 3.3), nm, h=1.6)
+        portholes(S, P, [(x, dy(0) + 1.5, sg * 3.3) for x in (-6.0, -3.0, 0.0, 3.0, 6.0)], nm, size=0.3)
     # 40mm platform abreast forward funnel
     for s in (1, -1):
         S.prism([(5.5, s * 3.3), (0.5, s * 3.3), (0.5, s * 5.6), (5.5, s * 5.6)], Lmid - 0.25, Lmid)
@@ -164,6 +197,10 @@ def build(scheme='m21', train=None):
     aft1 = [(-18.0, 3.6), (-38.5, 3.6), (-39.5, 2.6), (-39.5, -2.6), (-38.5, -3.6), (-18.0, -3.6)]
     S.prism(aft1, dy(-28) - 0.2, dy(-28) + 2.4)
     La1 = dy(-28) + 2.4
+    for sg, nm in ((1, 'z+'), (-1, 'z-')):
+        door(S, P, (-37.5, dy(-28) + 0.75, sg * 3.6), nm, h=1.6)
+        portholes(S, P, [(x, dy(-28) + 1.5, sg * 3.6) for x in np.arange(-35.0, -24.0, 2.4)], nm, size=0.3)
+    ladder(S, P, (-39.5, dy(-28) + 1.1, 0.0), 'x-', 2.4)
     aft2 = [(-23.0, 2.9), (-32.0, 2.9), (-32.5, 2.3), (-32.5, -2.3), (-32.0, -2.9), (-23.0, -2.9)]
     S.prism(aft2, La1, La1 + 2.3)
     La2 = La1 + 2.3
@@ -201,6 +238,10 @@ def build(scheme='m21', train=None):
     for s in (1, -1):
         Mt.cyl((mx - 3.0, L1 + 2.6, s * 2.2), (mx, L1 + 11.0, 0), 0.10, n=6, caps=False)
     Mt.cyl((mx, L1 + 13.5, -4.0), (mx, L1 + 13.5, 4.0), 0.07, n=6)   # yardarm
+    stays(Mt, P, (mx, top - 1.0, 0), [(mx - 9.0, Lmid, 0), (mx - 6.0, L1, 4.0), (mx - 6.0, L1, -4.0), (mx + 10.0, L1, 0)])
+    # signal halyards from the yardarm
+    stays(Mt, P, (mx, L1 + 13.5, 4.0), [(mx - 4.0, L2, 3.5)], r=0.02)
+    stays(Mt, P, (mx, L1 + 13.5, -4.0), [(mx - 4.0, L2, -3.5)], r=0.02)
     # SC air-search radar: a flat lattice "bedspring"
     Mt.set_mat(P['rail'])
     ry = L1 + 16.0
@@ -227,10 +268,15 @@ def build(scheme='m21', train=None):
     for dx in (-3.2, 3.2):
         B.cyl((bx + dx, Lmid - 0.2, -3.6), (bx + dx, by + 1.2, bz + 0.2), 0.08, n=6)
     # life rafts on the deckhouse sides and aft
-    B.set_mat(P['raft'])
-    for x, z, y in [(30.5, 4.75, L1 - 1.4), (30.5, -4.75, L1 - 1.4), (-29.0, 3.75, La1 - 1.3), (-29.0, -3.75, La1 - 1.3),
-                    (-2.0, 3.45, Lmid - 1.2), (-2.0, -3.45, Lmid - 1.2)]:
-        B.box((x, y, z), (2.6, 1.0, 0.3))
+    for x, z, y in [(30.5, 4.6, L1 - 1.4), (30.5, -4.6, L1 - 1.4), (-29.0, 3.6, La1 - 1.3), (-29.0, -3.6, La1 - 1.3),
+                    (-2.0, 3.3, Lmid - 1.2), (-2.0, -3.3, Lmid - 1.2)]:
+        raft_on_wall(B, P, x, y, z, 1 if z > 0 else -1)
+    # deck clutter: hatches on the forecastle and fantail, a reel by the after deckhouse
+    hatch(B, P, 47.5, dy(47.5), 0.0, L=1.4, w=1.1)
+    hatch(B, P, -46.5, dy(-46.5), 0.0, L=1.6, w=1.2)
+    for sg in (1, -1):
+        reel(B, P, -17.0, dy(-17.0), sg * 4.4, r=0.4, w=0.8)
+        locker(B, P, 37.0, dy(37.0), sg * 4.3, L=1.0, w=0.6, h=0.8)
     # searchlights
     B.set_mat(P['light'])
     B.cyl((-11.5, Lmid + 2.2, 0), (-11.5, Lmid + 2.8, 0), 0.55, n=14)
@@ -248,6 +294,7 @@ def build(scheme='m21', train=None):
 
     # ---------------- railings ----------------
     R = Builder(M, 'Hull', P['rail'])
+    R.raw = True
     xs = np.arange(XS + 1.5, 55.5, 1.8)
     for s in (1, -1):
         prev = None
@@ -292,6 +339,7 @@ def gun_mount(M, name, pos, face, P):
     G.box((-1.3, 2.68, 0.0), (1.2, 0.16, 1.4))
     for s in (1, -1):
         G.box((0.8, 2.7, s * 1.25), (0.9, 0.3, 0.6))
+    door(G, P, (-2.9, 1.25, 0.5), 'x-', w=0.7, h=1.5)
     # barrel and blast bag
     G.set_mat(P['canvas'])
     G.cyl((2.0, 1.5, 0), (2.6, 1.5, 0), 0.33, 0.26, n=12)
@@ -317,6 +365,8 @@ def bofors(M, name, pos, P, outward=0):
     x, y, z = pos
     ra, rb = T.cyl((x, y, z), (x, y + 1.1, z), 2.0, n=22, caps=False)
     T.cyl((x, y + 0.02, z), (x, y + 0.04, z), 1.9, n=22)
+    for ang in (0.8, 2.3, 4.0, 5.5):
+        locker(T, P, x + np.cos(ang) * 1.45, y + 0.04, z + np.sin(ang) * 1.45, L=0.6, w=0.45, h=0.75)
     G = Builder(M, name, P['gun'], pivot=pos)
     a = (np.pi / 2 if outward > 0 else -np.pi / 2) if outward else 0.0
     G.xf = (rot_y(-a), np.array(pos))
@@ -327,15 +377,20 @@ def bofors(M, name, pos, P, outward=0):
         G.cyl((0.4, 1.15, s * 0.32), (3.2, 1.25, s * 0.32), 0.07, n=8)
     G.set_mat(P['gun'])
     G.box((-0.7, 0.9, 0), (0.4, 0.8, 1.6))
+    G.set_mat(P['dark'])
+    for zz in (-0.9, 0.9):
+        G.box((-0.5, 0.85, zz), (0.4, 0.1, 0.4))
 
 
 def oerlikon(M, name, pos, P, outward):
     G = Builder(M, name, P['gun'], pivot=pos)
     G.xf = (rot_y(-(np.pi / 2 if outward > 0 else -np.pi / 2)), np.array(pos))
     G.cyl((0, 0, 0), (0, 0.9, 0), 0.12, n=8)
-    G.box((0.15, 1.15, 0), (0.08, 0.8, 0.9))
+    G.set_mat(P['sup'])
+    G.box((0.15, 1.15, 0), (0.08, 0.9, 1.1))
     G.set_mat(P['dark'])
     G.cyl((0.0, 1.1, 0), (2.2, 1.2, 0), 0.05, n=6)
+    G.cyl((-0.2, 1.3, 0), (0.0, 1.3, 0), 0.22, n=8)
 
 
 def director(M, name, pos, P):

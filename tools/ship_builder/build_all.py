@@ -22,6 +22,9 @@ SHIPS = [
 ]
 for name in specs.SPECS:
     SHIPS.append((name, name.title().replace('_', ''), (lambda n: (lambda: build_spec(specs.SPECS[n])))(name)))
+    if specs.SPECS[name]['nation'] == 'us' and not specs.SPECS[name].get('sub'):
+        # Measure 32 dazzle variant, used for the m22 scheme
+        SHIPS.append((name + '_m22', name.title().replace('_', ''), (lambda n: (lambda: build_spec(specs.SPECS[n], 'dazzle')))(name)))
 from planes import PLANES, build_plane
 from shore import SHORE
 for name, fn in SHORE:

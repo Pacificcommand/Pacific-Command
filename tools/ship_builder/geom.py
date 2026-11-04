@@ -4,6 +4,7 @@ import numpy as np
 class Mesh:
     def __init__(self):
         self.groups = {}          # name -> dict(pivot, tris list of (3x3 array), colors)
+        self.paint = None         # optional callable(mat, centroid) -> mat: camouflage, plating shades, weathering
 
     def group(self, name, pivot=(0, 0, 0)):
         if name not in self.groups:
@@ -14,8 +15,10 @@ class Builder:
     """Adds triangles to one group with one material."""
     def __init__(self, mesh, group, mat, pivot=(0, 0, 0)):
         self.g = mesh.group(group, pivot)
+        self.mesh = mesh
         self.mat = mat
         self.xf = None   # optional 3x3 rotation + offset applied to added points
+        self.raw = False  # True: skip the mesh paint (markings, glass, fittings keep their colour)
 
     def set_mat(self, mat):
         self.mat = mat
@@ -26,6 +29,19 @@ class Builder:
         if self.xf is not None:
             R, o = self.xf
             t = t @ R.T + o
+        paint = self.mesh.paint
+        if paint is not None and not self.raw:
+            split = getattr(paint, 'split_tri', None)
+            if split is not None:
+                pieces = split(self.mat, t)
+                if pieces is not None:
+                    for tt in pieces:
+                        self.g['tris'].append(tt)
+                        self.g['mats'].append(paint(self.mat, tt.mean(axis=0)))
+                    return
+            self.g['tris'].append(t)
+            self.g['mats'].append(paint(self.mat, t.mean(axis=0)))
+            return
         self.g['tris'].append(t)
         self.g['mats'].append(self.mat)
 

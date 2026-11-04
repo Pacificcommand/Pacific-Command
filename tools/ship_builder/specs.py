@@ -10,6 +10,7 @@ PI = np.pi
 SPECS = {}
 
 def spec(name, **kw):
+    kw.setdefault('name', name)
     SPECS[name] = kw
     return kw
 

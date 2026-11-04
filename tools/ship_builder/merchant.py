@@ -10,7 +10,8 @@ from geom import Mesh, Builder, rot_y
 
 P = dict(hull='#3a3d3e', boot='#151616', bottom='#6a2c22', sup='#8e918b', sup2='#a7a89f', deck='#7a5d40', steel='#62665f',
          dark='#232525', black='#0c0c0c', tarp='#5f5a45', rail='#2b2d2d', glass='#2c3538', boat='#c9c8bd', red='#a63a2c',
-         white='#dedbd2', pipe='#55595a', rust='#6e4630')
+         white='#dedbd2', pipe='#55595a', rust='#6e4630', rim='#8e918b')
+from detail import Paint, portholes, door, ladder, window_strip, stays, railing, raft_on_wall, mix
 
 
 class Hull:
@@ -208,9 +209,25 @@ def build_cargo():
         return 4.7 + 0.35 * abs(x) / 55.0                  # well decks
     h = Hull(L, 7.6, 6.5, deck, [-44.0, -12.0, 14.0, 44.0], bow_rake=5.5)
     M = Mesh()
+    # a hard-worked tramp: heavy plating shades and rust
+    paint = Paint(P, L, 5.0, 'plain', seed=1920)
+    paint.rust = '#7a4a2a'
+    paint.hull_sh = [P['hull'], mix(P['hull'], '#ffffff', 0.08), mix(P['hull'], '#000000', 0.1), mix(P['hull'], '#7a4a2a', 0.3)]
+    paint.funnels = [(-3.5, 19.3)]
+    M.paint = paint
     h.build(M)
     h.rails(M)
     S = Builder(M, 'Hull', P['sup'])
+    # scuttles along the hull under the castles, doors and ladders on the midship house
+    for sg, nm in ((1, 'z+'), (-1, 'z-')):
+        portholes(S, P, [(x, deck(x) - 1.3, sg * h.hb(x, deck(x) - 1.3)) for x in np.arange(-10.0, 12.0, 2.4)], nm, size=0.4)
+        portholes(S, P, [(x, deck(x) - 1.3, sg * h.hb(x, deck(x) - 1.3)) for x in np.arange(-54.0, -45.0, 2.4)], nm, size=0.4)
+        portholes(S, P, [(x, 7.2 + 1.6, sg * 5.5) for x in np.arange(-9.0, 11.0, 2.2)], nm, size=0.4)
+        door(S, P, (-9.0, 7.2 + 0.95, sg * 5.5), nm)
+        door(S, P, (9.0, 7.2 + 0.95, sg * 5.5), nm)
+        portholes(S, P, [(x, 7.2 + 2.6 + 1.4, sg * 5.0) for x in np.arange(4.0, 10.5, 2.0)], nm, size=0.4)
+    ladder(S, P, (-10.0, 7.2 + 1.3, 3.0), 'x-', 2.6)
+    ladder(S, P, (3.2, 7.2 + 2.6 + 1.2, 2.0), 'x-', 2.4)
     # forecastle: windlass and anchor gear
     S.set_mat(P['dark']); S.box((49.5, deck(49.5) + 0.5, 0), (1.8, 1.0, 3.6))
     # hatches: two forward, two aft
@@ -225,7 +242,17 @@ def build_cargo():
     S.set_mat(P['sup']); S.box((7.2, y0 + 3.8, 0), (8.0, 2.4, 10.0))
     S.set_mat(P['sup2']); S.box((9.5, y0 + 6.0, 0), (3.2, 2.0, 7.0))
     S.set_mat(P['glass']); S.box((11.12, y0 + 6.3, 0), (0.05, 0.8, 6.4))
+    S.raw = True
+    S.set_mat(P['sup2'])
+    for z in np.arange(-2.8, 2.9, 0.8):
+        S.box((11.12, y0 + 6.3, z), (0.08, 0.9, 0.1))
+    S.raw = False
+    window_strip(S, P, 8.0, 11.0, y0 + 6.3, 3.5, 'z+', h=0.7, pitch=0.9)
+    window_strip(S, P, 8.0, 11.0, y0 + 6.3, -3.5, 'z-', h=0.7, pitch=0.9)
     S.set_mat(P['sup2']); S.box((9.8, y0 + 5.05, 0), (2.0, 0.12, 15.0))   # bridge wings
+    for sg in (1, -1):
+        railing(S, P, [(10.8, y0 + 5.1, sg * 7.5), (8.8, y0 + 5.1, sg * 7.5)], h=0.9, mid=False)
+        railing(S, P, [(10.8, y0 + 5.1, sg * 3.6), (10.8, y0 + 5.1, sg * 7.5)], h=0.9, mid=False)
     S.set_mat(P['canvas'] if 'canvas' in P else P['tarp']); S.box((9.5, y0 + 7.05, 0), (3.4, 0.1, 7.2))
     S.set_mat(P['dark']); S.cyl((9.0, y0 + 7.1, 0), (9.0, y0 + 9.5, 0), 0.12, n=6)
     funnel(S, -3.5, y0 + 2.6, 9.5, 2.4, 1.9)
@@ -242,6 +269,8 @@ def build_cargo():
             K.cyl((x, deck(x), s * 3.2), (x, deck(x) + 10.0, s * 3.2), 0.25, 0.18, n=8)
     mast(M, 30.0, deck(30.0), 24.0, [(5.5, 2.4), (5.5, -2.4), (-5.5, 2.4), (-5.5, -2.4)])
     mast(M, -28.0, deck(-28.0), 22.0, [(5.5, 2.4), (5.5, -2.4), (-5.5, 2.4), (-5.5, -2.4)])
+    stays(K, P, (30.0, deck(30.0) + 23.0, 0), [(44.0, deck(44.0), 5.5), (44.0, deck(44.0), -5.5), (14.0, 7.2, 0)])
+    stays(K, P, (-28.0, deck(-28.0) + 21.0, 0), [(-12.0, 7.2, 0), (-44.0, 7.2, 5.5), (-44.0, 7.2, -5.5)])
     # poop deckhouse, steering engine, gun
     S.set_mat(P['sup']); S.box((-48.0, 7.2 + 1.1, 0), (6.0, 2.2, 8.0))
     deck_gun(M, 'Gun1', (-51.5, 7.2, 0.0), np.pi)
@@ -261,9 +290,22 @@ def build_tanker():
         return 4.2                                         # low tank deck
     h = Hull(L, 8.2, 7.5, deck, [-42.0, -3.0, 9.0, 51.0], bow_rake=6.0, entry=0.22, run=0.2)
     M = Mesh()
+    paint = Paint(P, L, 4.5, 'plain', seed=1931)
+    paint.rust = '#7a4a2a'
+    paint.hull_sh = [P['hull'], mix(P['hull'], '#ffffff', 0.08), mix(P['hull'], '#000000', 0.1), mix(P['hull'], '#7a4a2a', 0.3)]
+    paint.funnels = [(-53.5, 19.6)]
+    M.paint = paint
     h.build(M, deck_mat=P['steel'])
     h.rails(M)
     S = Builder(M, 'Hull', P['sup'])
+    for sg, nm in ((1, 'z+'), (-1, 'z-')):
+        portholes(S, P, [(x, 6.8 + 1.5, sg * 6.0) for x in np.arange(-1.0, 7.5, 2.2)], nm, size=0.4)
+        portholes(S, P, [(x, 6.8 + 1.6, sg * 6.5) for x in np.arange(-58.0, -44.0, 2.4)], nm, size=0.4)
+        door(S, P, (-1.5, 6.8 + 0.95, sg * 6.0), nm)
+        door(S, P, (-44.0, 6.8 + 1.0, sg * 6.5), nm)
+    ladder(S, P, (-2.0, 6.8 + 1.3, 3.5), 'x-', 2.6)
+    window_strip(S, P, 4.2, 6.9, 6.8 + 5.9, 3.75, 'z+', h=0.7, pitch=0.9)
+    window_strip(S, P, 4.2, 6.9, 6.8 + 5.9, -3.75, 'z-', h=0.7, pitch=0.9)
     # expansion trunk and tank hatches along the cargo deck
     for a, b in [(10.5, 49.5), (-40.5, -4.5)]:
         S.set_mat(P['steel']); S.box(((a + b) / 2, 4.2 + 0.45, 0), (b - a, 0.9, 5.0))

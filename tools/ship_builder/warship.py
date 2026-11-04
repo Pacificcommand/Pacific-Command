@@ -11,17 +11,19 @@ from geom import Mesh, Builder, rounded_plan, rot_y
 PAL = {
     # US Measure 21 navy blue (1942-43 Pacific), teak decks on carriers, deck blue elsewhere
     'us': dict(hull='#2f3c4c', deck='#3a4452', sup='#36434f', gun='#384551', dark='#1b1f23', bottom='#5a2a24', boot='#151719',
-               wood='#8d7a5c', raft='#5c6670', black='#0b0b0b', rail='#20262c', canvas='#7a7562', glass='#26323a', light='#c9d1d4',
-               fdeck='#4a4a48', mark='#d9d6cc', plane='#2d3f55', planew='#9fa9b2'),
+               wood='#857b66', raft='#5c6670', black='#0b0b0b', rail='#20262c', canvas='#7a7562', glass='#26323a', light='#c9d1d4',
+               fdeck='#4a4a48', mark='#d9d6cc', plane='#2d3f55', planew='#9fa9b2', rim='#9aa3a8'),
     # US Measure 22 graded: haze gray above the sheer line, navy blue below
     'us22': dict(hull='#7d8890', deck='#3b4350', sup='#8a959c', gun='#8a959c', dark='#2a3036', bottom='#5a2a24', boot='#2b3a4c',
-                 wood='#8d7a5c', raft='#7a858c', black='#0b0b0b', rail='#2a3036', canvas='#9b9580', glass='#3a4850', light='#d8dee0', band='#2b3a4c',
-                 fdeck='#4a4a48', mark='#d9d6cc', plane='#2d3f55', planew='#9fa9b2'),
+                 wood='#857b66', raft='#7a858c', black='#0b0b0b', rail='#2a3036', canvas='#9b9580', glass='#3a4850', light='#d8dee0', band='#2b3a4c',
+                 fdeck='#4a4a48', mark='#d9d6cc', plane='#2d3f55', planew='#9fa9b2', rim='#b8c0c4'),
     # IJN Kure / Sasebo gray, linoleum decks (brown) on cruisers and destroyers, wood on capital ships
     'ijn': dict(hull='#6a7174', deck='#7b4f37', sup='#737a7d', gun='#6e7578', dark='#26292b', bottom='#6b2b22', boot='#1b1c1d',
                 black='#0b0b0b', rail='#2a2d2f', canvas='#9a917a', light='#c9cfd1', brass='#a88a52', glass='#2f383c', wood='#9c8762', raft='#5c6164',
-                fdeck='#8a7a5a', mark='#e6e2d4', red='#b3312c', plane='#6d7a5c', planew='#b9b2a0'),
+                fdeck='#8a7a5a', mark='#e6e2d4', red='#b3312c', plane='#6d7a5c', planew='#b9b2a0', rim='#aeb4b6'),
 }
+from detail import (Paint, shade, mix, portholes, door, ladder, window_strip, hatch, locker, raft, raft_on_wall,
+                    capstan, reel, stays, railing, _hash)
 
 
 # =====================================================================
@@ -126,21 +128,49 @@ class WarHull:
         for k in range(levels - 1):
             H.set_mat(mat(st[k][1]))
             H.quad((st[k][0], st[k][1], -st[k][2]), (st[k][0], st[k][1], st[k][2]), (st[k + 1][0], st[k + 1][1], st[k + 1][2]), (st[k + 1][0], st[k + 1][1], -st[k + 1][2]))
-        D = Builder(M, 'Hull', deck_mat or P['deck'])
-        for a, b in zip(secs[:-1], secs[1:]):
+        dm = deck_mat or P['deck']
+        D = Builder(M, 'Hull', dm)
+        D.raw = True
+        wood = dm == P.get('wood')
+        # planking: wooden decks get narrow strakes in alternating tones with plank-end breaks;
+        # steel decks get wide plates in two close shades
+        strips = 10 if wood else 6
+        tones = [dm, shade(dm, 1.08), shade(dm, 0.93), shade(dm, 1.04)] if wood else [dm, shade(dm, 1.04), shade(dm, 0.97)]
+        for si, (a, b) in enumerate(zip(secs[:-1], secs[1:])):
             if abs(a[-1][1] - b[-1][1]) > 0.3:
                 continue
-            for k in range(6):
-                z0, z1 = -1 + k / 3, -1 + (k + 1) / 3
+            for k in range(strips):
+                z0, z1 = -1 + 2 * k / strips, -1 + 2 * (k + 1) / strips
                 cam = lambda z: camber * (1 - z * z)
+                if wood:
+                    D.set_mat(tones[int(_hash(k, si // (2 + k % 3), 3) * 4)])
+                else:
+                    D.set_mat(tones[int(_hash(k // 2, si // 4, 5) * 3)])
                 D.quad((a[-1][0], a[-1][1] + cam(z0), z0 * a[-1][2]), (b[-1][0], b[-1][1] + cam(z0), z0 * b[-1][2]),
                        (b[-1][0], b[-1][1] + cam(z1), z1 * b[-1][2]), (a[-1][0], a[-1][1] + cam(z1), z1 * a[-1][2]))
+        D.set_mat(dm)
         l = secs[-1][-1]
         D.tri((l[0], l[1], -l[2]), (self.stem_x(l[1]), l[1], 0), (l[0], l[1], l[2]))
+        D.raw = False
+        # scuttles along the hull sides, a row under the deck edge over the middle of the ship
+        PH = Builder(M, 'Hull', P['glass'])
+        for s in (1, -1):
+            pts = []
+            for x in np.arange(self.XS + self.L * 0.12, self.XB - self.L * 0.18, 2.6):
+                yd = self.deck_fn(x)
+                y = yd - 1.25
+                if y < 1.2 or any(abs(x - bx) < 2.0 for bx in self.breaks):
+                    continue
+                w = self.hb(x, y)
+                if w < 1.0:
+                    continue
+                pts.append((x, y, s * w))
+            portholes(PH, P, pts, "z+" if s > 0 else "z-", size=0.34)
         return H
 
     def rails(self, M, P, skip=(), step=2.0):
         R = Builder(M, 'Hull', P['rail'])
+        R.raw = True
         for s in (1, -1):
             prev = None
             for x in np.arange(self.XS + 1.0, self.XB - 3.0, step):
@@ -152,6 +182,8 @@ class WarHull:
                 if prev is not None:
                     a, b = (prev[0], prev[1] + 1.0, prev[2]), (x, y + 1.0, z)
                     R.quad(a, b, (b[0], b[1] + 0.04, b[2]), (a[0], a[1] + 0.04, a[2]))
+                    a, b = (prev[0], prev[1] + 0.55, prev[2]), (x, y + 0.55, z)
+                    R.quad(a, b, (b[0], b[1] + 0.03, b[2]), (a[0], a[1] + 0.03, a[2]))
                 prev = (x, y, z)
 
 
@@ -202,15 +234,42 @@ def ventilators(F, P, items, dy):
         F.cyl((x, dy(x) + 1.1, z), (x, dy(x) + 1.4, z), 0.48, 0.22, n=10)
 
 
-def deckhouse(S, P, x_front, x_back, half, y0, y1, r_front=2.5, inset=0.0, mat=None):
+def house_details(S, P, x_front, x_back, half, y0, y1, rounded=True):
+    """Scuttles, a door and a ladder on a deckhouse's walls, rafts hung on long ones."""
+    h = y1 - y0
+    L = x_front - x_back
+    if h < 2.0 or L < 4.0 or half < 1.5:
+        return
+    xa = x_back + 0.8
+    xb = x_front - (3.0 if rounded else 0.8)
+    pts_s = [(x, y0 + h * 0.62, half) for x in np.arange(xa + 1.0, xb - 0.5, 2.2)]
+    pts_p = [(x, y0 + h * 0.62, -half) for x in np.arange(xa + 1.0, xb - 0.5, 2.2)]
+    portholes(S, P, pts_s, 'z+', size=0.36)
+    portholes(S, P, pts_p, 'z-', size=0.36)
+    if h >= 2.2:
+        # doors near the after corners of both sides, a ladder up the after face
+        for sgn, nrm in ((1, 'z+'), (-1, 'z-')):
+            door(S, P, (x_back + 1.6, y0 + 0.95, sgn * half), nrm)
+        ladder(S, P, (x_back, y0 + h / 2, half * 0.55), 'x-', h)
+    if L > 18.0:
+        for sgn in (1, -1):
+            for f in (0.3, 0.65):
+                raft_on_wall(S, P, x_back + L * f, y0 + min(1.4, h * 0.5), sgn * half, sgn)
+
+
+def deckhouse(S, P, x_front, x_back, half, y0, y1, r_front=2.5, inset=0.0, mat=None, details=True):
     S.set_mat(mat or P['sup'])
     S.prism(rounded_plan(x_front, x_back, half, r_front), y0, y1, inset=inset)
+    if details and mat is None:
+        house_details(S, P, x_front, x_back, half, y0, y1, rounded=True)
     return y1
 
 
-def block(S, P, x_front, x_back, half, y0, y1, mat=None, inset=0.0):
+def block(S, P, x_front, x_back, half, y0, y1, mat=None, inset=0.0, details=True):
     S.set_mat(mat or P['sup'])
     S.prism([(x_front, half), (x_back, half), (x_back, -half), (x_front, -half)], y0, y1, inset=inset)
+    if details and mat is None:
+        house_details(S, P, x_front, x_back, half, y0, y1, rounded=False)
     return y1
 
 
@@ -235,6 +294,19 @@ def funnel(S, P, x, base, h, rx, rz, rake=0.9, cap=True, trunk=False, lean_aft=T
             j = (i + 1) % n
             S.quad(c0[i], c0[j], c1[j], c1[i])
         S.capfan(ring(base + h + 0.06 * h, 0.9))
+        # a grating bar across the top
+        S.box((x - sign * rake, base + h + 0.07 * h, 0), (0.15, 0.1, rz * 1.9))
+    # steam pipes up the after face, a siren platform two thirds of the way up
+    S.raw = True
+    S.set_mat(P['dark'])
+    for dz in (-0.35, 0.35):
+        xa = x - sign * rx * 0.95
+        S.cyl((xa + sign * rake * 0.0 - sign * 0.0, base + 0.2, dz * rz), (xa - sign * rake * 0.95, base + h * 0.9, dz * rz), 0.13, 0.11, n=6, caps=False)
+    S.set_mat(P['sup'])
+    yp = base + h * 0.66
+    xp = x - sign * rake * (yp - base) / h
+    S.cyl((xp, yp, 0), (xp, yp + 0.12, 0), rz * 1.25, rz * 1.25, n=n, caps=True, rz_scale=rx / rz if rz > 0 else 1.0)
+    S.raw = False
     S.set_mat(P['sup'])
 
 
@@ -252,17 +324,32 @@ def funnel_downturned(S, P, x, y, z, h, r, side=1):
 def mast_pole(Mt, P, x, y0, h, r0=0.25, r1=0.12, yard=4.0, yard_h=0.7):
     Mt.set_mat(P['dark'])
     Mt.cyl((x, y0, 0), (x, y0 + h, 0), r0, r1, n=10)
+    # topmast, crosstrees, a small lookout platform and the stays down to the deck
+    Mt.cyl((x, y0 + h, 0), (x, y0 + h * 1.25, 0), r1 * 0.8, 0.05, n=6)
     if yard:
         Mt.cyl((x, y0 + h * yard_h, -yard), (x, y0 + h * yard_h, yard), 0.08, n=6)
+        Mt.cyl((x - 0.5, y0 + h * yard_h - 0.9, -yard * 0.45), (x - 0.5, y0 + h * yard_h - 0.9, yard * 0.45), 0.06, n=6)
+        Mt.set_mat(P['sup'])
+        Mt.cyl((x, y0 + h * 0.5, 0), (x, y0 + h * 0.5 + 0.15, 0), r0 * 2.6, n=10)
+        Mt.set_mat(P['dark'])
+    stays(Mt, P, (x, y0 + h * 0.95, 0), [(x - h * 0.45, y0, 0), (x - h * 0.3, y0, yard * 0.7 if yard else 2.5), (x - h * 0.3, y0, -(yard * 0.7 if yard else 2.5))])
 
 
 def mast_tripod(Mt, P, x, y0, h, spread=3.0, yard=5.0):
     Mt.set_mat(P['dark'])
     Mt.cyl((x, y0, 0), (x, y0 + h, 0), 0.32, 0.16, n=10)
+    Mt.cyl((x, y0 + h, 0), (x, y0 + h * 1.22, 0), 0.12, 0.05, n=6)
     for s in (1, -1):
         Mt.cyl((x - spread, y0, s * spread * 0.8), (x, y0 + h * 0.78, 0), 0.14, 0.10, n=6, caps=False)
     if yard:
         Mt.cyl((x, y0 + h * 0.72, -yard), (x, y0 + h * 0.72, yard), 0.08, n=6)
+        Mt.cyl((x, y0 + h * 0.9, -yard * 0.5), (x, y0 + h * 0.9, yard * 0.5), 0.06, n=6)
+    # the top: a lookout / radar platform with a rail
+    Mt.set_mat(P['sup'])
+    Mt.cyl((x - 0.3, y0 + h * 0.78, 0), (x - 0.3, y0 + h * 0.78 + 0.2, 0), 1.3, 1.3, n=10)
+    railing(Mt, P, [(x - 0.3 + np.cos(a) * 1.25, y0 + h * 0.78 + 0.2, np.sin(a) * 1.25) for a in np.linspace(0, 2 * np.pi, 11)], h=0.9, mid=False)
+    Mt.set_mat(P['dark'])
+    stays(Mt, P, (x, y0 + h * 0.98, 0), [(x + h * 0.35, y0, 0), (x - h * 0.4, y0, 0)])
 
 
 def mast_lattice(Mt, P, x, y0, h, w=2.2):
@@ -290,6 +377,8 @@ def radar_bedspring(Mt, P, x, y, w=4.0, h=2.0, nz=9):
 def radome(Mt, P, x, y):
     Mt.set_mat(P['sup'])
     Mt.cyl((x, y, 0), (x, y + 0.9, 0), 0.6, 0.45, n=14)
+    Mt.set_mat(P['dark'])
+    Mt.cyl((x, y - 0.4, 0), (x, y, 0), 0.08, n=6)
 
 
 def director(M, name, pos, P, radar=True, size=1.0):
@@ -426,10 +515,18 @@ def turret(M, name, pos, face, P, cal, barrels, shielded=True):
     G.prism(plan, 0.35, 0.35 + h, inset=0.22 * k)
     G.set_mat(P['sup'])
     G.box((-L * 0.25, 0.35 + h + 0.1, 0), (L * 0.3, 0.2, w * 0.6))
-    # rangefinder hood on the roof (ijn and us heavy turrets)
+    # rangefinder hood on the roof (ijn and us heavy turrets), with its end hoods
     if cal >= 200:
         G.set_mat(P['gun'])
         G.cyl((-L * 0.3, 0.35 + h + 0.6, -w * 0.55), (-L * 0.3, 0.35 + h + 0.6, w * 0.55), 0.3 * k + 0.1, n=10)
+        for sgn in (1, -1):
+            G.box((-L * 0.3, 0.35 + h + 0.6, sgn * w * 0.55), (0.9 * k + 0.4, 0.9 * k + 0.3, 0.6))
+    # periscopes and a hatch on the roof, a ladder up the back
+    G.set_mat(P['dark'])
+    for dz in (-w * 0.28, w * 0.28):
+        G.cyl((L * 0.05, 0.35 + h + 0.2, dz), (L * 0.05, 0.35 + h + 0.75 * k + 0.3, dz), 0.12, n=6)
+    G.box((-L * 0.42, 0.35 + h + 0.22, 0), (0.9 * k + 0.3, 0.12, 0.9 * k + 0.3))
+    ladder(G, P, (-L * 0.55 + 0.02, 0.35 + h * 0.5, 0.0), 'x-', h * 0.9)
     # barrels and blast bags
     bl = 10.5 * k + 2.0
     rb = 0.14 + 0.18 * k
@@ -452,6 +549,10 @@ def dp_twin(M, name, pos, face, P, enclosed=True, cal=127):
     G.prism(plan, 0.35, 0.35 + 2.7 * k, inset=0.18)
     G.set_mat(P['sup'])
     G.box((-1.3 * k, 0.35 + 2.75 * k, 0.0), (1.4 * k, 0.18, 1.8 * k))
+    G.set_mat(P['dark'])
+    G.box((0.4 * k, 0.35 + 2.78 * k, 0.9 * k), (0.7 * k, 0.1, 0.7 * k))     # roof hatch
+    G.cyl((-0.6 * k, 0.35 + 2.7 * k, -1.2 * k), (-0.6 * k, 0.35 + 3.2 * k, -1.2 * k), 0.18, n=6)   # vent
+    door(G, P, (-3.1 * k, 1.3 * k, 0.6 * k), 'x-', w=0.7, h=1.6)
     for s in (1, -1):
         z = s * 0.95 * k
         G.set_mat(P['canvas'])
@@ -516,6 +617,9 @@ def bofors_quad(M, name, pos, P, face=0.0, tub=True, twin=False):
     if tub:
         T.cyl((x, y, z), (x, y + 1.1, z), r, n=22, caps=False)
         T.cyl((x, y + 0.02, z), (x, y + 0.04, z), r - 0.1, n=22)
+        # ready-service ammunition lockers around the inside of the tub
+        for a in (0.9, 2.2, 4.1, 5.4):
+            locker(T, P, x + np.cos(a) * (r - 0.5), y + 0.04, z + np.sin(a) * (r - 0.5), L=0.7, w=0.5, h=0.8)
     G = Builder(M, name, P['gun'], pivot=pos)
     G.xf = (rot_y(-face), np.array(pos))
     G.cyl((0, 0, 0), (0, 0.9, 0), 0.6, n=12)
@@ -526,15 +630,23 @@ def bofors_quad(M, name, pos, P, face=0.0, tub=True, twin=False):
         G.cyl((0.4, 1.15, zz), (3.2, 1.25, zz), 0.07, n=8)
     G.set_mat(P['gun'])
     G.box((-0.7, 0.9, 0), (0.4, 0.8, 1.6 if twin else 2.6))
+    # gun-layers' seats and the ring sight
+    G.set_mat(P['dark'])
+    for zz in ((-0.9, 0.9) if twin else (-1.5, 1.5)):
+        G.box((-0.5, 0.85, zz), (0.4, 0.1, 0.4))
+    G.cyl((1.4, 1.75, 0), (1.5, 1.75, 0), 0.3, n=8, caps=False)
 
 
 def oerlikon(M, name, pos, P, face):
     G = Builder(M, name, P['gun'], pivot=pos)
     G.xf = (rot_y(-face), np.array(pos))
     G.cyl((0, 0, 0), (0, 0.9, 0), 0.12, n=8)
-    G.box((0.15, 1.15, 0), (0.08, 0.8, 0.9))
+    # splinter shield, drum magazine, barrel with the ring sight
+    G.set_mat(P['sup'])
+    G.box((0.15, 1.15, 0), (0.08, 0.9, 1.1))
     G.set_mat(P['dark'])
     G.cyl((0.0, 1.1, 0), (2.2, 1.2, 0), 0.05, n=6)
+    G.cyl((-0.2, 1.3, 0), (0.0, 1.3, 0), 0.22, n=8)
 
 
 def jp25_triple(M, name, pos, P, face=0.0, barrels=3):
@@ -623,6 +735,12 @@ def island(S, P, x, y, half, L, levels=3, lvl_h=2.6, funnel_h=9.0, z=None, funne
         y1 += lvl_h
     S.set_mat(P['glass'])
     S.prism([(px - 1.5, pz) for px, pz in plan], y1, y1 + 0.9)
+    # windows, doors and ladders down the island's inboard face, a lookout rail round the top
+    window_strip(S, P, x - L / 2 + 1.0, x + L / 2 - 1.0, y + lvl_h * 0.6, zc - half * 0.5, 'z-', h=0.6)
+    portholes(S, P, [(px, y + lvl_h * 1.6, zc - half * 0.5) for px in np.arange(x - L / 2 + 1.5, x + L / 2 - 1.0, 2.2)], 'z-', size=0.36)
+    door(S, P, (x + L / 2 - 1.2, y + 0.95, zc - half * 0.5), 'z-')
+    ladder(S, P, (x - L / 2 + 0.5, y + lvl_h * 1.5, zc - half * 0.5), 'z-', lvl_h * 3)
+    railing(S, P, [(x + L / 2 - 2.0, y1 + 0.9, zc + sg * half * 0.5) for sg in (1, -1)], h=0.9, mid=False)
     if funnel:
         fx = x - L / 2 - 3.0
         S.set_mat(P['sup'])
@@ -679,11 +797,19 @@ def build_spec(spec, scheme=None):
     """Build a Mesh from a class spec dict. Keys used:
     nation, L, B (full beam), T, deck (sheer fwd/mid/aft heights), breaks [(x, step)], bow, stern, bulge,
     bollards, vents, parts: list of (kind, args...) built in order, weapons: list of (kind, name, args...)."""
-    P = dict(PAL[scheme or spec['nation']])
+    nation = spec['nation']
+    dazzle = scheme == 'dazzle' and nation == 'us'
+    P = dict(PAL[nation])
     P.update(spec.get('palette', {}))
     M = Mesh()
     L, B, T = spec['L'], spec['B'] / 2, spec['T']
     deck = spec.get('deck_fn') or sheer(*spec['deck'], L, spec.get('breaks'))
+    # paint: plating shades and weathering always; Measure 32 dazzle bands for the US 'dazzle' scheme
+    paint = Paint(P, L, deck(0.0) if not spec.get('sub') else 3.0, 'dazzle' if dazzle else 'plain', seed=sum(ord(ch) for ch in spec.get('name', 'x')))
+    for part in spec.get('parts', []):
+        if part[0] in ('funnel',):
+            paint.funnels.append((part[1], part[2] + part[3]))
+    M.paint = paint
     hull = WarHull(L, B, T, deck, breaks=[b[0] for b in spec.get('breaks', [])], rake=spec.get('rake', 4.0),
                    entry=spec.get('entry', 0.34), run=spec.get('run', 0.30), flare=spec.get('flare', 0.22), stern=spec.get('stern', 'cruiser'),
                    bulge=spec.get('bulge', 0.0), fine=spec.get('fine', 2.1), clipper=spec.get('clipper', 0.0))
@@ -705,7 +831,50 @@ def build_spec(spec, scheme=None):
     for w in spec.get('weapons', []):
         kind, name, args = w[0], w[1], w[2:]
         WEAPONS[kind](ctx, name, *args)
+    if not spec.get('sub') and spec.get('clutter', True):
+        deck_clutter(ctx, spec)
     return M
+
+
+def deck_clutter(c, spec):
+    """Hatches, a capstan, cable reels and lockers on the open fore and after decks: the bits of a
+    working ship that the bare hull lacked. Placed clear of the weapons by their x positions."""
+    S, P, hull, dy = c['S'], c['P'], c['hull'], c['dy']
+    xs = [w[2] for w in spec.get('weapons', []) if len(w) > 2 and isinstance(w[2], (int, float))]
+    xs += [p[1] for p in spec.get('parts', []) if p[0] in ('deckhouse', 'block', 'tower', 'flight_deck', 'hangar', 'island') and isinstance(p[1], (int, float))]
+    if not xs:
+        return
+    XB, XS = hull.XB, hull.XS
+    fwd_free = (max(xs) + 7.0, XB - 9.0)
+    aft_free = (XS + 6.0, min(xs) - 6.0)
+    if spec.get('rail_skip'):
+        # carriers: flight deck covers it all
+        if any(b - a > hull.L * 0.6 for a, b in spec['rail_skip']):
+            return
+    # forecastle: capstan, hatch, reels either side of the centreline
+    if fwd_free[1] - fwd_free[0] > 6.0:
+        x = fwd_free[1] - 2.0
+        capstan(S, P, x, dy(x), 0.0, r=min(0.6, hull.width(x) * 0.12))
+        x = (fwd_free[0] + fwd_free[1]) / 2
+        hatch(S, P, x, dy(x), 0.0, L=min(2.2, (fwd_free[1] - fwd_free[0]) * 0.25))
+        w = hull.width(x)
+        if w > 4.0:
+            for sgn in (1, -1):
+                reel(S, P, x - 2.0, dy(x - 2.0), sgn * (w - 1.6), r=0.45, w=0.9)
+    # quarterdeck: hatches and lockers, a pair of rafts lying on deck
+    if aft_free[1] - aft_free[0] > 6.0:
+        x = (aft_free[0] + aft_free[1]) / 2
+        hatch(S, P, x, dy(x), 0.0, L=2.0)
+        w = hull.width(x)
+        if w > 4.0:
+            for sgn in (1, -1):
+                locker(S, P, x + 2.5, dy(x + 2.5), sgn * (w - 1.5), L=1.4, w=0.7, h=0.9)
+            if aft_free[1] - aft_free[0] > 14.0:
+                for sgn in (1, -1):
+                    raft(S, P, x - 4.0, dy(x - 4.0), sgn * (w - 2.2))
+        x2 = aft_free[0] + 2.0
+        if hull.width(x2) > 3.0:
+            capstan(S, P, x2, dy(x2), 0.0, r=0.45)
 
 
 # part helpers take the context then the spec arguments
@@ -714,7 +883,18 @@ def _deckhouse(c, x_front, x_back, half, y0, y1, r=2.5):
 def _block(c, x_front, x_back, half, y0, y1, mat=None):
     block(c['S'], c['P'], x_front, x_back, half, y0, y1, mat=c['P'][mat] if mat else None)
 def _glass(c, x_front, x_back, half, y0, h=0.9):
-    block(c['S'], c['P'], x_front, x_back, half, y0, y0 + h, mat=c['P']['glass'])
+    # the pilot house windows: a glass band with dark frames and a visor
+    S, P = c['S'], c['P']
+    block(S, P, x_front, x_back, half, y0, y0 + h, mat=P['sup'], details=False)
+    S.raw = True
+    S.set_mat(P['glass'])
+    for x in np.arange(x_back + 0.3, x_front - 0.2, 1.0):
+        S.box((x + 0.35, y0 + h / 2, 0), (0.7, h * 0.75, half * 2 + 0.05))
+    for z in np.arange(-half + 0.3, half - 0.2, 1.0):
+        S.box((x_front, y0 + h / 2, z + 0.35), (0.05, h * 0.75, 0.7))
+    S.set_mat(P['sup'])
+    S.box((x_front - 0.2, y0 + h + 0.05, 0), (1.2, 0.1, half * 2 + 0.4))
+    S.raw = False
 def _platform(c, x_front, x_back, z0, z1, y):
     platform(c['S'], c['P'], x_front, x_back, z0, z1, y)
 def _funnel(c, x, base, h, rx, rz, rake=0.9, trunk=False):
@@ -740,12 +920,25 @@ def _tower(c, x, y0, h, half, levels=4, taper=0.08):
         hh = half * (1 - taper * k)
         S.set_mat(P['sup'])
         S.prism(rounded_plan(x + hh * 1.3, x - hh * 1.1, hh, hh * 0.8), y, y + lh - 0.15)
-        # platforms sticking out at each level (pagoda look)
+        # windows across the front of each level, scuttles down the sides
+        window_strip(S, P, x - hh * 0.4, x + hh * 0.9, y + lh * 0.55, hh, 'z+', h=0.5, pitch=0.9)
+        window_strip(S, P, x - hh * 0.4, x + hh * 0.9, y + lh * 0.55, -hh, 'z-', h=0.5, pitch=0.9)
+        # platforms sticking out at each level (pagoda look), with their rails
         if taper > 0.1 and k > 0:
             S.prism(rounded_plan(x + hh * 1.5, x - hh * 1.4, hh * 1.25, hh), y + lh - 0.4, y + lh - 0.15)
+            ring = rounded_plan(x + hh * 1.5, x - hh * 1.4, hh * 1.25, hh)
+            railing(S, P, [(px, y + lh - 0.15, pz) for px, pz in ring] + [(ring[0][0], y + lh - 0.15, ring[0][1])], h=0.9, mid=False)
         y += lh
     S.set_mat(P['glass'])
     S.prism(rounded_plan(x + half * 1.0, x - half * 0.9, half * (1 - taper * levels), half * 0.7), y - 0.15, y + 0.9)
+    # bridge wings with rails, a visor over the windows
+    hw = half * (1 - taper * levels)
+    S.set_mat(P['sup'])
+    S.box((x, y - 0.3, 0), (hw * 1.4, 0.2, hw * 2 + 3.0))
+    railing(S, P, [(x + hw * 0.7, y - 0.2, sg * (hw + 1.4)) for sg in (1, -1)] , h=0.9, mid=False)
+    for sg in (1, -1):
+        railing(S, P, [(x + hw * 0.7 - k * hw * 0.35, y - 0.2, sg * (hw + 1.45)) for k in range(5)], h=0.9, mid=False)
+    S.box((x + hw * 0.6, y + 1.0, 0), (hw * 0.8, 0.12, hw * 1.9))
     return y + 0.9
 def _rangefinder(c, x, y0, h, half=1.8, arms=5.0):
     rangefinder_tower(c['S'], c['P'], x, y0, h, half, arms)

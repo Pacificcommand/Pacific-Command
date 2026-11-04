@@ -26,7 +26,7 @@ const TYPES := {
 		"torp": {},
 		"aa": ["DirectorAft"],
 		"modules": [["Bridge", "bridge", 24.0, 6.0], ["Director", "director", 24.0, 3.0], ["Forward boilers", "engine", 8.0, 6.0], ["Aft boilers", "engine", -10.0, 6.0], ["Engine rooms", "engine", -2.0, 6.0], ["Steering", "steering", -88.0, 4.0], ["Forward magazine", "magazine", 54.0, 6.0], ["Aft magazine", "magazine", -52.0, 6.0], ["Aviation gasoline", "fuel", -72.0, 3.0]],
-		"models": {"m21": "res://assets/models/cleveland.glb", "m22": "res://assets/models/cleveland.glb"},
+		"models": {"m21": "res://assets/models/cleveland.glb", "m22": "res://assets/models/cleveland_m22.glb"},
 		"role": "warship",
 	},
 	"mahan": {
@@ -52,7 +52,7 @@ const TYPES := {
 		"torp": {"name": "Mark 15", "speed_kn": 45.0, "range": 3500.0, "dud": 0.12, "flood": 220.0},
 		"aa": ["Oerlikon1", "Oerlikon2", "Oerlikon3", "Oerlikon4"],
 		"modules": [["Bridge", "bridge", 20.0, 4.0], ["Director", "director", 19.0, 2.0], ["Forward boilers", "engine", 6.0, 4.0], ["Aft engines", "engine", -9.0, 4.0], ["Steering", "steering", -47.0, 3.0], ["Forward magazine", "magazine", 31.2, 4.0], ["Aft magazine", "magazine", -36.4, 4.0]],
-		"models": {"m21": "res://assets/models/mahan.glb", "m22": "res://assets/models/mahan.glb"},
+		"models": {"m21": "res://assets/models/mahan.glb", "m22": "res://assets/models/mahan_m22.glb"},
 		"role": "warship",
 	},
 	"benson": {
@@ -78,7 +78,7 @@ const TYPES := {
 		"torp": {"name": "Mark 15", "speed_kn": 45.0, "range": 3500.0, "dud": 0.12, "flood": 220.0},
 		"aa": ["Oerlikon1", "Oerlikon2", "Oerlikon3", "Oerlikon4", "Oerlikon5", "Oerlikon6"],
 		"modules": [["Bridge", "bridge", 21.0, 4.0], ["Director", "director", 20.0, 2.0], ["Forward boilers", "engine", 6.0, 4.0], ["Aft engines", "engine", -9.0, 4.0], ["Steering", "steering", -48.1, 3.0], ["Forward magazine", "magazine", 31.86, 4.0], ["Aft magazine", "magazine", -37.17, 4.0]],
-		"models": {"m21": "res://assets/models/benson.glb", "m22": "res://assets/models/benson.glb"},
+		"models": {"m21": "res://assets/models/benson.glb", "m22": "res://assets/models/benson_m22.glb"},
 		"role": "warship",
 	},
 	"buckley": {
@@ -106,7 +106,7 @@ const TYPES := {
 		"torp": {"name": "Mark 15", "speed_kn": 45.0, "range": 3500.0, "dud": 0.12, "flood": 220.0},
 		"aa": ["Oerlikon1", "Oerlikon2", "Oerlikon3", "Oerlikon4", "Oerlikon5", "Oerlikon6"],
 		"modules": [["Bridge", "bridge", 15.0, 3.5], ["Director", "director", 14.0, 1.75], ["Engine room", "engine", -6.0, 3.5], ["Steering", "steering", -41.65, 2.625], ["Forward magazine", "magazine", 27.99, 3.5], ["Aft magazine", "magazine", -32.654999999999994, 3.5]],
-		"models": {"m21": "res://assets/models/buckley.glb", "m22": "res://assets/models/buckley.glb"},
+		"models": {"m21": "res://assets/models/buckley.glb", "m22": "res://assets/models/buckley_m22.glb"},
 		"role": "warship",
 	},
 	"gato": {
@@ -160,7 +160,7 @@ const TYPES := {
 		"torp": {"name": "Mark 15", "speed_kn": 45.0, "range": 3500.0, "dud": 0.12, "flood": 220.0},
 		"aa": ["DirectorAft"],
 		"modules": [["Bridge", "bridge", 16.0, 5.0], ["Director", "director", 15.0, 2.5], ["Forward boilers", "engine", 4.0, 5.0], ["Aft boilers", "engine", -12.0, 5.0], ["Engine rooms", "engine", -2.0, 5.0], ["Steering", "steering", -77.5, 3.75], ["Forward magazine", "magazine", 49.5, 5.0], ["Aft magazine", "magazine", -57.74999999999999, 5.0]],
-		"models": {"m21": "res://assets/models/atlanta.glb", "m22": "res://assets/models/atlanta.glb"},
+		"models": {"m21": "res://assets/models/atlanta.glb", "m22": "res://assets/models/atlanta_m22.glb"},
 		"role": "warship",
 	},
 	"brooklyn": {
@@ -186,7 +186,7 @@ const TYPES := {
 		"torp": {},
 		"aa": [],
 		"modules": [["Bridge", "bridge", 26.0, 6.0], ["Director", "director", 25.0, 3.0], ["Forward boilers", "engine", 10.0, 6.0], ["Aft boilers", "engine", -2.0, 6.0], ["Engine rooms", "engine", -16.0, 6.0], ["Steering", "steering", -87.7, 4.5], ["Forward magazine", "magazine", 55.62, 6.0], ["Aft magazine", "magazine", -64.89, 6.0], ["Aviation gasoline", "fuel", -62.0, 3.0]],
-		"models": {"m21": "res://assets/models/brooklyn.glb", "m22": "res://assets/models/brooklyn.glb"},
+		"models": {"m21": "res://assets/models/brooklyn.glb", "m22": "res://assets/models/brooklyn_m22.glb"},
 		"role": "warship",
 	},
 	"northampton": {
@@ -212,7 +212,7 @@ const TYPES := {
 		"torp": {},
 		"aa": ["DirectorAft"],
 		"modules": [["Bridge", "bridge", 30.0, 6.0], ["Director", "director", 29.0, 3.0], ["Forward boilers", "engine", 14.0, 6.0], ["Aft boilers", "engine", -4.0, 6.0], ["Engine rooms", "engine", -20.0, 6.0], ["Steering", "steering", -86.5, 4.5], ["Forward magazine", "magazine", 54.9, 6.0], ["Aft magazine", "magazine", -64.05, 6.0], ["Aviation gasoline", "fuel", -8.0, 3.0]],
-		"models": {"m21": "res://assets/models/northampton.glb", "m22": "res://assets/models/northampton.glb"},
+		"models": {"m21": "res://assets/models/northampton.glb", "m22": "res://assets/models/northampton_m22.glb"},
 		"role": "warship",
 	},
 	"new_orleans": {
@@ -238,7 +238,7 @@ const TYPES := {
 		"torp": {},
 		"aa": ["DirectorAft"],
 		"modules": [["Bridge", "bridge", 28.0, 6.0], ["Director", "director", 27.0, 3.0], ["Forward boilers", "engine", 10.0, 6.0], ["Aft boilers", "engine", -8.0, 6.0], ["Engine rooms", "engine", -22.0, 6.0], ["Steering", "steering", -84.6, 4.5], ["Forward magazine", "magazine", 53.76, 6.0], ["Aft magazine", "magazine", -62.71999999999999, 6.0], ["Aviation gasoline", "fuel", -14.0, 3.0]],
-		"models": {"m21": "res://assets/models/new_orleans.glb", "m22": "res://assets/models/new_orleans.glb"},
+		"models": {"m21": "res://assets/models/new_orleans.glb", "m22": "res://assets/models/new_orleans_m22.glb"},
 		"role": "warship",
 	},
 	"baltimore": {
@@ -264,7 +264,7 @@ const TYPES := {
 		"torp": {},
 		"aa": ["DirectorAft"],
 		"modules": [["Bridge", "bridge", 26.0, 7.0], ["Director", "director", 25.0, 3.5], ["Forward boilers", "engine", 8.0, 7.0], ["Aft boilers", "engine", -14.0, 7.0], ["Engine rooms", "engine", -2.0, 7.0], ["Steering", "steering", -97.65, 5.25], ["Forward magazine", "magazine", 61.59, 7.0], ["Aft magazine", "magazine", -71.855, 7.0], ["Aviation gasoline", "fuel", -80.0, 3.0]],
-		"models": {"m21": "res://assets/models/baltimore.glb", "m22": "res://assets/models/baltimore.glb"},
+		"models": {"m21": "res://assets/models/baltimore.glb", "m22": "res://assets/models/baltimore_m22.glb"},
 		"role": "warship",
 	},
 	"north_carolina": {
@@ -291,7 +291,7 @@ const TYPES := {
 		"torp": {},
 		"aa": ["DirectorAft", "Dir5fwd", "Dir5aft"],
 		"modules": [["Bridge", "bridge", 22.0, 10.0], ["Director", "director", 21.0, 5.0], ["Forward boilers", "engine", 6.0, 10.0], ["Aft boilers", "engine", -10.0, 10.0], ["Engine rooms", "engine", -24.0, 10.0], ["Steering", "steering", -106.05, 7.5], ["Forward magazine", "magazine", 66.63, 10.0], ["Aft magazine", "magazine", -71.072, 10.0], ["Aviation gasoline", "fuel", -92.0, 3.0]],
-		"models": {"m21": "res://assets/models/north_carolina.glb", "m22": "res://assets/models/north_carolina.glb"},
+		"models": {"m21": "res://assets/models/north_carolina.glb", "m22": "res://assets/models/north_carolina_m22.glb"},
 		"role": "warship",
 	},
 	"south_dakota": {
@@ -318,7 +318,7 @@ const TYPES := {
 		"torp": {},
 		"aa": ["DirectorAft", "Dir5fwd", "Dir5aft"],
 		"modules": [["Bridge", "bridge", 18.0, 10.0], ["Director", "director", 17.0, 5.0], ["Forward boilers", "engine", 4.0, 10.0], ["Aft boilers", "engine", -8.0, 10.0], ["Engine rooms", "engine", -20.0, 10.0], ["Steering", "steering", -98.65, 7.5], ["Forward magazine", "magazine", 62.19, 10.0], ["Aft magazine", "magazine", -66.336, 10.0], ["Aviation gasoline", "fuel", -86.0, 3.0]],
-		"models": {"m21": "res://assets/models/south_dakota.glb", "m22": "res://assets/models/south_dakota.glb"},
+		"models": {"m21": "res://assets/models/south_dakota.glb", "m22": "res://assets/models/south_dakota_m22.glb"},
 		"role": "warship",
 	},
 	"iowa": {
@@ -345,7 +345,7 @@ const TYPES := {
 		"torp": {},
 		"aa": ["DirectorAft", "Dir5fwd", "Dir5aft"],
 		"modules": [["Bridge", "bridge", 26.0, 11.0], ["Director", "director", 25.0, 5.5], ["Forward boilers", "engine", 10.0, 11.0], ["Aft boilers", "engine", -14.0, 11.0], ["Engine rooms", "engine", -30.0, 11.0], ["Steering", "steering", -130.2, 8.25], ["Forward magazine", "magazine", 75.712, 11.0], ["Aft magazine", "magazine", -81.11999999999999, 11.0], ["Aviation gasoline", "fuel", -114.0, 3.0]],
-		"models": {"m21": "res://assets/models/iowa.glb", "m22": "res://assets/models/iowa.glb"},
+		"models": {"m21": "res://assets/models/iowa.glb", "m22": "res://assets/models/iowa_m22.glb"},
 		"role": "warship",
 	},
 	"texas": {
@@ -372,7 +372,7 @@ const TYPES := {
 		"torp": {},
 		"aa": [],
 		"modules": [["Bridge", "bridge", 22.0, 9.0], ["Director", "director", 21.0, 4.5], ["Boilers", "engine", 2.0, 9.0], ["Engine rooms", "engine", -20.0, 9.0], ["Steering", "steering", -82.35, 6.75], ["Forward magazine", "magazine", 52.41, 9.0], ["Aft magazine", "magazine", -52.41, 9.0]],
-		"models": {"m21": "res://assets/models/texas.glb", "m22": "res://assets/models/texas.glb"},
+		"models": {"m21": "res://assets/models/texas.glb", "m22": "res://assets/models/texas_m22.glb"},
 		"role": "warship",
 	},
 	"yorktown": {
@@ -400,7 +400,7 @@ const TYPES := {
 		"torp": {},
 		"aa": [],
 		"modules": [["Island", "bridge", 10.0, 6.0], ["Radar", "director", 10.0, 3.0], ["Forward boilers", "engine", 10.0, 7.0], ["Aft boilers", "engine", -10.0, 7.0], ["Engine rooms", "engine", -30.0, 7.0], ["Steering", "steering", -118.0, 4.0], ["Forward magazine", "magazine", 80.0, 6.0], ["Aft magazine", "magazine", -80.0, 6.0], ["Aviation gasoline", "fuel", 60.0, 5.0], ["Hangar", "hangar", 0.0, 8.0], ["Flight deck forward", "deck", 60.0, 6.0], ["Flight deck aft", "deck", -60.0, 6.0]],
-		"models": {"m21": "res://assets/models/yorktown.glb", "m22": "res://assets/models/yorktown.glb"},
+		"models": {"m21": "res://assets/models/yorktown.glb", "m22": "res://assets/models/yorktown_m22.glb"},
 		"role": "warship",
 	},
 	"essex": {
@@ -428,7 +428,7 @@ const TYPES := {
 		"torp": {},
 		"aa": [],
 		"modules": [["Island", "bridge", 6.0, 6.0], ["Radar", "director", 6.0, 3.0], ["Forward boilers", "engine", 14.0, 7.0], ["Aft boilers", "engine", -8.0, 7.0], ["Engine rooms", "engine", -30.0, 7.0], ["Steering", "steering", -126.0, 4.0], ["Forward magazine", "magazine", 84.0, 6.0], ["Aft magazine", "magazine", -84.0, 6.0], ["Aviation gasoline", "fuel", 64.0, 5.0], ["Hangar", "hangar", 0.0, 9.0], ["Flight deck forward", "deck", 64.0, 6.0], ["Flight deck aft", "deck", -64.0, 6.0]],
-		"models": {"m21": "res://assets/models/essex.glb", "m22": "res://assets/models/essex.glb"},
+		"models": {"m21": "res://assets/models/essex.glb", "m22": "res://assets/models/essex_m22.glb"},
 		"role": "warship",
 	},
 	"independence": {
@@ -456,7 +456,7 @@ const TYPES := {
 		"torp": {},
 		"aa": [],
 		"modules": [["Island", "bridge", 30.0, 4.0], ["Radar", "director", 30.0, 2.0], ["Forward boilers", "engine", 4.0, 6.0], ["Aft boilers", "engine", -14.0, 6.0], ["Engine rooms", "engine", -30.0, 6.0], ["Steering", "steering", -88.0, 3.0], ["Magazine", "magazine", 60.0, 5.0], ["Aviation gasoline", "fuel", 40.0, 4.0], ["Hangar", "hangar", 0.0, 7.0], ["Flight deck forward", "deck", 44.0, 5.0], ["Flight deck aft", "deck", -44.0, 5.0]],
-		"models": {"m21": "res://assets/models/independence.glb", "m22": "res://assets/models/independence.glb"},
+		"models": {"m21": "res://assets/models/independence.glb", "m22": "res://assets/models/independence_m22.glb"},
 		"role": "warship",
 	},
 	"casablanca": {
@@ -484,7 +484,7 @@ const TYPES := {
 		"torp": {},
 		"aa": [],
 		"modules": [["Island", "bridge", 20.0, 3.0], ["Radar", "director", 20.0, 1.5], ["Boilers", "engine", -10.0, 5.0], ["Engine room", "engine", -30.0, 5.0], ["Steering", "steering", -72.0, 3.0], ["Magazine", "magazine", 50.0, 4.0], ["Aviation gasoline", "fuel", 30.0, 4.0], ["Hangar", "hangar", 0.0, 6.0], ["Flight deck forward", "deck", 36.0, 4.0], ["Flight deck aft", "deck", -36.0, 4.0]],
-		"models": {"m21": "res://assets/models/casablanca.glb", "m22": "res://assets/models/casablanca.glb"},
+		"models": {"m21": "res://assets/models/casablanca.glb", "m22": "res://assets/models/casablanca_m22.glb"},
 		"role": "warship",
 	},
 	"fubuki": {
@@ -1034,7 +1034,7 @@ const TYPES := {
 		"torp": {},
 		"aa": ["Oerlikon1", "Oerlikon2"],
 		"modules": [["Bridge", "bridge", 8.0, 4.0], ["Engine room", "engine", -8.0, 5.0], ["Steering", "steering", -64.0, 3.0], ["No. 1 hold", "cargo", 44.0, 4.0], ["No. 2 hold", "cargo", 30.0, 4.0], ["No. 3 hold", "cargo", -26.0, 4.0], ["No. 4 hold", "cargo", -40.0, 4.0]],
-		"models": {"m21": "res://assets/models/liberty.glb", "m22": "res://assets/models/liberty.glb"},
+		"models": {"m21": "res://assets/models/liberty.glb", "m22": "res://assets/models/liberty_m22.glb"},
 	},
 	"shore_battery": {
 		"name": "Coastal gun battery",

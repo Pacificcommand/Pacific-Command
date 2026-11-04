@@ -3,6 +3,7 @@ Reference: Yukikaze plan, profile and photo in the reference PDF.
 LOA 118.5 m, beam 10.8 m, draft 3.8 m. Raised forecastle with a break aft of the bridge."""
 import numpy as np
 from geom import Mesh, Builder, rounded_plan, rot_y
+from detail import Paint, portholes, door, ladder, window_strip, hatch, locker, raft, raft_on_wall, capstan, reel, stays, railing, mix
 
 XB, XS = 59.25, -59.25
 BEAM = 5.4
@@ -42,10 +43,13 @@ def half_breadth(x, y):
     return max(w, 0.0)
 
 P = dict(hull='#6a7174', deck='#7b4f37', steel='#5e6568', sup='#737a7d', gun='#6e7578', dark='#26292b', bottom='#6b2b22',
-         boot='#1b1c1d', black='#0b0b0b', rail='#2a2d2f', canvas='#9a917a', light='#c9cfd1', brass='#a88a52', glass='#2f383c')
+         boot='#1b1c1d', black='#0b0b0b', rail='#2a2d2f', canvas='#9a917a', light='#c9cfd1', brass='#a88a52', glass='#2f383c', rim='#aeb4b6', raft='#5c6164')
 
 def build():
     M = Mesh()
+    paint = Paint(P, 118.5, 4.0, 'plain', seed=1939)
+    paint.funnels = [(11.0, 14.1), (-6.0, 13.2)]
+    M.paint = paint
     H = Builder(M, 'Hull', P['hull'])
     # stations: split at the forecastle break so the deck steps cleanly
     xs_list = list(np.linspace(XS, BREAK - 0.01, 64)) + list(np.linspace(BREAK + 0.01, 54.0, 34)) + list(np.linspace(54.4, 59.15, 10))
@@ -79,6 +83,7 @@ def build():
         H.quad((XS, st[k][1], -st[k][2]), (XS, st[k][1], st[k][2]), (XS, st[k + 1][1], st[k + 1][2]), (XS, st[k + 1][1], -st[k + 1][2]))
     # linoleum deck with brass strips, steel at the ends
     D = Builder(M, 'Hull', P['deck'])
+    D.raw = True
     ncam = 8
     for i in range(len(sections) - 1):
         xa, xb = sections[i][-1][0], sections[i + 1][-1][0]
@@ -102,7 +107,13 @@ def build():
         D.quad((x, y, -w), (x + 0.06, y, -w), (x + 0.06, y, w), (x, y, w))
 
     dy = deck_y
+    # scuttles along the forecastle side and the hull amidships
+    for s in (1, -1):
+        portholes(H, P, [(x, deck_y(x) - 1.2, s * half_breadth(x, deck_y(x) - 1.2)) for x in np.arange(19.0, 50.0, 2.4)], 'z+' if s > 0 else 'z-', size=0.34)
+        portholes(H, P, [(x, deck_y(x) - 1.1, s * half_breadth(x, deck_y(x) - 1.1)) for x in np.arange(-40.0, 14.0, 2.6)], 'z+' if s > 0 else 'z-', size=0.3)
     F = Builder(M, 'Hull', P['dark'])
+    hatch(F, P, 46.0, dy(46.0), 0.0, L=1.4, w=1.1)
+    hatch(F, P, -48.0, dy(-48.0), 0.0, L=1.4, w=1.1)
     for s in (1, -1):
         F.cyl((52.5, dy(52.5), s * 1.2), (52.5, dy(52.5) + 0.45, s * 1.2), 0.4, n=12)
         for i in range(8):
@@ -121,6 +132,20 @@ def build():
     S.prism(rounded_plan(30.0, 22.5, 3.0, 2.4), b0 + 2.4, b0 + 4.6)
     S.set_mat(P['glass']); S.prism(rounded_plan(29.6, 24.0, 2.8, 2.3), b0 + 4.6, b0 + 5.4)
     S.set_mat(P['sup']); S.prism(rounded_plan(29.4, 24.0, 2.8, 2.3), b0 + 5.4, b0 + 5.8)
+    S.raw = True
+    for z in np.arange(-2.4, 2.5, 0.8):
+        S.box((29.5, b0 + 5.0, z), (0.3, 0.8, 0.1))
+    S.raw = False
+    window_strip(S, P, 23.0, 29.0, b0 + 3.6, 3.0, 'z+', h=0.5, pitch=0.8)
+    window_strip(S, P, 23.0, 29.0, b0 + 3.6, -3.0, 'z-', h=0.5, pitch=0.8)
+    portholes(S, P, [(x, b0 + 1.4, 3.6) for x in np.arange(23.0, 30.0, 1.8)], 'z+', size=0.3)
+    portholes(S, P, [(x, b0 + 1.4, -3.6) for x in np.arange(23.0, 30.0, 1.8)], 'z-', size=0.3)
+    for sg, nm in ((1, 'z+'), (-1, 'z-')):
+        door(S, P, (22.3, b0 + 0.85, sg * 3.6), nm, h=1.6)
+    # bridge wings with rails
+    for sg in (1, -1):
+        S.box((27.0, b0 + 4.7, sg * 3.6), (3.0, 0.2, 1.4))
+        railing(S, P, [(28.5, b0 + 4.8, sg * 4.3), (25.5, b0 + 4.8, sg * 4.3)], h=0.9, mid=False)
     S.cyl((26.0, b0 + 5.8, 0), (26.0, b0 + 7.0, 0), 1.3, n=16)
     S.set_mat(P['gun']); S.cyl((26.0, b0 + 7.3, -2.4), (26.0, b0 + 7.3, 2.4), 0.25, n=10); S.box((26.0, b0 + 7.3, 0), (1.6, 0.9, 1.4))
     # tripod foremast
@@ -129,10 +154,17 @@ def build():
     for s in (1, -1):
         Mt.cyl((18.6, dy(18.6), s * 1.8), (20.5, b0 + 11.0, 0), 0.12, n=6, caps=False)
     Mt.cyl((20.5, b0 + 13.0, -3.2), (20.5, b0 + 13.0, 3.2), 0.07, n=6)
+    Mt.set_mat(P['sup']); Mt.cyl((20.3, b0 + 11.0, 0), (20.3, b0 + 11.2, 0), 1.1, n=10)
+    railing(Mt, P, [(20.3 + np.cos(a) * 1.05, b0 + 11.2, np.sin(a) * 1.05) for a in np.linspace(0, 2 * np.pi, 9)], h=0.8, mid=False)
+    Mt.set_mat(P['dark'])
+    stays(Mt, P, (20.5, b0 + 17.0, 0), [(12.0, dy(0) + 1.6, 0), (20.5, dy(19.0), 3.5), (20.5, dy(19.0), -3.5)])
     # amidships deckhouse and funnels
     m0 = dy(0)
     S.prism([(14.5, 2.6), (-11.0, 2.6), (-11.0, -2.6), (14.5, -2.6)], m0 - 0.2, m0 + 1.6)
     Lm = m0 + 1.6
+    for sg, nm in ((1, 'z+'), (-1, 'z-')):
+        door(S, P, (-10.0, m0 + 0.6, sg * 2.6), nm, w=0.7, h=1.4)
+        portholes(S, P, [(x, m0 + 0.9, sg * 2.6) for x in (-6.0, -3.0, 0.0, 3.0, 6.0)], nm, size=0.28)
     for fx, h, rake, trunk in [(11.0, 8.5, 1.6, True), (-6.0, 7.6, 1.3, False)]:
         ring = lambda y, k, fx=fx, h=h, rake=rake: [(fx - rake * (y - Lm) / h + np.cos(t) * 2.4 * k, y, np.sin(t) * 1.45 * k) for t in np.linspace(0, 2 * np.pi, 24, endpoint=False)]
         S.set_mat(P['sup'])
@@ -158,9 +190,15 @@ def build():
             S.set_mat(P['steel']); S.box((x + 1.5, dy(x) + 0.7, s * 3.4), (6.5, 1.4, 1.2))
     # mainmast and after deckhouse for mount 2
     Mt.cyl((-22.0, dy(-22), 0), (-22.0, dy(-22) + 14.0, 0), 0.16, 0.08, n=8)
+    Mt.cyl((-22.0, dy(-22) + 10.0, -2.6), (-22.0, dy(-22) + 10.0, 2.6), 0.06, n=6)
+    stays(Mt, P, (-22.0, dy(-22) + 13.5, 0), [(-14.0, dy(-14), 2.0), (-14.0, dy(-14), -2.0), (-30.0, dy(-30) + 2.2, 0)])
     a0 = dy(-30)
     S.set_mat(P['sup']); S.prism([(-25.5, 2.4), (-34.0, 2.4), (-34.0, -2.4), (-25.5, -2.4)], a0 - 0.2, a0 + 2.2)
     La = a0 + 2.2
+    for sg, nm in ((1, 'z+'), (-1, 'z-')):
+        door(S, P, (-33.0, a0 + 0.8, sg * 2.4), nm, w=0.7, h=1.5)
+        raft_on_wall(S, P, -29.0, a0 + 1.0, sg * 2.4, sg)
+    ladder(S, P, (-34.0, a0 + 1.0, 0.0), 'x-', 2.2)
     # boats
     B = Builder(M, 'Hull', P['light'])
     for s in (1, -1):
@@ -174,6 +212,7 @@ def build():
         K.box((-55.5, dy(-55.5) + 0.25, s * 1.8), (5.0, 0.5, 0.8))
     # railings
     R = Builder(M, 'Hull', P['rail'])
+    R.raw = True
     for s in (1, -1):
         prev = None
         for x in np.arange(XS + 1.5, 57.5, 1.8):
