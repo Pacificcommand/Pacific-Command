@@ -5,6 +5,7 @@ Steel hull with a W-shaped bottom, bow ramp, open cargo well, engine and steerin
 usually one or two light machine guns. Shown loaded with supply drums and crates."""
 import numpy as np
 from geom import Mesh, Builder, rot_y
+from detail import Paint, ladder, stays, mix
 
 L = 14.9
 XB, XS = L / 2, -L / 2
@@ -12,11 +13,16 @@ HB = 1.675
 GUN = 1.35          # gunwale height above the waterline
 
 P = dict(hull='#4b5048', hull2='#41463f', bottom='#5c2c24', well='#3a3d38', ramp='#50554c', dark='#1d1f1c', steel='#6b706a',
-         drum='#5b4a34', drum2='#6e6a50', crate='#7c6a48', canvas='#77735c', wood='#6a5236', flag='#d9d4c8', red='#b33a2e')
+         drum='#5b4a34', drum2='#6e6a50', crate='#7c6a48', canvas='#77735c', wood='#6a5236', flag='#d9d4c8', red='#b33a2e',
+         sup='#41463f', rim='#7a7f78', glass='#222622', rail='#1d1f1c', tire='#191a19', rope='#8a7a58', band='#2e2a22')
 
 
 def build(load=True):
     M = Mesh()
+    # worn steel: plate shades and heavy rust streaks
+    paint = Paint(P, L, GUN, 'plain', seed=1942)
+    paint.rust = '#574536'
+    M.paint = paint
     H = Builder(M, 'Hull', P['hull'])
     xr = 5.3   # where the ramp begins
     # hull plan: nearly rectangular, slightly narrowed at the bow ramp and stern
@@ -84,6 +90,64 @@ def build(load=True):
                 k += 1
         C.set_mat(P['canvas']); C.box((0.4, 1.25, 0.0), (3.2, 0.25, 2.6))
         C.set_mat(P['crate']); C.box((-2.4, 0.75, -0.6), (1.2, 0.9, 1.0)); C.box((-2.4, 0.75, 0.7), (1.0, 0.8, 0.9))
+    # ---- detail pass ----
+    X = Builder(M, 'Hull', P['dark'])
+    X.raw = True
+    # welded plate seams on the hull sides and a rubbing strake under the gunwale
+    for sg in (1, -1):
+        for x in np.arange(XS + 1.0, xr, 1.5):
+            z = sg * (hw(x) + 0.012)
+            X.set_mat(mix(P['hull'], P['dark'], 0.5))
+            if sg > 0:
+                X.quad((x - 0.02, 0.05, z), (x + 0.02, 0.05, z), (x + 0.02, GUN - 0.2, z), (x - 0.02, GUN - 0.2, z))
+            else:
+                X.quad((x + 0.02, 0.05, z), (x - 0.02, 0.05, z), (x - 0.02, GUN - 0.2, z), (x + 0.02, GUN - 0.2, z))
+        X.set_mat(P['dark'])
+        xs2 = np.linspace(XS + 0.1, xr, 12)
+        for a, b in zip(xs2[:-1], xs2[1:]):
+            za, zb = sg * (hw(a) + 0.06), sg * (hw(b) + 0.06)
+            X.box(((a + b) / 2, GUN - 0.12, (za + zb) / 2), (b - a, 0.12, 0.1))
+    X.raw = False
+    # old tyres hung over the side as fenders
+    for sg in (1, -1):
+        for x in (-4.2, -0.6, 3.0):
+            z = sg * (hw(x) + 0.16)
+            X.set_mat(P['tire']); X.cyl((x, 0.75, z - 0.09), (x, 0.75, z + 0.09), 0.3, n=12)
+            X.set_mat(P['dark']); X.cyl((x, 0.75, z + sg * 0.095), (x, 0.75, z + sg * 0.1), 0.13, n=8)
+            X.set_mat(P['rope']); X.cyl((x, 1.0, z), (x, GUN + 0.05, sg * hw(x)), 0.02, n=4, caps=False)
+    # ramp posts and the cables that raise the ramp
+    for sg in (1, -1):
+        X.set_mat(P['steel']); X.cyl((xr - 0.1, GUN, sg * (wr - 0.1)), (xr - 0.1, GUN + 1.1, sg * (wr - 0.1)), 0.06, n=6)
+        X.set_mat(P['dark']); X.cyl((xr - 0.1, GUN + 1.05, sg * (wr - 0.1)), (XB - 0.05, GUN + 0.38, sg * (wf - 0.08)), 0.018, n=3, caps=False)
+    X.set_mat(P['steel']); X.cyl((xr - 0.1, GUN + 1.05, -(wr - 0.1)), (xr - 0.1, GUN + 1.05, wr - 0.1), 0.04, n=6)
+    # ramp hinge
+    X.set_mat(P['dark']); X.cyl((xr + 0.2, 0.3, -wr + 0.1), (xr + 0.2, 0.3, wr - 0.1), 0.07, n=6)
+    # towing bitts and a coil of line on the stern deck, a boathook along the gunwale
+    for sg in (1, -1):
+        X.set_mat(P['dark']); X.cyl((-6.9, GUN + 0.02, sg * 1.15), (-6.9, GUN + 0.35, sg * 1.15), 0.08, n=8)
+    X.set_mat(P['rope']); X.cyl((-6.0, GUN + 0.02, -1.05), (-6.0, GUN + 0.12, -1.05), 0.3, 0.28, n=12)
+    X.set_mat(P['dark']); X.cyl((-6.0, GUN + 0.12, -1.05), (-6.0, GUN + 0.125, -1.05), 0.14, n=8)
+    X.set_mat(P['wood']); X.cyl((-5.0, GUN + 0.05, 1.5), (3.6, GUN + 0.05, 1.5), 0.03, n=4)
+    # ladder down into the well, a hand-rail on the steering shield
+    ladder(E, P, (-5.0, 0.8, 0.0), 'x+', 1.1, w=0.4)
+    X.set_mat(P['rail']); X.cyl((-6.3, GUN + 1.25, -0.95), (-5.0, GUN + 1.25, -0.9), 0.025, n=4, caps=False)
+    if load:
+        # hoops on the drums, lashings over the canvas
+        X.raw = True
+        X.set_mat(P['band'])
+        for x in np.arange(-3.4, 4.6, 0.75):
+            for z in (-0.95, -0.25, 0.45, 1.1):
+                if (x > 2.4 and abs(z) > 1.0):
+                    continue
+                X.cyl((x, 0.7, z), (x, 0.76, z), 0.305, n=10, caps=False)
+                X.cyl((x, 1.155, z), (x, 1.16, z), 0.22, n=8)
+        X.set_mat(P['rope'])
+        for x in (-0.9, 0.4, 1.7):
+            X.box((x, 1.385, 0.0), (0.05, 0.02, 2.62))
+            for sg in (1, -1):
+                X.cyl((x, 1.38, sg * 1.3), (x, GUN, sg * (HB - 0.15)), 0.015, n=3, caps=False)
+        X.box((0.4, 1.385, 0.0), (3.22, 0.02, 0.05))
+        X.raw = False
     mg(M, 'MG1', (-6.6, GUN + 0.05, 0.0))
     mg(M, 'MG2', (4.8, GUN + 0.05, 0.9))
     return M

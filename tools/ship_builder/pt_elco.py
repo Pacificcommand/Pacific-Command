@@ -6,13 +6,14 @@ Armament: 37 mm bow gun, 20 mm Oerlikon, two twin .50 turrets, 40 mm Bofors aft,
 four Mark 13 torpedoes on roll-off racks, two Mark 50 rocket launchers, SO radar mast."""
 import numpy as np
 from geom import Mesh, Builder, rot_y
+from detail import Paint, portholes, ladder, locker, raft, stays, railing, mix, _facing_disc
 
 XB, XS = 12.2, -12.2
 HB = 3.15
 
 P = dict(hull='#3d4a36', hull2='#34402f', deck='#46533e', bottom='#5a2a22', boot='#141615', sup='#4a5743', gun='#3a3f3a',
          dark='#1c1f1c', steel='#666b66', torp='#7c8279', warhead='#8f8a6a', glass='#2a3436', canvas='#8d8a6e', raft='#b9a45e',
-         white='#d8dad5', flagr='#a83a32', flagb='#26365e')
+         white='#d8dad5', flagr='#a83a32', flagb='#26365e', rim='#8b927f', rail='#1f241e', ring='#d27a3a', lamp='#c8d4d0', brass='#a88a52')
 
 
 def deck_y(x):
@@ -46,6 +47,10 @@ def keel_y(x):
 
 def build():
     M = Mesh()
+    # Measure 31 green plywood: plating shades and salt/grime streaks (no rust on a wooden hull)
+    paint = Paint(P, 24.4, 2.3, 'plain', seed=80)
+    paint.rust = '#262d24'
+    M.paint = paint
     H = Builder(M, 'Hull', P['hull'])
     xs = list(np.linspace(XS, 8.0, 34)) + list(np.linspace(8.25, XB - 0.02, 16))
     secs = []
@@ -149,6 +154,69 @@ def build():
     for s in (1, -1):
         F.box((8.6, deck_y(8.6) - 0.45, s * (deck_w(8.6) + 0.01)), (0.9, 0.22, 0.02))
 
+    # ---- detail pass ----
+    X = Builder(M, 'Hull', P['dark'])
+    # plywood deck seams running fore and aft
+    X.raw = True
+    X.set_mat(mix(P['deck'], P['dark'], 0.45))
+    for z in np.arange(-2.75, 2.8, 0.55):
+        xs_ok = [x for x in np.arange(XS + 0.3, XB - 0.4, 0.8) if deck_w(x) - 0.15 > abs(z) and deck_w(x + 0.8) - 0.15 > abs(z)]
+        for x in xs_ok:
+            ya, yb = dy(x) + 0.09 * (1 - (z / HB) ** 2) + 0.006, dy(x + 0.8) + 0.09 * (1 - (z / HB) ** 2) + 0.006
+            X.quad((x, ya, z - 0.018), (x, ya, z + 0.018), (x + 0.8, yb, z + 0.018), (x + 0.8, yb, z - 0.018))
+    # rub rail (fender strake) along the sheer
+    X.set_mat(P['dark'])
+    for x in np.arange(XS + 0.1, XB - 0.6, 0.6):
+        for sg in (1, -1):
+            a = (x, deck_y(x) - 0.12, sg * (deck_w(x) + 0.035))
+            b = (x + 0.6, deck_y(x + 0.6) - 0.12, sg * (deck_w(x + 0.6) + 0.035))
+            if sg > 0:
+                X.quad(a, b, (b[0], b[1] + 0.12, b[2]), (a[0], a[1] + 0.12, a[2]))
+            else:
+                X.quad(b, a, (a[0], a[1] + 0.12, a[2]), (b[0], b[1] + 0.12, b[2]))
+    X.raw = False
+    # scuttles in the forward crew quarters
+    for sg, nm in ((1, 'z+'), (-1, 'z-')):
+        portholes(H, P, [(x, deck_y(x) - 0.5, sg * (deck_w(x) - 0.02)) for x in (5.6, 6.6, 7.6, 8.6 - 0.9)], nm, size=0.22)
+        portholes(S, P, [(x, c0 + 0.35, sg * 1.45) for x in (0.0,)], nm, size=0.2)
+    # life rings on the chart house, a ladder up to the cockpit
+    for sg in (1, -1):
+        X.set_mat(P['ring'])
+        X.cyl((-1.0, c0 + 1.02, sg * 1.0), (-1.0, c0 + 1.02, sg * 1.08), 0.27, n=12)
+        X.set_mat(P['dark'])
+        X.cyl((-1.0, c0 + 1.02, sg * 1.085), (-1.0, c0 + 1.02, sg * 1.1), 0.14, n=10)
+    ladder(S, P, (-1.9, c0 + 1.05, 0.0), 'x-', 0.6, w=0.4)
+    # cockpit: windscreen frame, compass binnacle, searchlight, horn, rail
+    X.set_mat(P['dark'])
+    X.cyl((1.45, c0 + 1.35, -0.92), (1.2, c0 + 1.78, -0.82), 0.025, n=4, caps=False)
+    X.cyl((1.45, c0 + 1.35, 0.92), (1.2, c0 + 1.78, 0.82), 0.025, n=4, caps=False)
+    X.cyl((1.2, c0 + 1.78, -0.82), (1.2, c0 + 1.78, 0.82), 0.025, n=4, caps=False)
+    X.set_mat(P['steel']); X.cyl((0.9, c0 + 1.37, -0.45), (0.9, c0 + 1.72, -0.45), 0.13, 0.1, n=10)
+    X.set_mat(P['brass']); X.cyl((0.9, c0 + 1.72, -0.45), (0.9, c0 + 1.8, -0.45), 0.16, 0.12, n=10)
+    X.set_mat(P['steel']); X.cyl((-1.55, c0 + 1.35, -0.7), (-1.55, c0 + 1.6, -0.7), 0.06, n=6)
+    X.cyl((-1.75, c0 + 1.75, -0.7), (-1.3, c0 + 1.75, -0.7), 0.2, n=12)
+    X.raw = True; X.set_mat(P['lamp']); X.cyl((-1.29, c0 + 1.75, -0.7), (-1.27, c0 + 1.75, -0.7), 0.16, n=12); X.raw = False
+    X.set_mat(P['dark']); X.cyl((-1.55, c0 + 1.6, 0.7), (-1.1, c0 + 1.75, 0.7), 0.04, 0.09, n=6)
+    railing(X, P, [(-1.85, c0 + 1.35, -0.95), (-1.85, c0 + 1.35, 0.95)], h=0.55, mid=False)
+    # rigging from the radar mast
+    stays(X, P, (-1.2, c0 + 4.6, 0.0), [(-5.0, dy(-5.0) + 0.1, 1.9), (-5.0, dy(-5.0) + 0.1, -1.9), (1.4, c0 + 0.75, 0.0)])
+    # a second raft lying on the after engine hatch, ready-ammo lockers by the guns
+    P2 = dict(P); P2['sup'] = P['sup']
+    raft(X, P2, -6.1, dy(-6.1) + 0.25, 0.0, L=2.0, w=1.2, t=0.28)
+    for x, z in ((7.5, 1.3), (7.5, -1.3), (-8.0, 1.75), (-8.0, -1.75), (5.4, -2.15)):
+        locker(X, P, x, dy(x), z, L=0.7, w=0.5, h=0.45)
+    # cleats, bow chocks and the anchor
+    X.set_mat(P['dark'])
+    for x in (10.4, 4.0, -3.4, -10.8):
+        for sg in (1, -1):
+            z = sg * (deck_w(x) - 0.25)
+            X.box((x, dy(x) + 0.06, z), (0.36, 0.08, 0.08))
+            X.box((x, dy(x) + 0.03, z), (0.12, 0.06, 0.06))
+    X.set_mat(P['steel']); X.box((10.9, dy(10.9) + 0.06, 0.45), (0.7, 0.1, 0.35))
+    X.set_mat(P['dark']); X.cyl((10.9, dy(10.9) + 0.06, 0.45), (11.9, deck_y(11.9) + 0.02, 0.1), 0.025, n=4, caps=False)
+    # engine exhausts low on the transom (three Packards)
+    for z in (-1.2, 0.0, 1.2):
+        X.cyl((XS + 0.02, 0.35, z), (XS - 0.12, 0.35, z), 0.16, n=10)
     # weapons (each a group so it can turn)
     gun37(M, 'Gun37', (8.6, dy(8.6), 0.0))
     oerlikon(M, 'Oerlikon', (6.3, dy(6.3), -1.6))
