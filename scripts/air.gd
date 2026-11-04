@@ -15,6 +15,7 @@ var _enemy_air_msg_t := -99.0
 var _scout_msg_t := -99.0
 var _cache := {}                # model path -> PackedScene
 var aa_mode := "self"           # player's AA priority: self, carrier, bombers
+var decks := {}                 # carrier Ship -> flight deck state (see the deck section)
 
 const ALT_CRUISE := 170.0
 const ALT_FORM := 120.0         # where a launching squadron forms up
@@ -25,7 +26,15 @@ func reset() -> void:
 	for sq in sqs:
 		if sq.node != null and is_instance_valid(sq.node):
 			sq.node.queue_free()
+		for so in sq.get("solos", []):
+			if so.node != null and is_instance_valid(so.node):
+				so.node.queue_free()
 	sqs.clear()
+	for dk in decks.values():
+		for p in dk.planes:
+			if p.node != null and is_instance_valid(p.node):
+				p.node.queue_free()
+	decks.clear()
 	_id = 0
 	_ai_t = 0.0
 	_enemy_air_msg_t = -99.0
@@ -35,7 +44,20 @@ func reset() -> void:
 ## Give a carrier (or a ship with floatplanes) its air group, all on deck and ready.
 func setup_ship(s: Ship) -> void:
 	var T: Dictionary = s.T
-	if T.has("aircraft"):
+	if T.has("aircraft") and T.has("fdeck"):
+		# the whole air group is parked on the flight deck: as many as the deck can hold
+		var dk := _deck_new(s)
+		var group: Array = Data.air_group(T.get("hangar", "us"), int(T.aircraft))
+		var total := 0
+		for g in group:
+			total += int(g[1])
+		var k := minf(1.0, float(dk.cap) / float(maxi(total, 1)))
+		var made := []
+		for g in group:
+			var n: int = maxi(1, int(floor(g[1] * k)))
+			made.append(_new_sq(s, g[0], n, "ready"))
+		_deck_spot_initial(dk, made)
+	elif T.has("aircraft"):
 		for g in Data.air_group(T.get("hangar", "us"), int(T.aircraft)):
 			_new_sq(s, g[0], g[1], "ready")
 	elif T.has("floatplanes") or _has_catapult(s):
@@ -144,6 +166,8 @@ func step(dt: float) -> void:
 				sq.rearm = maxf(0.0, sq.rearm - dt * k)
 			continue
 		_step_sq(sq, dt)
+	for dk in decks.values():
+		_step_deck(dk, dt)
 	_sync_decks()
 	_radar_warnings()
 	_flak(dt)
@@ -215,6 +239,22 @@ func _step_sq(sq: Dictionary, dt: float) -> void:
 			# squadron forming ahead of the ship
 			if not home.alive:
 				_lose(sq); return
+			if decks.has(home):
+				# planes come off the deck one by one (_step_deck); the rendezvous rides ahead
+				var fd0 := U.fwd(home.h)
+				sq.x = home.x + fd0.x * 900.0; sq.z = home.z + fd0.y * 900.0; sq.h = home.h
+				sq.alt = ALT_FORM
+				sq.v = home.v
+				_step_solos(sq, dt, spd)
+				if _deck_count(decks[home], sq) == 0 and sq.solos.is_empty():
+					sq.state = sq.next
+					sq.show_n = -1
+					sq.v = spd
+					sq.launched_t = B.t
+					if home.is_player:
+						_airborne_summary(home)
+				_place_node(sq)
+				return
 			var carrier := home.T.has("aircraft")
 			sq.timer += dt * (0.5 + 0.5 * home.mod_health("deck"))
 			var per := 3.0 if carrier else 20.0
@@ -304,11 +344,19 @@ func _step_sq(sq: Dictionary, dt: float) -> void:
 			sq.show_n = maxi(queued, 0)
 			sq.timer += dt * (0.3 + 0.7 * home.mod_health("deck")) if carrier else dt * 0.5
 			var per := 5.0 if carrier else 12.0
+			var deck_ok := true
+			if decks.has(home):
+				# the deck must be spotted forward and the landing area clear of the last plane
+				deck_ok = _deck_can_land(decks[home])
+				per = 4.0
 			# one plane in the groove at a time, the deck clear before the next comes down
-			if queued > 0 and sq.timer > per and dh < 700.0 and _deck_busy(home, ["rollout", "taxi"]) == 0 and _deck_busy(home, ["approach"]) < 1:
+			if queued > 0 and sq.timer > per and dh < 700.0 and deck_ok and _deck_busy(home, ["rollout", "taxi"]) == 0 and _deck_busy(home, ["approach"]) < 1:
 				sq.timer = 0.0
 				_solo_land(sq, carrier)
 			_step_solos(sq, dt, spd)
+			if decks.has(home) and _deck_count(decks[home], sq, ["rollout", "taxi_in"]) > 0:
+				_place_node(sq)
+				return
 			if sq.landed >= sq.n and sq.solos.is_empty():
 				sq.state = "ready"
 				sq.show_n = -1
@@ -887,7 +935,10 @@ func _step_solos(sq: Dictionary, dt: float, spd: float) -> void:
 				# down the glide path to the stern (carrier) or the water alongside (floatplane)
 				var aim: Vector2
 				var aim_y: float
-				if so.carrier:
+				if so.carrier and decks.has(home):
+					aim = home.to_world_xz(decks[home].x_touch, 0.0)
+					aim_y = home.global_position.y + decks[home].y + 0.6
+				elif so.carrier:
 					aim = home.to_world_xz(-L * 0.46, 0.0)
 					aim_y = home.global_position.y + _deck_y(home) + 1.0
 				else:
@@ -903,6 +954,13 @@ func _step_solos(sq: Dictionary, dt: float, spd: float) -> void:
 				# glide: height proportional to distance, never below the aim point
 				so.y = maxf(aim_y, minf(so.y, aim_y + d * 0.09))
 				if d < 25.0 or so.t > 90.0:
+					if so.carrier and decks.has(home):
+						# wheels down: the plane becomes part of the deck
+						_deck_touchdown(decks[home], sq, so)
+						sq.landed += 1
+						done.append(so)
+						so.node = null
+						continue
 					if so.carrier:
 						so.phase = "rollout"
 						so.lx = -L * 0.46; so.lz = 0.0; so.ly = _deck_y(home)
@@ -948,7 +1006,7 @@ func _step_solos(sq: Dictionary, dt: float, spd: float) -> void:
 ## Parked planes on each deck: as many hidden as are away from the ship.
 func _sync_decks() -> void:
 	for sh in B.ships:
-		if sh.park.is_empty() and sh.floats.is_empty():
+		if decks.has(sh) or (sh.park.is_empty() and sh.floats.is_empty()):
 			continue
 		var away := 0
 		for sq in sqs:
@@ -962,6 +1020,20 @@ func _sync_decks() -> void:
 		var slots: Array = sh.park if not sh.park.is_empty() else sh.floats
 		for i in slots.size():
 			slots[slots.size() - 1 - i].node.visible = i >= away
+
+
+## Take a team's aircraft out of the battle entirely (deck planes too).
+func clear_team(team: String) -> void:
+	for sq in sqs:
+		if sq.team == team and sq.node != null and is_instance_valid(sq.node):
+			sq.node.queue_free()
+	sqs = sqs.filter(func(q): return q.team != team)
+	for sh in decks.keys():
+		if sh.team == team:
+			for p in decks[sh].planes:
+				if p.node != null and is_instance_valid(p.node):
+					p.node.queue_free()
+			decks.erase(sh)
 
 
 func _kind_word(kind: String) -> String:
@@ -1010,6 +1082,469 @@ func restore(data: Array) -> void:
 		sq.next = d.next
 		sq.aim = Vector2(d.aim[0], d.aim[1])
 		sq.target = B.ships[int(d.target)] if int(d.target) >= 0 else null
+		if home.T.has("aircraft") and home.T.has("fdeck"):
+			# a save made mid-launch or mid-recovery: those planes are put aloft or aboard
+			if sq.state == "launching":
+				sq.state = sq.next
+			elif sq.state == "landing":
+				sq.state = "returning"
 		if sq.state not in ["ready", "lost"]:
 			_make_node(sq)
 			_place_node(sq)
+	for sh in B.ships:
+		if sh.T.has("aircraft") and sh.T.has("fdeck") and not decks.has(sh):
+			var dk := _deck_new(sh)
+			var mine := []
+			for sq in sqs:
+				if sq.home == sh and sq.state == "ready":
+					mine.append(sq)
+			_deck_spot_initial(dk, mine)
+
+
+# =====================================================================
+# the flight deck: every plane of a carrier's air group is parked on deck in rows (wings
+# folded), fighters forward, dive bombers, torpedo planes aft. Planes take off from the front
+# of the pack one at a time: taxi to the centreline, spread the wings, roll and lift off over
+# the bow. For recovery the deck crew pushes the parked rows forward (row by row, so nothing
+# passes through anything), planes land over the stern, catch a wire, fold and taxi forward to
+# park behind the others; before the next launch the rows are pushed aft again. Planes lost in
+# action are replaced from the hangar on a timer. Ship-local coordinates: lx forward, lz to
+# starboard; deck planes are children of the Ship node so they ride its roll and heave.
+# =====================================================================
+
+const DECK_COL := 6.0           # athwartships spacing of parked planes (folded tails are ~5.8 m)
+const DECK_ROW := 13.0          # fore-and-aft spacing of the rows
+const ROLL_V := 36.0            # take-off speed relative to the deck, m/s
+const RESPOT_V := 6.0           # the deck crew pushing a row of planes, m/s
+const TAXI_V := 5.0
+const TAXI_OUT_V := 9.0          # deck crews hurry a plane to the launch spot
+const REPLACE_T := 45.0         # seconds per replacement plane from the hangar (full health)
+
+func _deck_new(s: Ship) -> Dictionary:
+	var fd: Dictionary = s.T.fdeck
+	var w: float = fd.zmax - fd.zmin
+	var nc: int = maxi(1, int(floor((w + 0.5) / DECK_COL)))
+	var zc: float = (fd.zmin + fd.zmax) * 0.5
+	var cols := []
+	for i in nc:
+		cols.append(zc + (i - (nc - 1) * 0.5) * DECK_COL)
+	var length: float = fd.front - fd.back
+	var nr: int = maxi(1, int(floor(length * 0.6 / DECK_ROW)))
+	# launch order inside a row: the planes nearest the centreline first; landing fills the
+	# other way round (outboard first) so a plane never taxis through a parked one
+	var launch_order := range(nc)
+	launch_order.sort_custom(func(a, b): return absf(cols[a]) < absf(cols[b]))
+	var fill_order := launch_order.duplicate()
+	fill_order.reverse()
+	var dk := {"ship": s, "cols": cols, "nc": nc, "nr": nr, "cap": nc * nr, "y": float(fd.y),
+		"x_bow": float(fd.front) - 10.0, "x_stern": float(fd.back) + 8.0, "x_touch": float(fd.back) + 14.0, "x_end": float(fd.front),
+		"rows": [], "planes": [], "mode": "aft", "moving": false, "fill_row": null, "launch_t": 0.0, "rep_t": 0.0,
+		"launch_order": launch_order, "fill_order": fill_order}
+	decks[s] = dk
+	return dk
+
+
+## Park the air group in the launch spot aft, rows from the front: fighters, dive, torpedo.
+func _deck_spot_initial(dk: Dictionary, squads: Array) -> void:
+	var order := {"fighter": 0, "scout": 0, "dive": 1, "torpedo": 2}
+	var list := squads.duplicate()
+	list.sort_custom(func(a, b): return order.get(a.kind, 3) < order.get(b.kind, 3))
+	var planes := []
+	for sq in list:
+		for i in sq.n:
+			planes.append(sq)
+	var nrow: int = int(ceil(float(planes.size()) / dk.nc))
+	dk.rows.clear()
+	for r in nrow:
+		var row := {"x": dk.x_stern + (nrow - 1 - r) * DECK_ROW, "tx": 0.0, "cells": []}
+		row.cells.resize(dk.nc)
+		dk.rows.append(row)
+	var i := 0
+	for r in nrow:
+		for c in dk.launch_order:
+			if i >= planes.size():
+				break
+			_deck_add_plane(dk, planes[i], dk.rows[r], c, false)
+			i += 1
+	dk.mode = "aft"
+
+
+func _deck_add_plane(dk: Dictionary, sq: Dictionary, row: Dictionary, c: int, lift: bool) -> Dictionary:
+	var p := {"sq": sq, "node": null, "phase": "lift" if lift else "parked", "row": row, "col": c,
+		"lx": row.x, "lz": dk.cols[c], "ly": dk.y, "psi": 0.0, "v": 0.0, "acc": 0.0, "path": [], "t": 0.0, "folded": true}
+	row.cells[c] = p
+	_deck_node(dk, p, true)
+	if lift:
+		p.ly = dk.y - 6.0
+	dk.planes.append(p)
+	_deck_place(dk, p)
+	return p
+
+
+func _folded_scene(sq: Dictionary) -> PackedScene:
+	var path: String = Data.AIRCRAFT[sq.type].model.replace(".glb", "_folded.glb")
+	if not ResourceLoader.exists(path):
+		path = Data.AIRCRAFT[sq.type].model
+	if not _cache.has(path):
+		_cache[path] = load(path)
+	return _cache[path]
+
+
+## Give a deck plane its model, wings folded (parked, taxiing) or spread (take-off run).
+func _deck_node(dk: Dictionary, p: Dictionary, folded: bool) -> void:
+	if p.node != null and is_instance_valid(p.node):
+		p.node.queue_free()
+	var n: Node3D = (_folded_scene(p.sq) if folded else _plane_scene(p.sq)).instantiate()
+	dk.ship.add_child(n)
+	p.node = n
+	p.folded = folded
+
+
+func _deck_place(dk: Dictionary, p: Dictionary) -> void:
+	if p.node == null or not is_instance_valid(p.node):
+		return
+	p.node.position = Vector3(p.lz, p.ly, -p.lx)
+	p.node.transform.basis = Basis(Vector3.UP, -p.psi)
+
+
+## Planes of a squadron on this deck (optionally only in some phases).
+func _deck_count(dk: Dictionary, sq: Dictionary, phases := []) -> int:
+	var n := 0
+	for p in dk.planes:
+		if p.sq == sq and (phases.is_empty() or phases.has(p.phase)):
+			n += 1
+	return n
+
+
+func _deck_phase_count(dk: Dictionary, phases: Array) -> int:
+	var n := 0
+	for p in dk.planes:
+		if phases.has(p.phase):
+			n += 1
+	return n
+
+
+func _deck_parked(dk: Dictionary) -> int:
+	return _deck_phase_count(dk, ["parked", "lift"])
+
+
+func _deck_can_land(dk: Dictionary) -> bool:
+	if dk.moving or (dk.mode != "fwd" and _deck_parked(dk) > 0):
+		return false
+	if _deck_phase_count(dk, ["taxi_out", "hold", "roll"]) > 0:
+		return false
+	for p in dk.planes:
+		# the last plane down must have rolled out and cleared the landing area
+		if p.phase == "rollout" or (p.phase == "taxi_in" and p.lx < dk.x_touch + 45.0):
+			return false
+	return true
+
+
+## Push the parked rows forward (for recovery) or aft (to spot a launch), each row in a straight
+## line so the rows keep their order and nothing passes through anything.
+func _deck_respot(dk: Dictionary, mode: String) -> void:
+	dk.rows = dk.rows.filter(func(r): return r.cells.any(func(c): return c != null))
+	var n: int = dk.rows.size()
+	for i in n:
+		dk.rows[i].tx = dk.x_bow - i * DECK_ROW if mode == "fwd" else dk.x_stern + (n - 1 - i) * DECK_ROW
+	dk.mode = mode
+	dk.fill_row = null
+	dk.moving = n > 0
+	if dk.ship.is_player and n > 0 and B.t > 5.0:
+		B.say("Flight deck: respotting the deck %s." % ("forward for recovery" if mode == "fwd" else "aft for the launch"))
+
+
+func _step_deck(dk: Dictionary, dt: float) -> void:
+	var sh: Ship = dk.ship
+	if not is_instance_valid(sh) or not sh.alive:
+		return
+	var k: float = 0.4 + 0.6 * sh.mod_health("deck")
+	# rows being pushed
+	if dk.moving:
+		var still := false
+		for r in dk.rows:
+			var d: float = r.tx - r.x
+			var st: float = RESPOT_V * k * dt
+			if absf(d) > st:
+				r.x += signf(d) * st
+				still = true
+			else:
+				r.x = r.tx
+			for c in r.cells:
+				if c != null and c.phase in ["parked", "lift"]:
+					c.lx = r.x
+					_deck_place(dk, c)
+		dk.moving = still
+	# what the deck is wanted for
+	var want_launch := false
+	var want_land := false
+	for sq in sqs:
+		if sq.home != sh:
+			continue
+		if sq.state == "launching" and _deck_count(dk, sq, ["parked", "lift"]) > 0:
+			want_launch = true
+		if sq.state == "landing" and sq.n - sq.landed - sq.solos.size() > 0:
+			want_land = true
+		# a squadron on its way home and close: start clearing the landing area now
+		if sq.state == "returning" and U.hyp(sq.x - sh.x, sq.z - sh.z) < 9000.0:
+			want_land = true
+	var landing_now := _deck_phase_count(dk, ["rollout", "taxi_in"]) > 0 or _deck_busy(sh, ["approach"]) > 0
+	var launching_now := _deck_phase_count(dk, ["taxi_out", "hold", "roll"]) > 0
+	if not dk.moving:
+		if want_launch and not landing_now:
+			if dk.mode != "aft" and _deck_parked(dk) > 0:
+				_deck_respot(dk, "aft")
+			else:
+				_deck_launch_next(dk, dt, k)
+		elif want_land and not launching_now:
+			if dk.mode != "fwd" and _deck_parked(dk) > 0:
+				_deck_respot(dk, "fwd")
+			elif _deck_parked(dk) == 0 and dk.mode != "fwd":
+				dk.mode = "fwd"
+				dk.fill_row = null
+				_deck_compact(dk)
+		elif not want_launch and not want_land and not launching_now and not landing_now:
+			_deck_replace(dk, dt)
+	if B._test.has("decktrace") and sh.is_player and int(B.t * 20.0) % 400 == 0:
+		var ph := {}
+		for p in dk.planes:
+			ph[p.phase] = ph.get(p.phase, 0) + 1
+		var st := []
+		for sq in sqs:
+			if sq.home == sh:
+				st.append("%s:%s n%d l%d s%d" % [sq.type, sq.state, sq.n, sq.landed, sq.solos.size()])
+		print("deck t=%d mode=%s moving=%s rows=%d %s | %s" % [B.t, dk.mode, dk.moving, dk.rows.size(), ph, ", ".join(st)])
+	# move every plane that is doing something
+	var gone := []
+	for p in dk.planes:
+		if _deck_step_plane(dk, p, dt, k):
+			gone.append(p)
+	for p in gone:
+		dk.planes.erase(p)
+
+
+func _deck_launch_next(dk: Dictionary, dt: float, k: float) -> void:
+	dk.launch_t -= dt * k
+	# one plane taxiing up while the one ahead waits on the launch spot
+	if dk.launch_t > 0.0 or _deck_phase_count(dk, ["taxi_out"]) > 0 or _deck_phase_count(dk, ["hold"]) > 1:
+		return
+	# the front row that still has planes in it
+	for r in dk.rows:
+		var row_has := false
+		for c in dk.launch_order:
+			var p = r.cells[c]
+			if p == null or p.phase != "parked":
+				continue
+			row_has = true
+			var sq: Dictionary = p.sq
+			if sq.state != "launching":
+				# parked in front of the planes that are going: it goes first, with them
+				_deck_blocker(dk, sq)
+			r.cells[c] = null
+			p.phase = "taxi_out"
+			p.t = 0.0
+			p.path = [Vector2(p.lx + DECK_ROW * 0.5, p.lz * 0.45), Vector2(p.lx + DECK_ROW, 0.0)]
+			dk.launch_t = 0.4
+			return
+		if row_has:
+			return
+
+
+## A plane parked ahead of a launching squadron launches with it: fighters fly combat air
+## patrol, bombers join the strike (or search if only fighters were ordered up).
+func _deck_blocker(dk: Dictionary, sq: Dictionary) -> void:
+	var waiting = null
+	for o in sqs:
+		if o.home == dk.ship and o.state == "launching":
+			waiting = o
+			break
+	if waiting == null:
+		return
+	var nxt: String = waiting.get("next", "outbound")
+	var cap_up := false
+	for o in sqs:
+		if o.home == dk.ship and (o.state == "cap" or (o.state == "launching" and o.get("next", "") == "cap")):
+			cap_up = true
+	if sq.kind == "fighter" and not cap_up:
+		nxt = "cap"
+	elif sq.kind != "fighter" and nxt == "cap":
+		nxt = "scouting"
+	_launch(sq, nxt, waiting.target, waiting.aim)
+	if nxt == "scouting":
+		var f := U.fwd(dk.ship.h)
+		sq.aim = Vector2(dk.ship.x + f.x * 15000.0, dk.ship.z + f.y * 15000.0)
+
+
+## A plane from the landing pattern touches down: it becomes a deck plane rolling out.
+func _deck_touchdown(dk: Dictionary, sq: Dictionary, so: Dictionary) -> void:
+	var p := {"sq": sq, "node": so.node, "phase": "rollout", "row": null, "col": 0,
+		"lx": dk.x_touch, "lz": 0.0, "ly": dk.y, "psi": 0.0, "v": 26.0, "acc": 0.0, "path": [], "t": 0.0, "folded": false}
+	if p.node != null and is_instance_valid(p.node):
+		p.node.reparent(dk.ship, false)
+	else:
+		_deck_node(dk, p, false)
+	# its parking place: the next free spot behind the parked rows, outboard spots first
+	_deck_compact(dk)
+	var row = dk.fill_row
+	var col := -1
+	if row != null:
+		for c in dk.fill_order:
+			if row.cells[c] == null:
+				col = c
+				break
+	if col < 0:
+		var last_x: float = dk.rows[dk.rows.size() - 1].x if not dk.rows.is_empty() else dk.x_bow + DECK_ROW
+		row = {"x": maxf(last_x - DECK_ROW, dk.x_touch + 50.0), "tx": 0.0, "cells": []}
+		row.cells.resize(dk.nc)
+		dk.rows.append(row)
+		dk.fill_row = row
+		col = dk.fill_order[0]
+	row.cells[col] = p
+	p.row = row
+	p.col = col
+	dk.planes.append(p)
+	_deck_place(dk, p)
+
+
+## Drop rows with nobody in them (the row being filled by landing planes stays).
+func _deck_compact(dk: Dictionary) -> void:
+	dk.rows = dk.rows.filter(func(r): return r == dk.fill_row or r.cells.any(func(c): return c != null))
+
+
+## Replacement planes come up from the hangar, one at a time, until each squadron is full.
+func _deck_replace(dk: Dictionary, dt: float) -> void:
+	var sh: Ship = dk.ship
+	var need = null
+	for sq in sqs:
+		if sq.home == sh and sq.state in ["ready", "lost"] and sq.n < sq.n0:
+			need = sq
+			break
+	if need == null:
+		dk.rep_t = 0.0
+		return
+	dk.rep_t += dt * (0.25 + 0.75 * sh.mod_health("hangar"))
+	if dk.rep_t < REPLACE_T:
+		return
+	# a free spot in the parked rows (the plane rises into it on the elevator), or a new row
+	_deck_compact(dk)
+	var row = null
+	var col := -1
+	for r in range(dk.rows.size() - 1, -1, -1):
+		for c in dk.fill_order:
+			if dk.rows[r].cells[c] == null:
+				row = dk.rows[r]; col = c
+				break
+		if row != null:
+			break
+	if row == null:
+		var x: float
+		if dk.rows.is_empty():
+			x = dk.x_stern if dk.mode == "aft" else dk.x_bow
+		elif dk.mode == "aft":
+			x = dk.rows[0].x + DECK_ROW
+			if x > dk.x_end - 90.0:
+				return
+		else:
+			x = dk.rows[dk.rows.size() - 1].x - DECK_ROW
+			if x < dk.x_touch + 50.0:
+				return
+		row = {"x": x, "tx": x, "cells": []}
+		row.cells.resize(dk.nc)
+		if dk.mode == "aft" and not dk.rows.is_empty():
+			dk.rows.push_front(row)
+		else:
+			dk.rows.append(row)
+		col = dk.fill_order[0]
+	dk.rep_t = 0.0
+	_deck_add_plane(dk, need, row, col, true)
+	need.n += 1
+	if need.state == "lost":
+		need.state = "ready"
+		need.rearm = 60.0
+	if sh.is_player and need.n >= need.n0:
+		B.say("%s back to full strength: %d planes, replacements up from the hangar." % [need.name, need.n], "good")
+
+
+## One deck plane's motion; true when it has left the deck (airborne).
+func _deck_step_plane(dk: Dictionary, p: Dictionary, dt: float, k: float) -> bool:
+	var sh: Ship = dk.ship
+	p.t += dt
+	match p.phase:
+		"parked":
+			return false
+		"lift":
+			# coming up on the elevator
+			p.ly = minf(dk.y, p.ly + 2.0 * dt)
+			p.lx = p.row.x
+			if p.ly >= dk.y:
+				p.phase = "parked"
+		"taxi_out", "taxi_in":
+			if p.path.is_empty():
+				if p.phase == "taxi_out":
+					p.phase = "hold"
+					p.t = 0.0
+				else:
+					p.phase = "parked"
+					p.lx = p.row.x
+					p.lz = dk.cols[p.col]
+					p.psi = 0.0
+			else:
+				var goal: Vector2 = p.path[0]
+				if p.phase == "taxi_out":
+					# stop short while another plane is still on the launch spot
+					var blocked := false
+					for o in dk.planes:
+						if o != p and o.phase == "hold" and Vector2(o.lx - p.lx, o.lz - p.lz).length() < 12.0:
+							blocked = true
+					if blocked:
+						_deck_place(dk, p)
+						return false
+				var dv := goal - Vector2(p.lx, p.lz)
+				var st: float = (TAXI_OUT_V if p.phase == "taxi_out" else TAXI_V) * k * dt
+				if dv.length() <= st:
+					p.lx = goal.x; p.lz = goal.y
+					p.path.pop_front()
+				else:
+					var u := dv.normalized()
+					p.lx += u.x * st; p.lz += u.y * st
+					p.psi = lerp_angle(p.psi, atan2(u.y, u.x), minf(1.0, dt * 4.0))
+		"hold":
+			# on the centreline: turn into the wind, wait for the plane ahead, spread the wings
+			p.psi = lerp_angle(p.psi, 0.0, minf(1.0, dt * 6.0))
+			var clear := true
+			for o in dk.planes:
+				if o != p and o.phase == "roll" and o.lx < p.lx + 25.0:
+					clear = false
+			if clear and absf(p.psi) < 0.08 and p.t > 0.3:
+				_deck_node(dk, p, false)
+				p.phase = "roll"
+				p.psi = 0.0
+				p.v = 3.0
+				var run := maxf(30.0, dk.x_end - p.lx)
+				p.acc = (ROLL_V * ROLL_V - 9.0) / (2.0 * run)
+		"roll":
+			p.v = minf(p.v + p.acc * k * dt, ROLL_V + 4.0)
+			p.lx += p.v * dt
+			p.lz = lerpf(p.lz, 0.0, minf(1.0, dt * 3.0))
+			p.ly = dk.y + maxf(0.0, p.lx - (dk.x_end - 25.0)) * 0.06
+			if p.lx >= dk.x_end - 2.0:
+				# off the bow: from here the plane flies in the world
+				var sq: Dictionary = p.sq
+				_deck_place(dk, p)
+				var gp: Vector3 = p.node.global_position
+				p.node.reparent(self, true)
+				var so := {"node": p.node, "phase": "climb", "t": 0.0, "lx": 0.0, "ly": 0.0, "lz": 0.0,
+					"v": sh.v + p.v, "x": gp.x, "z": gp.z, "y": gp.y, "h": sh.h}
+				sq.solos.append(so)
+				p.node = null
+				return true
+		"rollout":
+			# the hook catches a wire: a hard stop, then the wings fold
+			p.v = maxf(0.0, p.v - 9.0 * dt)
+			p.lx += p.v * dt
+			if p.v <= 2.5:
+				_deck_node(dk, p, true)
+				p.phase = "taxi_in"
+				p.path = [Vector2(p.row.x - 2.0, 0.0), Vector2(p.row.x, dk.cols[p.col])]
+	_deck_place(dk, p)
+	return false

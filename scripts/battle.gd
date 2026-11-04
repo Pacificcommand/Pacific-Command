@@ -405,7 +405,7 @@ func new_game() -> void:
 	for s in ships:
 		air.setup_ship(s)
 	if scenario == "ddcv":
-		air.sqs = air.sqs.filter(func(q): return q.team != "ijn")
+		air.clear_team("ijn")
 	if not brief.has("level"):
 		var et := []
 		for s in ships:

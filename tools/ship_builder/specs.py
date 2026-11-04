@@ -451,6 +451,19 @@ DATA['texas'] = dict(name='USS Texas (New York class)', nation='us', cls='bb', L
 # US carriers
 # =====================================================================
 
+FDECK = {}
+
+def flight_deck_data(back, front, half, y, island_z, island_half):
+    """Flight deck geometry for the game's deck system: ship-local x of the stern and bow ends,
+    deck height, and the athwartships band free for parking (clear of the island)."""
+    zmin, zmax = -half + 1.5, half - 1.5
+    if island_z is not None:
+        if island_z > 0:
+            zmax = min(zmax, island_z - island_half * 0.5 - 1.0)
+        else:
+            zmin = max(zmin, island_z + island_half * 0.5 + 1.0)
+    return {'back': float(back), 'front': float(front), 'half': float(half), 'y': float(y), 'zmin': float(zmin), 'zmax': float(zmax)}
+
 def cv_spec(name, L, B, T, fd_half, fd_y, fd_front, fd_back, island_x, island_half, island_L, levels, hull_deck, parts_extra, weapons, elevators, park, nation='us', funnel=True, island_z=None, hangar_half=None, funnel_h=9.0):
     h_half = hangar_half if hangar_half is not None else B / 2 - 0.8
     parts = [('hangar', fd_front - 14.0, fd_back + 12.0, h_half, hull_deck, fd_y - 1.2),
@@ -458,8 +471,9 @@ def cv_spec(name, L, B, T, fd_half, fd_y, fd_front, fd_back, island_x, island_ha
     if island_x is not None:
         parts.append(('island', island_x, fd_y, island_half, island_L, levels, funnel_h, island_z if island_z is not None else fd_half - island_half * 0.5 - 0.3, funnel))
     parts += parts_extra
-    for x0, x1, cols in park:
-        parts.append(('deck_park', x0, x1, fd_y, cols, 11.0, 0.0, True))
+    # the parked aircraft are spawned by the game (scripts/air.gd deck system), not baked into the model
+    iz = island_z if island_z is not None else fd_half - island_half * 0.5 - 0.3
+    FDECK[name] = flight_deck_data(fd_back, fd_front, fd_half, fd_y, iz if island_x is not None else None, island_half)
     return spec(name, nation=nation, L=L, B=B, T=T, deck=hull_deck_fn(hull_deck), rake=4.0, entry=0.3, run=0.28, fine=1.7, flare=0.25,
                 bollards=[L / 2 - 8, -L / 2 + 8], vents=[], rail_skip=[(fd_back + 2, fd_front - 2)], parts=parts, weapons=weapons)
 
@@ -801,8 +815,7 @@ def ijn_cv(name, L, B, T, fd_half, fd_y, fd_front, fd_back, island, funnels_down
     if casemates:
         parts.append(('casemates', casemates, hull_deck - 1.0))
     parts += list(extra)
-    for x0, x1, cols in park:
-        parts.append(('deck_park', x0, x1, fd_y, cols, 11.0, 0.0, True))
+    FDECK[name] = flight_deck_data(fd_back, fd_front, fd_half, fd_y, island[1] if island is not None else None, island[2] if island is not None else 0.0)
     weapons, dm = [], []
     for i, (sx, sz) in enumerate(secondaries):
         nm = 'Mount%d' % (i + 1)
@@ -905,3 +918,7 @@ DATA['supply_dump'] = dict(name='Supply dump', nation='ijn', cls='fort', role='s
 DATA['raft'] = dict(name='Life raft', nation='us', cls='raft', role='survivors', L=5.2, B=3.2, max_kn=0.0, turn=0.0, crew=4, displacement=1.0,
     gun='browning50', draft=0.3, size_vis=0.25, radar=0.0, smoke=False, night_eye=1.0, funnels=[], funnel_top=1.0,
     mounts=[], torps=[], torp={}, aa=[], modules=[['Raft', 'cargo', 0.0, 1.0]])
+
+for _n, _fd in FDECK.items():
+    if _n in DATA:
+        DATA[_n]['fdeck'] = _fd

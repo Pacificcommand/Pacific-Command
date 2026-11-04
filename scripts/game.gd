@@ -7,7 +7,7 @@ signal graphics_changed
 const CFG := "user://settings.cfg"
 const SAVE_DIR := "user://saves"
 const SLOTS := 5
-const VERSION := "0.20"
+const VERSION := "0.21"
 
 ## Graphics and sound settings with their defaults.
 var settings := {

@@ -5,7 +5,7 @@ import numpy as np
 from geom import Mesh, Builder
 from warship import PAL, aircraft, floatplane
 
-def build_plane(nation, kind):
+def build_plane(nation, kind, folded=False):
     P = dict(PAL[nation])
     if nation == 'ijn':
         P['plane'] = '#6d7a5c' if kind != 'fighter' else '#9a9f8e'
@@ -19,7 +19,9 @@ def build_plane(nation, kind):
         floatplane(B, P, 0, 0, 0, 0.0, span=11.0, length=10.0, twin_float=(nation == 'ijn'))
     else:
         span, length = (11.6, 9.0) if kind == 'fighter' else (16.0, 12.0)
-        aircraft(B, P, 0, 0, 0, 0.0, span=span, length=length, folded=False)
+        aircraft(B, P, 0, 0, 0, 0.0, span=span, length=length, folded=folded)
+        if folded:
+            return M
         if nation == 'ijn':
             # hinomaru on the wings
             B.set_mat(P['red'])
@@ -33,3 +35,6 @@ def build_plane(nation, kind):
 
 PLANES = [('plane_us_fighter', 'us', 'fighter'), ('plane_us_bomber', 'us', 'bomber'), ('plane_us_float', 'us', 'float'),
           ('plane_jp_fighter', 'ijn', 'fighter'), ('plane_jp_bomber', 'ijn', 'bomber'), ('plane_jp_float', 'ijn', 'float')]
+# parked on a carrier deck with the wings folded (the game swaps to the spread model for the take-off run)
+FOLDED = [('plane_us_fighter_folded', 'us', 'fighter'), ('plane_us_bomber_folded', 'us', 'bomber'),
+          ('plane_jp_fighter_folded', 'ijn', 'fighter'), ('plane_jp_bomber_folded', 'ijn', 'bomber')]
