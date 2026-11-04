@@ -79,3 +79,12 @@ Watch for "Cannot infer the type" parse errors (use `=` not `:=` when the value 
 
 ## Commits
 Commit each playable step with a clear message; push to `main`. Keep the README controls table current.
+
+## Dev update video (Matt's standing rule, 3 Nov 2026)
+For every change worth noting (new content, visual updates, new features; not plain bug fixes), make a
+**20-30 second dev update video** showing the changes, with **burnt-in captions** saying what changed, and send it
+to Matt with the build. Record clips with Movie Maker (`--write-movie x.avi --fixed-fps 30 --quit-after FRAMES`,
+drop the first few menu frames) using `--nohud --weather=clear --seed=N` and the camera flags; the cinematic
+camera is `--view=cine` with `--cinezoom=K --cineelev=DEG --cineyaw=DEG` (yaw relative to the ship's heading),
+`--scheme=m22` shows the dazzle models. One clip per change (4-6 s each), a caption panel lower left (title +
+one line), a small "DEV UPDATE" tag, an end card; 1920x1080, 30 fps, H.264.

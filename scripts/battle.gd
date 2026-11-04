@@ -167,6 +167,16 @@ func _test_args() -> void:
 	if _test.has("height"):
 		camst.th = float(_test.height)
 		camst.h = camst.th
+	# recording: paint scheme and the cinematic camera's framing
+	if _test.has("scheme"):
+		set_scheme(_test.scheme)
+	if _test.has("cinezoom"):
+		camst.cine_zoom = float(_test.cinezoom)
+	if _test.has("cineelev"):
+		camst.cine_elev = float(_test.cineelev)
+	if _test.has("cineyaw"):
+		camst.cine_yaw = focus_ship().h + deg_to_rad(float(_test.cineyaw))
+		camst.cine_hand_t = -99.0
 	if _test.has("cam"):
 		if _test.cam == "shore":
 			# test: look at the first shore target
