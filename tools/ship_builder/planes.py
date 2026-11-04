@@ -33,8 +33,5 @@ def build_plane(nation, kind, folded=False):
                 B.cyl((length * 0.02, 1.12, s * span * 0.33), (length * 0.02, 1.16, s * span * 0.33), 0.7, n=12)
     return M
 
-PLANES = [('plane_us_fighter', 'us', 'fighter'), ('plane_us_bomber', 'us', 'bomber'), ('plane_us_float', 'us', 'float'),
-          ('plane_jp_fighter', 'ijn', 'fighter'), ('plane_jp_bomber', 'ijn', 'bomber'), ('plane_jp_float', 'ijn', 'float')]
-# parked on a carrier deck with the wings folded (the game swaps to the spread model for the take-off run)
-FOLDED = [('plane_us_fighter_folded', 'us', 'fighter'), ('plane_us_bomber_folded', 'us', 'bomber'),
-          ('plane_jp_fighter_folded', 'ijn', 'fighter'), ('plane_jp_bomber_folded', 'ijn', 'bomber')]
+# floatplanes; the carrier aircraft are detailed per type in aircraft_models.py
+PLANES = [('plane_us_float', 'us', 'float'), ('plane_jp_float', 'ijn', 'float')]

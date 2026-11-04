@@ -206,15 +206,15 @@ const WEATHER := {
 ## Aircraft. speed in knots (real), hp = planes lost per unit of flak, rating = air-to-air strength,
 ## bomb = damage of one bomb hit in 5-inch-shell units, torp = aerial torpedo.
 const AIRCRAFT := {
-	"f4f": {"name": "Wildcat", "nation": "us", "kind": "fighter", "speed": 280.0, "rating": 1.0, "model": "res://assets/models/plane_us_fighter.glb"},
-	"f6f": {"name": "Hellcat", "nation": "us", "kind": "fighter", "speed": 330.0, "rating": 1.6, "model": "res://assets/models/plane_us_fighter.glb"},
-	"sbd": {"name": "Dauntless", "nation": "us", "kind": "dive", "speed": 220.0, "rating": 0.4, "bomb": 4.5, "model": "res://assets/models/plane_us_bomber.glb"},
-	"sb2c": {"name": "Helldiver", "nation": "us", "kind": "dive", "speed": 250.0, "rating": 0.45, "bomb": 5.0, "model": "res://assets/models/plane_us_bomber.glb"},
-	"tbf": {"name": "Avenger", "nation": "us", "kind": "torpedo", "speed": 240.0, "rating": 0.4, "torp": {"name": "Mark 13 (aerial)", "speed_kn": 33.5, "range": 2200.0, "dud": 0.2, "flood": 200.0}, "model": "res://assets/models/plane_us_bomber.glb"},
+	"f4f": {"name": "Wildcat", "nation": "us", "kind": "fighter", "speed": 280.0, "rating": 1.0, "model": "res://assets/models/plane_f4f.glb", "park_w": 4.20, "len": 8.76},
+	"f6f": {"name": "Hellcat", "nation": "us", "kind": "fighter", "speed": 330.0, "rating": 1.6, "model": "res://assets/models/plane_f6f.glb", "park_w": 5.00, "len": 10.24},
+	"sbd": {"name": "Dauntless", "nation": "us", "kind": "dive", "speed": 220.0, "rating": 0.4, "bomb": 4.5, "model": "res://assets/models/plane_sbd.glb", "park_w": 12.66, "len": 10.09},
+	"sb2c": {"name": "Helldiver", "nation": "us", "kind": "dive", "speed": 250.0, "rating": 0.45, "bomb": 5.0, "model": "res://assets/models/plane_sb2c.glb", "park_w": 6.81, "len": 11.18},
+	"tbf": {"name": "Avenger", "nation": "us", "kind": "torpedo", "speed": 240.0, "rating": 0.4, "torp": {"name": "Mark 13 (aerial)", "speed_kn": 33.5, "range": 2200.0, "dud": 0.2, "flood": 200.0}, "model": "res://assets/models/plane_tbf.glb", "park_w": 6.10, "len": 12.48},
 	"os2u": {"name": "Kingfisher", "nation": "us", "kind": "scout", "speed": 150.0, "rating": 0.2, "model": "res://assets/models/plane_us_float.glb"},
-	"a6m": {"name": "Zero", "nation": "ijn", "kind": "fighter", "speed": 290.0, "rating": 1.3, "model": "res://assets/models/plane_jp_fighter.glb"},
-	"d3a": {"name": "Val", "nation": "ijn", "kind": "dive", "speed": 220.0, "rating": 0.35, "bomb": 3.0, "model": "res://assets/models/plane_jp_bomber.glb"},
-	"b5n": {"name": "Kate", "nation": "ijn", "kind": "torpedo", "speed": 210.0, "rating": 0.3, "torp": {"name": "Type 91 (aerial)", "speed_kn": 42.0, "range": 2000.0, "dud": 0.05, "flood": 240.0}, "model": "res://assets/models/plane_jp_bomber.glb"},
+	"a6m": {"name": "Zero", "nation": "ijn", "kind": "fighter", "speed": 290.0, "rating": 1.3, "model": "res://assets/models/plane_a6m.glb", "park_w": 11.42, "len": 9.06},
+	"d3a": {"name": "Val", "nation": "ijn", "kind": "dive", "speed": 220.0, "rating": 0.35, "bomb": 3.0, "model": "res://assets/models/plane_d3a.glb", "park_w": 11.47, "len": 10.20},
+	"b5n": {"name": "Kate", "nation": "ijn", "kind": "torpedo", "speed": 210.0, "rating": 0.3, "torp": {"name": "Type 91 (aerial)", "speed_kn": 42.0, "range": 2000.0, "dud": 0.05, "flood": 240.0}, "model": "res://assets/models/plane_b5n.glb", "park_w": 7.47, "len": 10.30},
 	"e13a": {"name": "Jake", "nation": "ijn", "kind": "scout", "speed": 200.0, "rating": 0.2, "model": "res://assets/models/plane_jp_float.glb"},
 }
 

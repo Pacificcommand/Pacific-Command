@@ -25,14 +25,17 @@ for name in specs.SPECS:
     if specs.SPECS[name]['nation'] == 'us' and not specs.SPECS[name].get('sub'):
         # Measure 32 dazzle variant, used for the m22 scheme
         SHIPS.append((name + '_m22', name.title().replace('_', ''), (lambda n: (lambda: build_spec(specs.SPECS[n], 'dazzle')))(name)))
-from planes import PLANES, FOLDED, build_plane
+from planes import PLANES, build_plane
 from shore import SHORE
 for name, fn in SHORE:
     SHIPS.append((name, name.title().replace('_', ''), fn))
 for name, nation, kind in PLANES:
     SHIPS.append((name, name.title().replace('_', ''), (lambda n, k: (lambda: build_plane(n, k)))(nation, kind)))
-for name, nation, kind in FOLDED:
-    SHIPS.append((name, name.title().replace('_', ''), (lambda n, k: (lambda: build_plane(n, k, True)))(nation, kind)))
+# detailed carrier aircraft, one per type: flying, on deck (wings spread) and parked (folded)
+import aircraft_models
+for t, v in aircraft_models.AIRCRAFT_MODELS:
+    nm = 'plane_%s%s' % (t, '' if v == 'fly' else '_' + v)
+    SHIPS.append((nm, nm.title().replace('_', ''), (lambda t, v: (lambda: aircraft_models.build(t, v)))(t, v)))
 for name, root, fn in SHIPS:
     M = fn()
     M.rootname = root

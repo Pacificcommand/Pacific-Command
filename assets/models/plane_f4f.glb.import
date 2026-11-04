@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://3j6db14ker8g"
-path="res://.godot/imported/plane_us_bomber_folded.glb-42d173f4f84edf8e51a5a095a3a15a51.scn"
+uid="uid://cymd7c4uslcv4"
+path="res://.godot/imported/plane_f4f.glb-b4e5a650fdfa911e82e7fdc460e24245.scn"
 
 [deps]
 
-source_file="res://assets/models/plane_us_bomber_folded.glb"
-dest_files=["res://.godot/imported/plane_us_bomber_folded.glb-42d173f4f84edf8e51a5a095a3a15a51.scn"]
+source_file="res://assets/models/plane_f4f.glb"
+dest_files=["res://.godot/imported/plane_f4f.glb-b4e5a650fdfa911e82e7fdc460e24245.scn"]
 
 [params]
 
