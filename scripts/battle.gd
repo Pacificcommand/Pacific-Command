@@ -289,6 +289,12 @@ func _test_args() -> void:
 		var rp: PackedStringArray = String(_test.rot).split(",")
 		camst.yaw = deg_to_rad(float(rp[0]))
 		camst.tilt = float(rp[1]) if rp.size() > 1 else 0.0
+	if _test.has("camisland") and not terrain.islands.is_empty():
+		# recording: --camisland=N centres the camera on island N (with --height / --tilt)
+		var isl: Dictionary = terrain.islands[clampi(int(_test.camisland), 0, terrain.islands.size() - 1)]
+		camst.free = true
+		camst.ox = float(isl.x); camst.oz = float(isl.z)
+		camst.x = camst.ox; camst.z = camst.oz
 	if _test.has("nohud"):
 		hud.visible = false
 	if _test.has("pause"):
