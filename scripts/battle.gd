@@ -3054,6 +3054,31 @@ func _update_camera(delta: float) -> void:
 
 ## The squadron the --chase camera rides with: [position, heading], or null.
 func _chase_point():
+	if String(_test.chase) == "falling":
+		# follow a plane going down; hold on its splash for a few seconds before the next
+		var fr = camst.get("fall_ref")
+		if fr != null and not air.falling.has(fr):
+			if camst.get("fall_end", -1.0) < 0.0:
+				camst.fall_end = t
+			if t - camst.fall_end < 3.5:
+				return camst.get("fall_last")
+			fr = null
+		if fr == null:
+			camst.fall_end = -1.0
+			var best = null
+			for f in air.falling:
+				if is_instance_valid(f.node) and f.sinking < 0.0 and f.node.global_position.y > 120.0:
+					if best == null or f.node.global_position.y > best.node.global_position.y:
+						best = f
+			camst.fall_ref = best
+			fr = best
+		if fr == null or not is_instance_valid(fr.node):
+			return camst.get("fall_last")
+		var fp: Vector3 = fr.node.global_position
+		var hv: Vector3 = fr.vel
+		camst.fall_last = [fp, atan2(hv.x, -hv.z) if Vector2(hv.x, hv.z).length() > 2.0 else camst.get("fall_h", 0.0)]
+		camst.fall_h = camst.fall_last[1]
+		return camst.fall_last
 	for q in air.sqs:
 		if q.home != player or q.kind != String(_test.chase) or q.state in ["ready", "lost", "launching"]:
 			continue

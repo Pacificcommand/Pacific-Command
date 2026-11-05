@@ -314,6 +314,39 @@ func splash(x: float, z: float, big: bool) -> void:
 		var o := randf_range(2.0, 9.0)
 		foam(x + cos(a) * 2.0, z + sin(a) * 2.0, cos(a) * o, sin(a) * o, randf_range(2, 5), 1.5, randf_range(8, 16), 0.85)
 
+## A plane going into the sea. hard: nose first at speed, a tall column of water thrown up and
+## falling back, spray, a ring of foam and a little smoke. Not hard: a ditching, a low sheet of
+## spray thrown forward along its path.
+func plane_splash(x: float, z: float, vel: Vector3, hard: bool) -> void:
+	var h := Vector2(vel.x, vel.z)
+	var hv := h.normalized() if h.length() > 1.0 else Vector2(1, 0)
+	if hard:
+		var k := clampf(absf(vel.y) / 60.0, 0.6, 1.4)
+		add(SPLASH, x, 4.0, z, 0, 0, 0, 3.5 * k, 9.0 * k, 3.2, 0.95, Color(0.96, 0.98, 1.0), 1.0)
+		add(SPLASH, x, 8.0, z, 0, 0, 0, 2.2 * k, 5.0 * k, 2.4, 0.8, Color(0.95, 0.97, 1.0), 0.0)
+		add(SPLASH, x, 2.0, z, 0, 0, 0, 5.0 * k, 6.0 * k, 2.0, 0.7, Color(0.93, 0.96, 1.0), 1.0)
+		for i in 14:
+			var a := randf() * TAU
+			var sp := randf_range(4.0, 12.0)
+			add(SPLASH, x + cos(a) * 2.0, randf_range(3.0, 10.0), z + sin(a) * 2.0, cos(a) * sp + hv.x * 4.0, sin(a) * sp + hv.y * 4.0, 0.0,
+				randf_range(0.8, 1.6), 1.2, randf_range(1.0, 1.8), 0.8, Color(0.96, 0.98, 1.0), 0.0)
+		for i in 22:
+			var a := randf() * TAU
+			var o := randf_range(3.0, 10.0)
+			foam(x + cos(a) * 3.0, z + sin(a) * 3.0, cos(a) * o, sin(a) * o, randf_range(2, 5), 1.4, randf_range(10, 20), 0.9)
+		smoke(x, 2.0, z, 0, 0, 3.0, 1.4, 14.0, 0.35, Color(0.8, 0.8, 0.8), 0.6, 25.0, false)
+	else:
+		for i in 10:
+			var along := randf_range(-4.0, 14.0)
+			var side := randf_range(-4.0, 4.0)
+			var px := x + hv.x * along - hv.y * side
+			var pz := z + hv.y * along + hv.x * side
+			add(SPLASH, px, 2.0, pz, hv.x * 8.0, hv.y * 8.0, 0.0, randf_range(1.5, 2.5), 2.5, randf_range(1.0, 1.6), 0.8, Color(0.96, 0.98, 1.0), 0.0)
+		for i in 16:
+			var a := randf() * TAU
+			var o := randf_range(2.0, 6.0)
+			foam(x + hv.x * randf_range(0, 25), z + hv.y * randf_range(0, 25), cos(a) * o + hv.x * 3.0, sin(a) * o + hv.y * 3.0, randf_range(2, 4), 1.0, randf_range(10, 18), 0.85)
+
 ## Shader-built explosion from PYROLUX: radius in meters.
 func pyro_explosion(pos: Vector3, radius: float, smoke_s: float) -> void:
 	if not use_pyro or not has_pyro():

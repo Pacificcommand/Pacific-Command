@@ -1994,10 +1994,30 @@ func _kill_plane(sq: Dictionary) -> void:
 		return
 	node.reparent(self, true)
 	var p := node.global_position
+	# how it goes down: low planes ditch; others spin, dive burning, or blow apart
+	var fate: String = "ditch" if p.y < 70.0 and randf() < 0.7 else ["spin", "flamer", "flamer", "breakup"][randi() % 4]
 	B.fx.flash(p.x, p.y, p.z, 4.0, 18.0, 0.15, Color(1.0, 0.65, 0.3))
 	B.fx.debris(p.x, p.y, p.z, 5, 10.0)
-	falling.append({"node": node, "vel": vel + Vector3(randf_range(-6, 6), randf_range(-4, 3), randf_range(-6, 6)), "t": 0.0,
-		"spin": randf_range(1.5, 4.0) * (1.0 if randf() < 0.5 else -1.0), "fire": randf() < 0.75, "roll": 0.0})
+	B.sfx.play("plane_hit", Vector2(p.x, p.z), B.cam.position, 0.8)
+	var f := {"node": node, "vel": vel + Vector3(randf_range(-6, 6), randf_range(-4, 3), randf_range(-6, 6)), "t": 0.0, "fate": fate,
+		"spin": randf_range(1.5, 4.0) * (1.0 if randf() < 0.5 else -1.0), "fire": fate != "spin" or randf() < 0.4, "roll": 0.0, "yaw": 0.0, "sinking": -1.0}
+	if fate == "breakup":
+		# the tanks go up: a fireball, a shower of pieces, and what is left tumbles down
+		B.fx.boom(p.x, p.y, p.z, false)
+		B.fx.flash(p.x, p.y, p.z, 9.0, 40.0, 0.25, Color(1.0, 0.55, 0.2))
+		B.fx.debris(p.x, p.y, p.z, 18, 22.0)
+		for k in 6:
+			B.fx.fire_puff(p.x + randf_range(-4, 4), p.y + randf_range(-3, 3), p.z + randf_range(-4, 4), randf_range(3.0, 5.0))
+		f.vel = vel * 0.35 + Vector3(0, 4, 0)
+		f.spin = randf_range(5.0, 9.0) * (1.0 if randf() < 0.5 else -1.0)
+		B.sfx.play("boom", Vector2(p.x, p.z), B.cam.position, 0.6)
+	elif fate == "ditch":
+		# a damaged plane let down onto the water, nose up, tail low
+		f.vel = Vector3(vel.x, 0.0, vel.z).normalized() * clampf(vel.length() * 0.7, 35.0, 60.0) + Vector3(0, -4.0, 0)
+		f.fire = randf() < 0.3
+	if fate in ["spin", "flamer"] and p.y > 60.0:
+		B.sfx.play("plane_dive", Vector2(p.x, p.z), B.cam.position, 0.7)
+	falling.append(f)
 	if sq.node != null and is_instance_valid(sq.node):
 		_reslot(sq)
 
@@ -2009,28 +2029,74 @@ func _step_falling(dt: float) -> void:
 			gone.append(f)
 			continue
 		f.t += dt
-		f.vel.y -= 9.8 * dt * 0.9
-		f.vel *= 1.0 - 0.08 * dt
-		var p: Vector3 = f.node.global_position + f.vel * dt
-		f.roll += f.spin * dt
-		var dir: Vector3 = f.vel.normalized() if f.vel.length() > 1.0 else Vector3.FORWARD
-		var b := Basis.looking_at(dir, Vector3.UP if absf(dir.y) < 0.98 else Vector3.BACK)
-		f.node.global_transform = Transform3D(b * Basis(Vector3.BACK, f.roll), p)
+		var p: Vector3 = f.node.global_position
+		if f.sinking >= 0.0:
+			# a ditched plane settles, the nose goes under and the tail rises, then it is gone
+			f.sinking += dt
+			f.vel = f.vel.lerp(Vector3.ZERO, minf(1.0, dt * 1.5))
+			p += f.vel * dt
+			p.y = -f.sinking * 0.35
+			var pitch: float = minf(f.sinking * 0.12, 0.9)
+			var hb := Basis(Vector3.UP, f.yaw) * Basis(Vector3.RIGHT, -pitch)
+			f.node.global_transform = Transform3D(hb, p)
+			if randf() < dt * 3.0:
+				B.fx.foam(p.x + randf_range(-3, 3), p.z + randf_range(-3, 3), 0, 0, randf_range(2, 4), 0.8, randf_range(5, 9), 0.7)
+			if f.fire and randf() < dt * 8.0:
+				B.fx.fire_puff(p.x + randf_range(-3, 3), 0.6, p.z + randf_range(-3, 3), randf_range(1.0, 2.0))
+			if f.sinking > 9.0:
+				f.node.queue_free()
+				gone.append(f)
+			continue
+		match f.fate:
+			"spin":
+				# a flat-ish spin: little forward speed, round and round, nose well down
+				f.vel = f.vel.lerp(Vector3(0, -38.0, 0), minf(1.0, dt * 0.8))
+				f.yaw += f.spin * 1.2 * dt
+			"ditch":
+				# a steady glide down to the sea
+				f.vel.y = lerpf(f.vel.y, -9.0, minf(1.0, dt))
+			_:
+				f.vel.y -= 9.8 * dt * 0.9
+				f.vel *= 1.0 - 0.08 * dt
+		p += f.vel * dt
+		f.roll += f.spin * dt * (0.3 if f.fate == "ditch" else 1.0)
+		var b: Basis
+		if f.fate == "spin":
+			b = Basis(Vector3.UP, f.yaw) * Basis(Vector3.RIGHT, -1.1) * Basis(Vector3.BACK, f.roll * 0.4)
+		else:
+			var dir: Vector3 = f.vel.normalized() if f.vel.length() > 1.0 else Vector3.FORWARD
+			b = Basis.looking_at(dir, Vector3.UP if absf(dir.y) < 0.98 else Vector3.BACK)
+			if f.fate == "ditch":
+				b = b * Basis(Vector3.RIGHT, 0.12) * Basis(Vector3.BACK, sin(f.t * 1.3) * 0.15)
+			else:
+				b = b * Basis(Vector3.BACK, f.roll)
+		f.node.global_transform = Transform3D(b, p)
 		# a trail of black smoke, flames from a burning one
-		# one puff per few metres fallen so the trail reads as a streak, not beads
 		var step: float = f.vel.length() * dt
 		f.trail = f.get("trail", 0.0) + step
-		while f.trail > 7.0:
-			f.trail -= 7.0
+		var every := 3.0 if f.fate != "ditch" else 8.0
+		while f.trail > every:
+			f.trail -= every
 			var q: Vector3 = p - f.vel.normalized() * f.trail
-			B.fx.smoke(q.x, q.y, q.z, B.fx.wind.x * 0.4, B.fx.wind.y * 0.4, randf_range(2.6, 3.6), 1.5, randf_range(16.0, 24.0), 0.5,
-				Color(0.07, 0.065, 0.06), 0.15, 400.0, true)
-		if f.fire and randf() < dt * 12.0:
-			B.fx.fire_puff(p.x, p.y, p.z, randf_range(1.2, 2.2))
+			B.fx.smoke(q.x, q.y, q.z, B.fx.wind.x * 0.4, B.fx.wind.y * 0.4, randf_range(2.2, 3.2), 1.3, randf_range(14.0, 22.0), 0.42 if f.fate != "ditch" else 0.28,
+				Color(0.07, 0.065, 0.06) if f.fate != "ditch" else Color(0.3, 0.29, 0.28), 0.15, 400.0, true)
+		if f.fire and randf() < dt * (20.0 if f.fate == "flamer" else 10.0):
+			B.fx.fire_puff(p.x, p.y, p.z, randf_range(1.4, 2.6) if f.fate == "flamer" else randf_range(1.0, 1.8))
 		if p.y <= 0.5:
-			B.fx.splash(p.x, p.z, false)
-			B.fx.smoke(p.x, 1.0, p.z, 0, 0, 3.0, 1.2, 18.0, 0.4, Color(0.15, 0.14, 0.13), 0.4, 30.0, true)
-			B.sfx.play("splash", Vector2(p.x, p.z), B.cam.position, 0.3)
+			if f.fate == "ditch":
+				# down on the water: a long sheet of spray, then it settles
+				B.fx.plane_splash(p.x, p.z, f.vel, false)
+				B.sfx.play("splash", Vector2(p.x, p.z), B.cam.position, 0.6)
+				f.sinking = 0.0
+				f.yaw = atan2(-f.vel.x, -f.vel.z)
+				continue
+			B.fx.plane_splash(p.x, p.z, f.vel, true)
+			B.sfx.play("crash", Vector2(p.x, p.z), B.cam.position, 0.9)
+			if f.fire:
+				# burning fuel on the water for a little while
+				for k in 4:
+					B.fx.fire_puff(p.x + randf_range(-4, 4), 0.8, p.z + randf_range(-4, 4), randf_range(2.0, 3.5))
+				B.fx.oil(p.x, p.z, randf_range(5.0, 8.0))
 			f.node.queue_free()
 			gone.append(f)
 	for f in gone:

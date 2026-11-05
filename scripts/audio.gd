@@ -10,14 +10,14 @@ extends Node
 ##
 ## Buses: "Effects" (battle sounds, ambience, UI), "Music", "Radio" (dispatch and card chimes).
 
-const CACHE_VERSION := 6
+const CACHE_VERSION := 7
 const RATE := 22050
 const MUSIC_RATE := 16000
 
 ## Effects: name -> how to build it. "loop" sounds are built to loop seamlessly.
 const SOUNDS := ["gun_small", "gun_medium", "gun_large", "boom", "boom_big", "splash", "torp",
 	"alarm", "flak", "dc", "ping", "mg", "click", "radio", "creak", "bell", "bomb", "aa_bofors", "aa_mg",
-	"plane", "fire", "ocean", "wind", "rain"]
+	"plane", "fire", "ocean", "wind", "rain", "plane_hit", "plane_dive", "crash"]
 const LOOPS := ["plane", "fire", "ocean", "wind", "rain"]
 const TRACKS := ["menu", "map", "contact", "battle", "battle2", "battle3", "victory", "defeat"]
 const LOOP_TRACKS := ["menu", "map", "contact", "battle", "battle2", "battle3"]
@@ -364,6 +364,9 @@ func _make_sound(nm: String) -> AudioStreamWAV:
 		"creak": return _creak(r)
 		"bell": return _bell()
 		"plane": return _plane(r)
+		"plane_hit": return _plane_hit(r)
+		"plane_dive": return _plane_dive(r)
+		"crash": return _crash(r)
 		"fire": return _fire(r)
 		"ocean": return _ocean(r)
 		"wind": return _wind(r)
@@ -624,6 +627,65 @@ func _plane(r: Rng) -> AudioStreamWAV:
 		lp += (r.next() - lp) * k
 		b[i] = (s * 0.3 * flutter + lp * 0.25)
 	return _wav(b, RATE, true)
+
+
+## A plane hit in the air: a sharp crack, a rattle of metal and a short whoosh of burning fuel.
+func _plane_hit(r: Rng) -> AudioStreamWAV:
+	var n := int(1.0 * RATE)
+	var b := PackedFloat32Array(); b.resize(n)
+	var lp := 0.0; var lp2 := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		var x := r.next()
+		lp += (x - lp) * 0.45
+		lp2 += (x - lp2) * 0.06
+		var crack := lp * exp(-t * 28.0) * 1.6
+		var rattle := (1.0 if fmod(t * 37.0 + sin(t * 90.0) * 0.3, 1.0) < 0.25 else 0.0) * x * 0.5 * exp(-t * 6.0) * (1.0 if t > 0.03 else 0.0)
+		var whoosh := lp2 * minf(1.0, t / 0.08) * exp(-t * 3.0) * 1.4
+		var thump := sin(TAU * 70.0 * t) * exp(-t * 14.0) * 0.6
+		b[i] = crack + rattle + whoosh + thump
+	return _wav(b, RATE, false)
+
+
+## A plane going down: the engine screaming up in pitch, sputtering, over rising wind.
+func _plane_dive(r: Rng) -> AudioStreamWAV:
+	var n := int(4.0 * RATE)
+	var b := PackedFloat32Array(); b.resize(n)
+	var ph := 0.0
+	var lp := 0.0
+	var gate := 1.0
+	for i in n:
+		var t := float(i) / RATE
+		var f := 110.0 + 150.0 * pow(t / 4.0, 1.6)
+		ph += TAU * f / RATE
+		var s := 0.0
+		for h in range(1, 7):
+			s += sin(ph * h) / h
+		# the engine misses now and then
+		if i % 900 == 0:
+			gate = 0.25 if r.next() > 0.55 else 1.0
+		lp += (r.next() - lp) * (0.02 + 0.08 * t / 4.0)
+		var env := minf(1.0, t / 0.4) * (1.0 - smoothstep(3.5, 4.0, t))
+		b[i] = (s * 0.32 * gate + lp * (0.6 + 1.4 * t / 4.0)) * env
+	return _wav(b, RATE, false)
+
+
+## Hitting the sea: a heavy slap, a crunch of metal, a rushing column of water falling back.
+func _crash(r: Rng) -> AudioStreamWAV:
+	var n := int(2.2 * RATE)
+	var b := PackedFloat32Array(); b.resize(n)
+	var lp := 0.0; var lp2 := 0.0; var hp_in := 0.0; var hp := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		var x := r.next()
+		lp += (x - lp) * 0.3
+		lp2 += (x - lp2) * 0.04
+		hp = 0.98 * (hp + lp - hp_in); hp_in = lp
+		var slap := lp2 * exp(-t * 9.0) * 2.2 + sin(TAU * 55.0 * t) * exp(-t * 7.0) * 0.9
+		var crunch := hp * exp(-t * 11.0) * (1.0 + 0.6 * sin(t * 260.0)) * 1.1
+		var fall := hp * minf(1.0, maxf(0.0, t - 0.25) / 0.3) * exp(-maxf(0.0, t - 0.4) * 2.2) * 0.9
+		b[i] = slap + crunch + fall
+	return _wav(b, RATE, false)
 
 
 ## Fire crackle (loop).
