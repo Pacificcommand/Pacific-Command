@@ -96,6 +96,7 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 | Middle drag | Turn the camera (sideways) and tilt it (up/down); `,` and `.` turn it too; R puts it back straight down, north up |
 | B | Cinematic camera: drops down beside your ship (or your target, with C) at sea level and slowly circles it; drag to swing it round, wheel to move in or out, B again to go back. The map markers are hidden in this view |
 | L | Carriers and ships with floatplanes: launch an air strike at your target |
+| K | Carriers: show / hide the air group panel (each squadron's own orders: Attack, then click a ship; Patrol / Hold; Land) |
 | X / E | Submarines: dive (periscope depth, then deep) / come up |
 | G / H | Drop depth charges / fire the hedgehog |
 | Esc | Pause menu: resume, save, load, settings, main menu |

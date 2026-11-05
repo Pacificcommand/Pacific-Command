@@ -27,6 +27,12 @@ var brief: PanelContainer
 var endp: PanelContainer
 var pausep: Control = null
 var air_plate: PanelContainer
+var air_body: VBoxContainer
+var air_list: VBoxContainer
+var air_open := true           # the air group panel shows its squadrons (K folds it)
+var air_rows := {}             # squadron id -> its row's controls
+var _air_key := ""
+var air_pick = null            # a squadron waiting for the player to click its target
 var sub_row: HBoxContainer
 var support_row: HBoxContainer
 var mission_row: HBoxContainer
@@ -273,19 +279,33 @@ func _build_plates() -> void:
 	bl.add_child(blall)
 	_place(bl, "bl")
 
-	# middle left: air group (carriers and ships with floatplanes)
+	# middle left: air group (carriers and ships with floatplanes): one row per squadron with its
+	# own orders; folds to one line (K)
 	air_plate = _panel()
 	var av := VBoxContainer.new()
 	av.add_theme_constant_override("separation", 5)
-	av.add_child(_label("AIR GROUP", 11, C_BRASS))
-	lbl.air = _label("", 12)
-	av.add_child(lbl.air)
-	btn.strike = _button("Strike target (L)", func(): B.order_strike())
+	var ah := HBoxContainer.new()
+	ah.add_theme_constant_override("separation", 8)
+	btn.air_fold = _button("▾ Air group", func(): toggle_air_panel())
+	btn.air_fold.add_theme_font_size_override("font_size", 11)
+	ah.add_child(btn.air_fold)
+	lbl.air_head = _label("", 11, C_BRASS)
+	ah.add_child(lbl.air_head)
+	av.add_child(ah)
+	air_body = VBoxContainer.new()
+	air_body.add_theme_constant_override("separation", 5)
+	air_list = VBoxContainer.new()
+	air_list.add_theme_constant_override("separation", 3)
+	air_body.add_child(air_list)
+	lbl.air = _label("", 11, C_MUTED)
+	air_body.add_child(lbl.air)
+	btn.strike = _button("Strike target, all bombers (L)", func(): B.order_strike())
 	btn.cap = _button("Fighter patrol", func(): B.order_cap())
 	btn.scout = _button("Scout", func(): B.order_scout())
-	btn.recall = _button("Recall", func(): B.air.recall(B.player); log_msg("All aircraft ordered home."))
-	av.add_child(_row([btn.strike, btn.cap, btn.scout, btn.recall]))
-	av.add_child(_row([_caps("AA guns"), _seg("aa", [["self", "Protect self"], ["carrier", "Protect carrier"], ["bombers", "Bombers first"]], func(v): B.air.aa_mode = v; _set_seg("aa", v))]))
+	btn.recall = _button("Recall all", func(): B.air.recall(B.player); log_msg("All aircraft ordered home."))
+	air_body.add_child(_row([btn.strike, btn.cap, btn.scout, btn.recall]))
+	air_body.add_child(_row([_caps("AA guns"), _seg("aa", [["self", "Protect self"], ["carrier", "Protect carrier"], ["bombers", "Bombers first"]], func(v): B.air.aa_mode = v; _set_seg("aa", v))]))
+	av.add_child(air_body)
 	air_plate.add_child(av)
 	# orders to the ships in company
 	squad_plate = _panel()
@@ -296,7 +316,10 @@ func _build_plates() -> void:
 	left_col.add_theme_constant_override("separation", 8)
 	left_col.add_child(air_plate)
 	left_col.add_child(squad_plate)
-	_place(left_col, "ml")
+	# under the ship plate at the top left, so a tall air group never runs into the dial
+	_place(left_col, "tl")
+	left_col.offset_top = 222.0
+	left_col.offset_bottom = 222.0
 	air_plate.visible = false
 
 	# bottom right: fire control
@@ -846,25 +869,102 @@ func _refresh_detection(p: Ship, W: Dictionary) -> void:
 func _refresh_air(p: Ship) -> void:
 	var mine := []
 	for sq in B.air.sqs:
-		if sq.home == p and sq.state != "lost":
+		if sq.home == p:
 			mine.append(sq)
 	air_plate.visible = not mine.is_empty()
 	if mine.is_empty():
 		return
-	var lines := []
+	if air_pick != null and (not air_pick in mine or not B.air.can(air_pick, "attack")):
+		air_pick = null
+	var up := 0
+	var deck := 0
 	for sq in mine:
+		if sq.state == "ready" and sq.n > 0:
+			deck += sq.n
+		elif sq.state not in ["ready", "lost"]:
+			up += sq.n
+	var sp: int = B.air.spares(p)
+	lbl.air_head.text = "%d up · %d on deck%s" % [up, deck, (" · %d spare%s in the hangar" % [sp, "" if sp == 1 else "s"]) if B.air.decks.has(p) else ""]
+	btn.air_fold.text = ("▾ Air group" if air_open else "▸ Air group  (K)")
+	air_body.visible = air_open
+	if not air_open:
+		return
+	# rows: rebuilt when the squadrons change, their words refreshed every frame
+	var key := ""
+	for sq in mine:
+		key += "%d|" % sq.id
+	if key != _air_key:
+		_air_key = key
+		for c in air_list.get_children():
+			c.queue_free()
+		air_rows.clear()
+		for sq in mine:
+			air_rows[sq.id] = _air_row(sq)
+	for sq in mine:
+		var r: Dictionary = air_rows.get(sq.id, {})
+		if r.is_empty():
+			continue
 		var A: Dictionary = Data.AIRCRAFT[sq.type]
-		var st: String = sq.state
-		if st == "ready":
-			st = "ready" if sq.rearm <= 0.0 else "rearming %d:%02d" % [int(sq.rearm) / 60, int(sq.rearm) % 60]
-		elif st == "outbound" and sq.target:
-			st = "outbound to %s" % sq.target.ship_name
-		lines.append("%d %s (%s): %s" % [sq.n, A.name, _kind_short(sq.kind), st])
-	lbl.air.text = "\n".join(lines)
+		r.count.text = "%d/%d" % [sq.n, sq.n0]
+		r.count.add_theme_color_override("font_color", C_INK if sq.n >= sq.n0 else (C_RED if sq.n <= sq.n0 / 2 else C_BRASS))
+		r.status.text = B.air.status(sq)
+		r.atk.disabled = not B.air.can(sq, "attack")
+		r.atk.set_pressed_no_signal(air_pick == sq)
+		r.atk.text = "Click a ship…" if air_pick == sq else ("Escort / strafe" if sq.kind == "fighter" else "Attack")
+		r.atk.visible = sq.kind != "scout"
+		r.pat.disabled = not B.air.can(sq, "patrol")
+		r.pat.text = {"fighter": "Patrol", "scout": "Search"}.get(sq.kind, "Hold")
+		r.land.disabled = not B.air.can(sq, "land")
+		r.name.text = "%s %s" % [A.name, "squadron %d" % sq.id]
+	lbl.air.text = ("Click an enemy ship for %s. Right-click or Esc to cancel." % air_pick.name) if air_pick != null else "Attack sends one squadron at the ship you click. Bombers drop once, then land to rearm and take on spares."
+	lbl.air.add_theme_color_override("font_color", C_BRASS if air_pick != null else C_MUTED)
 	_set_seg("aa", B.air.aa_mode)
 	btn.strike.disabled = B.air.ready_squadrons(p, ["dive", "torpedo"]).is_empty() or _rearming(p, ["dive", "torpedo"])
 	btn.cap.disabled = B.air.ready_squadrons(p, ["fighter"]).is_empty() or _rearming(p, ["fighter"])
 	btn.scout.disabled = B.air.ready_squadrons(p, ["scout"]).is_empty() or _rearming(p, ["scout"])
+
+
+## One squadron's row: kind tag, name, planes left, what it is doing, and its orders.
+func _air_row(sq: Dictionary) -> Dictionary:
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 6)
+	var tag := _label({"fighter": "FTR", "dive": "DIVE", "torpedo": "TORP", "scout": "SCT"}.get(sq.kind, "?"), 10,
+		{"fighter": C_WATER, "dive": C_BRASS, "torpedo": C_GREEN, "scout": C_MUTED}.get(sq.kind, C_MUTED))
+	tag.custom_minimum_size.x = 34
+	hb.add_child(tag)
+	var nm := _label("", 12)
+	nm.custom_minimum_size.x = 150
+	hb.add_child(nm)
+	var cnt := _label("", 12)
+	cnt.custom_minimum_size.x = 38
+	hb.add_child(cnt)
+	var st := _label("", 11, C_MUTED)
+	st.custom_minimum_size.x = 250
+	st.clip_text = true
+	hb.add_child(st)
+	var atk := _button("Attack", func(): _air_attack(sq), true)
+	var pat := _button("Hold", func(): B.air.command(sq, "patrol"))
+	var land := _button("Land", func(): B.air.command(sq, "land"))
+	for b in [atk, pat, land]:
+		b.add_theme_font_size_override("font_size", 11)
+		hb.add_child(b)
+	air_list.add_child(hb)
+	return {"box": hb, "name": nm, "count": cnt, "status": st, "atk": atk, "pat": pat, "land": land}
+
+
+## Attack: the next click on an enemy ship is this squadron's target (or the current target
+## when the button is pressed with one selected and the squadron already picked).
+func _air_attack(sq: Dictionary) -> void:
+	if air_pick == sq:
+		air_pick = null
+		return
+	air_pick = sq
+
+
+func toggle_air_panel() -> void:
+	air_open = not air_open
+	if not air_open:
+		air_pick = null
 
 
 func _rearming(p: Ship, kinds: Array) -> bool:
@@ -1083,6 +1183,26 @@ func _draw_overlay() -> void:
 				overlay.draw_string(font, sp + Vector2(half + 6, -half + 26), "TARGET", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, col)
 		else:
 			_edge_arrow(sp, info, col)
+	# our squadrons in the air: a marker, how many, and a line to the ship they are sent for
+	if air_open:
+		for sq in B.air.sqs:
+			if sq.home != p or sq.state in ["ready", "lost"] or sq.n <= 0:
+				continue
+			var sc := _p(sq.x, sq.z, sq.alt)
+			if not Rect2(Vector2.ZERO, vs).has_point(sc):
+				continue
+			var col2: Color = C_BRASS if air_pick == sq else Color(0.62, 0.86, 1.0, 0.85)
+			var fv := U.fwd(sq.h)
+			var dv := Vector2(fv.x, fv.y)
+			var sv := Vector2(-dv.y, dv.x)
+			overlay.draw_colored_polygon(PackedVector2Array([sc + dv * 9.0, sc - dv * 6.0 + sv * 6.0, sc - dv * 3.0, sc - dv * 6.0 - sv * 6.0]), col2)
+			var short: String = {"fighter": "VF", "dive": "VB", "torpedo": "VT", "scout": "VS"}.get(sq.kind, "") + "-%d · %d" % [sq.id, sq.n]
+			if sq.kind != "fighter" and not sq.armed:
+				short += " · empty"
+			overlay.draw_string(font, sc + Vector2(10, -8), short, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, col2)
+			if sq.state in ["outbound", "attacking", "launching"] and sq.target != null and is_instance_valid(sq.target) and sq.target.alive:
+				var tc2 := _p(sq.target.x, sq.target.z, 6.0)
+				_dashed_line(sc, tc2, Color(col2, 0.45))
 	# torpedoes we know about
 	for tp in B.torps:
 		if tp.team == "us" or tp.warned:
@@ -1319,6 +1439,22 @@ func _edge_arrow(target: Vector2, text: String, col: Color) -> void:
 
 func _unhandled_input(e: InputEvent) -> void:
 	var p: Ship = B.player
+	if air_pick != null and e is InputEventKey and e.pressed and Game.pressed(e, "menu"):
+		air_pick = null
+		return
+	if air_pick != null and e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
+		if e.button_index == MOUSE_BUTTON_RIGHT:
+			air_pick = null
+			return
+		var wp = B.screen_to_world(e.position)
+		if wp != null:
+			var ts: Ship = B.enemy_at(wp)
+			if ts != null:
+				B.air.command(air_pick, "attack", ts)
+				air_pick = null
+			else:
+				log_msg("No enemy ship there. Click on a contact.")
+		return
 	if e is InputEventKey and e.pressed:
 		if pausep != null and pausep.visible:
 			if Game.pressed(e, "menu"):
@@ -1357,6 +1493,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		elif Game.pressed(e, "cinematic"):
 			_on_view("ship" if B.camst.cine else "cine")
 		elif Game.pressed(e, "strike"): B.order_strike()
+		elif Game.pressed(e, "air_panel"): toggle_air_panel()
 		elif Game.pressed(e, "star"): B.order_star()
 		elif Game.pressed(e, "dive"): B.order_depth(p.depth + 1)
 		elif Game.pressed(e, "surface"): B.order_depth(p.depth - 1)

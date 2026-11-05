@@ -212,6 +212,8 @@ func _test_args() -> void:
 			if _test.has("strike") and i == 400:
 				order_strike()
 				order_cap()
+			if _test.has("airorders"):
+				_test_air_orders(i)
 			if aim_mode == "manual" and player.target:
 				# aim at the lead point, click every 3 seconds
 				var tg: Ship = player.target
@@ -2833,6 +2835,47 @@ func cycle_target() -> void:
 	player.target = list[(i + 1) % list.size()]
 	say("Target: %s, range %s." % [player.target.ship_name, U.yards(player.range_to(player.target))])
 
+## --airorders: one squadron each at a different target, a fighter patrol, then land and refit.
+func _test_air_orders(i: int) -> void:
+	var mine: Array = air.sqs.filter(func(q): return q.home == player)
+	var foes := []
+	for s in ships:
+		if s.team != player.team and s.alive and s.T.has("aircraft"):
+			foes.append(s)
+	if i == 400 and foes.size() >= 2:
+		for q in mine:
+			player.radar[foes[0].ship_name] = true
+			player.radar[foes[1].ship_name] = true
+		var by := {}
+		for q in mine:
+			by[q.kind] = by.get(q.kind, []) + [q]
+		air.command(by.dive[0], "attack", foes[0])
+		air.command(by.torpedo[0], "attack", foes[1])
+		air.command(by.fighter[0], "attack", foes[0])
+		air.command(by.fighter[1], "patrol")
+		if _test.has("airpick"):
+			hud.air_pick = by.torpedo[1]
+	if i % 200 == 0 and i > 400:
+		for q in mine:
+			if q.state == "hold" and not q.armed:
+				air.command(q, "land")
+		var line := "air t=%d spares=%d " % [t, air.spares(player)]
+		for q in mine:
+			line += "| %s %d/%d %s " % [q.name, q.n, q.n0, air.status(q)]
+		print(line)
+
+
+## The enemy contact nearest a point on the sea (within a click's reach), or null.
+func enemy_at(w: Vector2) -> Ship:
+	var best: Ship = null
+	var bd := maxf(300.0, camst.h * 0.1)
+	for s in ships:
+		if s.team != player.team and s.alive and not s.escaped and player.contact(s):
+			var d := U.hyp(s.x - w.x, s.z - w.y)
+			if d < bd:
+				bd = d; best = s
+	return best
+
 func pick_target_at(w: Vector2) -> bool:
 	var best: Ship = null
 	var bd := maxf(250.0, camst.h * 0.08)
@@ -2928,7 +2971,30 @@ func _update_camera(delta: float) -> void:
 	var yaw: float = camst.yaw
 	var dist := hgt      # eye-to-target distance: sets the haze and shadow reach
 	var fog_ref := hgt
-	if camst.cine:
+	var chase = _chase_point() if _test.has("chase") else null
+	if chase != null:
+		# recording only: ride alongside one of our squadrons (--chase=dive|torpedo|fighter,
+		# --chasedist=M --chaseyaw=DEG relative to its heading --chaseelev=DEG; --chaseatk follows its lead plane on a run)
+		var ap: Vector3 = chase[0]
+		var hh: float = chase[1]
+		var D2: float = float(_test.get("chasedist", "120"))
+		var yw2: float = hh + PI + deg_to_rad(float(_test.get("chaseyaw", "0")))
+		var el2 := deg_to_rad(float(_test.get("chaseelev", "12")))
+		var f2 := U.fwd(yw2)
+		var want_eye := ap + Vector3(f2.x * D2 * cos(el2), D2 * sin(el2), f2.y * D2 * cos(el2))
+		if not camst.has("ch_eye"):
+			camst.ch_eye = want_eye
+			camst.ch_look = ap
+		camst.ch_eye = camst.ch_eye.lerp(want_eye, minf(1.0, delta * 2.5))
+		camst.ch_look = camst.ch_look.lerp(ap, minf(1.0, delta * 6.0))
+		camst.ch_eye.y = maxf(camst.ch_eye.y, 3.0)
+		cam.near = 0.5
+		cam.far = 26000.0
+		cam.look_at_from_position(camst.ch_eye, camst.ch_look, Vector3.UP)
+		camst.x = ap.x; camst.z = ap.z
+		dist = D2
+		fog_ref = clampf(D2 * 6.0, 900.0, 4000.0)
+	elif camst.cine:
 		var fs2 := focus_ship()
 		var L: float = fs2.T.L
 		var D: float = clampf(L * 1.7, 45.0, 520.0) * camst.cine_zoom
@@ -2970,7 +3036,7 @@ func _update_camera(delta: float) -> void:
 	var span := hgt * 2.5 + 4000.0
 	if _test.has("tilt") or camst.tilt > 0.5:
 		span = hgt * 12.0 + 8000.0
-	if camst.cine:
+	if camst.cine or chase != null:
 		span = 40000.0
 	ocean.position = Vector3(camst.x, 0.0, camst.z)
 	ocean.scale = Vector3(span, 1.0, span)
@@ -2984,6 +3050,18 @@ func _update_camera(delta: float) -> void:
 		fill.light_color = Wd.sun.lerp(Color(1, 1, 1), 0.4)
 		fill.light_energy = Wd.sun_energy * 0.45
 		fill.global_transform = Transform3D(cam.global_transform.basis.rotated(Vector3.UP, 0.35), Vector3.ZERO)
+
+
+## The squadron the --chase camera rides with: [position, heading], or null.
+func _chase_point():
+	for q in air.sqs:
+		if q.home != player or q.kind != String(_test.chase) or q.state in ["ready", "lost", "launching"]:
+			continue
+		if _test.has("chaseatk") and not q.atk.is_empty():
+			var a: Dictionary = q.atk[0]
+			return [a.pos, atan2(a.dir.x, -a.dir.z)]
+		return [Vector3(q.x, q.alt, q.z), q.h]
+	return null
 
 
 func zoom(factor: float) -> void:

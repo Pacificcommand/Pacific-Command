@@ -7,7 +7,7 @@ signal graphics_changed
 const CFG := "user://settings.cfg"
 const SAVE_DIR := "user://saves"
 const SLOTS := 5
-const VERSION := "0.22.1"
+const VERSION := "0.23"
 
 ## Graphics and sound settings with their defaults.
 var settings := {
@@ -32,7 +32,7 @@ const ACTIONS := [
 	["rotate_left", "Turn camera left", KEY_COMMA], ["rotate_right", "Turn camera right", KEY_PERIOD], ["cam_reset", "Camera: straight down, north up", KEY_R],
 	["cinematic", "Cinematic camera (beside the ship)", KEY_B],
 	["pause", "Tactical pause", KEY_SPACE], ["slow", "Slow ¼×", KEY_1], ["normal", "Normal speed", KEY_2], ["fast", "Fast 3×", KEY_3], ["faster", "Fast 5×", KEY_4],
-	["strike", "Launch air strike", KEY_L],
+	["strike", "Launch air strike", KEY_L], ["air_panel", "Show / hide the air group panel", KEY_K],
 	["dive", "Submarine: dive (periscope depth, then deep)", KEY_X], ["surface", "Submarine: come up", KEY_E],
 	["charges", "Drop depth charges", KEY_G], ["hedgehog", "Fire hedgehog", KEY_H],
 	["menu", "Pause menu", KEY_ESCAPE],

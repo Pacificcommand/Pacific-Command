@@ -121,7 +121,9 @@ class Plane:
                 B.box((x0 - 0.15 - i * 0.22, -0.15, s * (rz + 0.04)), (0.14, 0.09, 0.08))
 
     def propeller(self):
-        B, P, S = self.B, self.P, self.S
+        # its own part (node 'Prop', pivot on the hub) so the game can spin it
+        P, S = self.P, self.S
+        B = Builder(self.M, 'Prop', P['dark'], pivot=(self.xn + 0.12, 0, 0))
         x = self.xn + 0.12
         R = S['prop'] / 2
         B.set_mat(P['dark'])
@@ -423,6 +425,8 @@ class Plane:
             off = np.array([0.0, spec_ground + 0.35, 0.0])
         for g in self.M.groups.values():
             g['tris'] = [t @ R.T + off for t in g['tris']]
+            if g is not self.M.groups.get('Hull'):
+                g['pivot'] = g['pivot'] @ R.T + off
         return self.M
 
 

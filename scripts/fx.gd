@@ -155,7 +155,13 @@ func add(k: int, x: float, y: float, z: float, pvx: float, pvz: float, pvy: floa
 	if n >= CAP:
 		if k == FOAM:
 			return
-		_remove_oldest(200)
+		if foam_n > 0:
+			_remove_oldest(mini(200, foam_n))
+		if n >= CAP:
+			# nothing left to make room with: the oldest-fading smoke gives way, or this puff is skipped
+			if k == SMOKE or k == DEBRIS:
+				return
+			_kill(randi() % n)
 	var i := n
 	n += 1
 	kind[i] = k
