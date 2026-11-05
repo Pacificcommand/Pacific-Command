@@ -298,6 +298,10 @@ func _test_args() -> void:
 			# --cambeach: on the landing beach instead of the window centre
 			var bm: Dictionary = IslandMaps.MAPS[isl.map]
 			camst.ox += float(bm.beach[0]); camst.oz += float(bm.beach[1])
+		if _test.has("camat"):
+			# --camat=DX,DZ: metres east / south of the island window's centre (aim at a landmark)
+			var ca: PackedStringArray = String(_test.camat).split(",")
+			camst.ox = float(isl.x) + float(ca[0]); camst.oz = float(isl.z) + (float(ca[1]) if ca.size() > 1 else 0.0)
 		camst.x = camst.ox; camst.z = camst.oz
 	if _test.has("nohud"):
 		hud.visible = false

@@ -89,6 +89,10 @@ void fragment() {
 		float building = step(0.45, r) * step(0.2, fract(w.x / 16.0)) * step(0.2, fract(w.y / 16.0));
 		col = mix(col, mix(ground_c, roof, building), smoothstep(0.3, 0.5, clear) * 0.9);
 	}
+	// steep flanks and gully sides a little darker, so hills and cliffs read from above
+	col *= 0.80 + 0.20 * smoothstep(0.80, 0.99, nw.y);
+	// and a little fixed hill-shading (light from the north-west), as on a relief map
+	col *= 0.80 + 0.60 * clamp(dot(nw, normalize(vec3(-0.55, 0.75, -0.40))) - 0.55, -0.45, 0.4);
 	ALBEDO = col;
 	ROUGHNESS = 0.95;
 	SPECULAR = 0.15;

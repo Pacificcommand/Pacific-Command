@@ -35,6 +35,29 @@ def enc_h(h):
     return np.where(h >= 0, up, dn)
 
 
+DEM_DIR = os.environ.get('DEM_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dem'))
+
+
+def sample_dem(tiles, X, Z, lon0, lat0):
+    """Heights (m) from USGS 1 arc-second GeoTIFF tiles at the window's points (NaN where none)."""
+    lon = lon0 + X / (111320.0 * math.cos(math.radians(lat0)))
+    lat = lat0 - Z / 111320.0
+    out = np.full(X.shape, np.nan, np.float32)
+    for t in tiles:
+        im = Image.open(os.path.join(DEM_DIR, t + '.tif'))
+        a = np.array(im, dtype=np.float32)
+        tp = im.tag_v2[33922]; sc = im.tag_v2[33550]
+        col = (lon - tp[3]) / sc[0] - 0.5
+        row = (tp[4] - lat) / sc[1] - 0.5
+        inb = (col >= 0) & (row >= 0) & (col < a.shape[1] - 1) & (row < a.shape[0] - 1)
+        c0 = np.clip(np.floor(col).astype(int), 0, a.shape[1] - 2); r0 = np.clip(np.floor(row).astype(int), 0, a.shape[0] - 2)
+        fc = col - c0; fr = row - r0
+        v = (a[r0, c0] * (1 - fc) * (1 - fr) + a[r0, c0 + 1] * fc * (1 - fr) + a[r0 + 1, c0] * (1 - fc) * fr + a[r0 + 1, c0 + 1] * fc * fr)
+        bad = (a[r0, c0] < -1000) | (a[r0, c0 + 1] < -1000) | (a[r0 + 1, c0] < -1000) | (a[r0 + 1, c0 + 1] < -1000)
+        out = np.where(inb & ~bad, v, out)
+    return out
+
+
 def to_local(lon, lat, lon0, lat0):
     dlon = ((np.asarray(lon) - lon0 + 180.0) % 360.0) - 180.0
     x = dlon * 111320.0 * math.cos(math.radians(lat0))
@@ -117,14 +140,53 @@ def bake(iid, I):
     else:
         h = base * (1.0 - np.exp(-dl / (rise * 0.3))) + dl * 0.012 * np.clip(rise / 1000.0, 0.3, 3.0)
     coastfade = np.clip(dl / 160.0, 0, 1)
-    for (plon, plat, ph, pr) in I['peaks']:
+    peaks = []
+    for p in I['peaks']:
+        plon, plat, ph, pr = p[:4]
+        opt = p[4] if len(p) > 4 else {}
         px_, pz_ = to_local(plon, plat, lon0, lat0)
-        dist = np.hypot(X - px_, Z - pz_) * (1.0 + 0.32 * n1)     # not a perfect cone
+        # a summit listed in the water (coordinates a little off): move it to the highest-inland
+        # ground within 2.5 km, so the mountain stands on the island
+        i0 = int(np.clip((px_ + half) / px, 0, N - 1)); j0 = int(np.clip((pz_ + half) / px, 0, N - 1))
+        inside = abs(px_) < half and abs(pz_) < half
+        near_edge = min(half - abs(px_), half - abs(pz_)) < 2500.0
+        if inside and not near_edge and d[j0, i0] < 30.0 and not opt.get('cliff'):
+            rr = int(float(opt.get('snap', 2500.0)) / px)
+            ja, jb, ia, ib = max(0, j0 - rr), min(N, j0 + rr + 1), max(0, i0 - rr), min(N, i0 + rr + 1)
+            sub = d[ja:jb, ia:ib]
+            yy, xx = np.mgrid[ja:jb, ia:ib]
+            score = np.where(sub > 30.0, np.minimum(sub, 400.0) - np.hypot(yy - j0, xx - i0) * px * 0.15, -1e9)
+            if score.max() > -1e8:
+                k_ = np.unravel_index(np.argmax(score), score.shape)
+                j0, i0 = int(yy[k_]), int(xx[k_])
+                nx_, nz_ = -half + (i0 + 0.5) * px, -half + (j0 + 0.5) * px
+                print('   %s: peak %d m moved %.0f m onto land' % (iid, ph, math.hypot(nx_ - px_, nz_ - pz_)))
+                px_, pz_ = nx_, nz_
+        peaks.append((px_, pz_, ph, pr, opt, inside))
+        rough = opt.get('rough', 0.32 if pr > 1000 else 0.08)
+        dist = np.hypot(X - px_, Z - pz_) * (1.0 + rough * n1)     # not a perfect cone
         k = np.clip(1.0 - dist / pr, 0, 1)
-        k = k * k * (3.0 - 2.0 * k) if kind != 'ash' else k ** 1.6   # smooth foot, no crease
-        # a summit near the shore slopes down to it (at most about 1 in 2.5), not a sheer wall
-        cone = ph * k * np.clip(dl / max(160.0, ph * 2.5), 0, 1) ** 0.8
-        sk = max(4.0, 0.12 * ph)
+        if opt.get('mesa'):
+            k = np.clip(k / opt['mesa'], 0, 1); k = k * k * (3.0 - 2.0 * k)   # flat top, escarpment round it
+        elif opt.get('cone'):
+            k = k ** opt['cone']                                   # concave volcano flanks, steep near the top
+        else:
+            k = k * k * (3.0 - 2.0 * k) if kind != 'ash' else k ** 1.6   # smooth foot, no crease
+        if opt.get('crater'):
+            cr, cd = opt['crater']
+            k = k - (cd / ph) * np.clip(1.0 - (dist / cr) ** 2, 0, 1) ** 1.5
+        if opt.get('gullies'):
+            # erosion gullies running straight down the flanks, deepest half-way up
+            th = np.arctan2(Z - pz_, X - px_)
+            g = np.abs(np.sin(th * opt['gullies'] + 3.0 * n1 + dist / pr * 2.0)) ** 0.5
+            flank = np.clip(k * 4.0, 0, 1) * np.clip((1.0 - k) * 3.0, 0, 1)
+            k = k - 0.07 * (1.0 - g) * flank
+        if opt.get('cliff'):
+            cone = ph * k * np.clip(dl / 70.0, 0, 1) ** 0.7        # stands steeply out of the sea
+        else:
+            # a summit near the shore slopes down to it (at most about 1 in 2.5), not a sheer wall
+            cone = ph * k * np.clip(dl / max(160.0, ph * 2.5), 0, 1) ** 0.8
+        sk = max(4.0, 0.12 * ph) if not (opt.get('cliff') or opt.get('mesa')) else 3.0
         h = sk * np.logaddexp(h / sk, cone / sk) - sk * math.log(2.0) * np.exp(-np.abs(h - cone) / sk)
     if kind == 'coral':
         h = h + 0.08 * h * n1
@@ -134,6 +196,29 @@ def bake(iid, I):
         ridges = 1.0 - np.abs(n3)
         lift = np.clip(h / 300.0, 0, 1)
         h = h * (1.0 + lift * (0.6 * ridges - 0.6)) + 0.03 * h * n2     # gullies cut down; crests keep the real height
+    # every summit at its real height: lift or lower the ground round it to match
+    for (px_, pz_, ph, pr, opt, inside) in [q for q in peaks for _ in range(3)]:
+        # three rounds, so neighbouring summits that lift each other settle at their heights
+        if not inside:
+            continue
+        i0 = int((px_ + half) / px); j0 = int((pz_ + half) / px)
+        if d[j0, i0] <= 0:
+            continue
+        rr = max(2, int(min(pr * 0.15, 400.0) / px))
+        top = float(h[max(0, j0 - rr):j0 + rr + 1, max(0, i0 - rr):i0 + rr + 1].max())
+        if abs(top - ph) > 1.0:
+            dist = np.hypot(X - px_, Z - pz_)
+            bump = np.clip(1.0 - dist / (pr * 0.6), 0, 1)
+            # taper toward the shore over a slope of about 1 in 2.5, so a raised summit near the
+            # coast does not end in a wall
+            bump = bump * bump * (3.0 - 2.0 * bump) * np.clip(dl / max(60.0, abs(ph - top) * 2.5), 0, 1) ** 0.8
+            h = h + (ph - top) * bump
+    # real elevation data where we have it (USGS 3DEP 1 arc-second: Guam, Saipan, Truk, Palau)
+    if I.get('dem'):
+        dem = sample_dem(I['dem'], X, Z, lon0, lat0)
+        ok = np.isfinite(dem)
+        h = np.where(ok & (d > 0), np.maximum(dem, 0.8 * np.clip(dl / 10.0, 0.2, 1) + 0.0), h)
+        print('   %s: real elevation data, highest %.0f m' % (iid, np.nanmax(np.where(d > 0, dem, np.nan))))
     h = np.where(d > 0, np.maximum(h, 0.6), h)
 
     # the sea floor: fringing reef, then the drop-off; atoll lagoons and reef rings
