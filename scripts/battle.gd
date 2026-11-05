@@ -240,6 +240,12 @@ func _test_args() -> void:
 			Game.save_slot(int(_test.save), save_state())
 			print("saved slot ", _test.save, " at t=", t)
 		print("debug ", _dbg)
+		print("tally kills=", tally.kills, " gun=", tally.gun_kills, " torp=", tally.torp_kills, " air=", tally.air_kills, " list=", tally.kill_list, " torps_seen=", tally.torps_seen, " hits=", tally.hits, " fires_out=", tally.fires_out, " sorties=", tally.sorties, " air_hits=", tally.get("air_hits", 0))
+		print("ran ", _test.run, "s: t=", t, " player crew ", player.crew, " flood ", player.flood, " salvos ", stats.salvos, " hits ", stats.hits, " sunk ", stats.sunk, " particles ", fx.n, " ", fx.kind_counts())
+		for s in ships:
+			print("  ", s.ship_name, " alive=", s.alive, " crew=", s.crew, " flood=", int(s.flood), " fires=", s.fires.size(), " range=", int(player.range_to(s)), " vis=", player.vis.get(s.ship_name, false), " radar=", player.radar.get(s.ship_name, false))
+		if _test.has("quit") and not _test.has("shot"):
+			get_tree().quit()
 	if _test.has("salvolive"):
 		# recording: --salvolive=T,SIZE,N[,Ship_Name]: N shells straddle a ship T s into the clip
 		var sv: PackedStringArray = String(_test.salvolive).split(",")
@@ -267,12 +273,6 @@ func _test_args() -> void:
 				if q.home == player and q.state in ["cap", "hold", "outbound"] and q.n > 1:
 					air._kill_plane(q, cv[1] if cv.size() > 1 else "")
 					break)
-		print("tally kills=", tally.kills, " gun=", tally.gun_kills, " torp=", tally.torp_kills, " air=", tally.air_kills, " list=", tally.kill_list, " torps_seen=", tally.torps_seen, " hits=", tally.hits, " fires_out=", tally.fires_out, " sorties=", tally.sorties, " air_hits=", tally.get("air_hits", 0))
-		print("ran ", _test.run, "s: t=", t, " player crew ", player.crew, " flood ", player.flood, " salvos ", stats.salvos, " hits ", stats.hits, " sunk ", stats.sunk, " particles ", fx.n, " ", fx.kind_counts())
-		for s in ships:
-			print("  ", s.ship_name, " alive=", s.alive, " crew=", s.crew, " flood=", int(s.flood), " fires=", s.fires.size(), " range=", int(player.range_to(s)), " vis=", player.vis.get(s.ship_name, false), " radar=", player.radar.get(s.ship_name, false))
-		if _test.has("quit") and not _test.has("shot"):
-			get_tree().quit()
 	if _test.has("torpaim"):
 		torp_aim = true
 		if player.target:
