@@ -1974,7 +1974,7 @@ func _sq_aim(sq: Dictionary) -> Vector3:
 
 var falling: Array = []
 
-func _kill_plane(sq: Dictionary) -> void:
+func _kill_plane(sq: Dictionary, force_fate := "") -> void:
 	if sq.n <= 0:
 		return
 	sq.n -= 1
@@ -1996,6 +1996,8 @@ func _kill_plane(sq: Dictionary) -> void:
 	var p := node.global_position
 	# how it goes down: low planes ditch; others spin, dive burning, or blow apart
 	var fate: String = "ditch" if p.y < 70.0 and randf() < 0.7 else ["spin", "flamer", "flamer", "breakup"][randi() % 4]
+	if force_fate != "":
+		fate = force_fate
 	B.fx.flash(p.x, p.y, p.z, 4.0, 18.0, 0.15, Color(1.0, 0.65, 0.3))
 	B.fx.debris(p.x, p.y, p.z, 5, 10.0)
 	B.sfx.play("plane_hit", Vector2(p.x, p.z), B.cam.position, 0.8)
@@ -2429,8 +2431,8 @@ func _step_bombs(dt: float) -> void:
 					if sq.home == B.player:
 						B.tally.air_hits = int(B.tally.get("air_hits", 0)) + 1
 				else:
-					B.fx.splash(e.x, e.z, true)
-					B.sfx.play("splash", Vector2(e.x, e.z), B.cam.position, 0.4)
+					B.fx.shell_splash(e.x, e.z, 1.6 + b.dmg * 0.0)
+					B.sfx.play("splash", Vector2(e.x, e.z), B.cam.position, 0.5)
 				gone.append(b)
 	for b in gone:
 		if is_instance_valid(b.node):

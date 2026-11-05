@@ -214,6 +214,11 @@ func _test_args() -> void:
 				order_cap()
 			if _test.has("airorders"):
 				_test_air_orders(i)
+			if _test.has("splashtest") and i == n - int(float(_test.get("splashat", "2.5")) / 0.05):
+				# test: a 5-inch, an 8-inch and a 16-inch shell splash off the player's beam
+				for k in 6:
+					var sp: Vector2 = player.to_world_xz(-150.0 + (k % 3) * 150.0, 200.0 if k < 3 else -200.0)
+					fx.shell_splash(sp.x, sp.y, [1.0, 1.7, 2.6][k % 3])
 			if aim_mode == "manual" and player.target:
 				# aim at the lead point, click every 3 seconds
 				var tg: Ship = player.target
@@ -235,6 +240,33 @@ func _test_args() -> void:
 			Game.save_slot(int(_test.save), save_state())
 			print("saved slot ", _test.save, " at t=", t)
 		print("debug ", _dbg)
+	if _test.has("salvolive"):
+		# recording: --salvolive=T,SIZE,N[,Ship_Name]: N shells straddle a ship T s into the clip
+		var sv: PackedStringArray = String(_test.salvolive).split(",")
+		var tt := float(sv[0])
+		var ssz := float(sv[1]) if sv.size() > 1 else 2.6
+		var nn := int(sv[2]) if sv.size() > 2 else 9
+		var tn: String = sv[3].replace("_", " ") if sv.size() > 3 else ""
+		after(tt, func():
+			var tg: Ship = focus_ship()
+			for o in ships:
+				if o.ship_name == tn:
+					tg = o
+			for j in nn:
+				var lx: float = randf_range(-tg.T.L * 0.5, tg.T.L * 0.5)
+				var lz: float = (tg.T.B * 0.5 + randf_range(12.0, 70.0)) * (1.0 if j % 2 == 0 else -1.0)
+				after(j * 0.07, func():
+					var w := tg.to_world_xz(lx, lz)
+					fx.shell_splash(w.x, w.y, ssz)
+					sfx.play("splash", w, cam.position, 0.7)))
+	if _test.has("crashlive"):
+		# recording: --crashlive=T[,fate]: one of our planes in the air is shot down T s into the clip
+		var cv: PackedStringArray = String(_test.crashlive).split(",")
+		after(float(cv[0]), func():
+			for q in air.sqs:
+				if q.home == player and q.state in ["cap", "hold", "outbound"] and q.n > 1:
+					air._kill_plane(q, cv[1] if cv.size() > 1 else "")
+					break)
 		print("tally kills=", tally.kills, " gun=", tally.gun_kills, " torp=", tally.torp_kills, " air=", tally.air_kills, " list=", tally.kill_list, " torps_seen=", tally.torps_seen, " hits=", tally.hits, " fires_out=", tally.fires_out, " sorties=", tally.sorties, " air_hits=", tally.get("air_hits", 0))
 		print("ran ", _test.run, "s: t=", t, " player crew ", player.crew, " flood ", player.flood, " salvos ", stats.salvos, " hits ", stats.hits, " sunk ", stats.sunk, " particles ", fx.n, " ", fx.kind_counts())
 		for s in ships:
@@ -1740,7 +1772,7 @@ func land_shell(sh: Dictionary) -> void:
 	else:
 		var ssz: float = sh.get("size", 1.0)
 		if ssz >= 0.5:
-			fx.splash(sh.tx, sh.tz, false)
+			fx.shell_splash(sh.tx, sh.tz, ssz)
 			sfx.play("splash", Vector2(sh.tx, sh.tz), cam.position, 0.4)
 		else:
 			fx.small_splash(sh.tx, sh.tz, ssz)

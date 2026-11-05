@@ -322,6 +322,7 @@ func plane_splash(x: float, z: float, vel: Vector3, hard: bool) -> void:
 	var hv := h.normalized() if h.length() > 1.0 else Vector2(1, 0)
 	if hard:
 		var k := clampf(absf(vel.y) / 60.0, 0.6, 1.4)
+		shell_splash(x, z, 1.4 + 0.5 * k)
 		add(SPLASH, x, 4.0, z, 0, 0, 0, 3.5 * k, 9.0 * k, 3.2, 0.95, Color(0.96, 0.98, 1.0), 1.0)
 		add(SPLASH, x, 8.0, z, 0, 0, 0, 2.2 * k, 5.0 * k, 2.4, 0.8, Color(0.95, 0.97, 1.0), 0.0)
 		add(SPLASH, x, 2.0, z, 0, 0, 0, 5.0 * k, 6.0 * k, 2.0, 0.7, Color(0.93, 0.96, 1.0), 1.0)
@@ -346,6 +347,45 @@ func plane_splash(x: float, z: float, vel: Vector3, hard: bool) -> void:
 			var a := randf() * TAU
 			var o := randf_range(2.0, 6.0)
 			foam(x + hv.x * randf_range(0, 25), z + hv.y * randf_range(0, 25), cos(a) * o + hv.x * 3.0, sin(a) * o + hv.y * 3.0, randf_range(2, 4), 1.0, randf_range(10, 18), 0.85)
+
+## A shell or bomb hitting the water: a white column thrown up, hanging and falling back as
+## spray, a crown round its foot and a wide ring of foam. size is the gun's size factor (a 5-inch
+## shell 1.0, 8-inch 1.7, 16-inch 2.6; a big bomb about 2.2): the column is ~14 m for a 5-inch,
+## ~30 m for an 8-inch and ~60 m for a battleship's shell.
+const SPRAY_G := 4.5
+
+func shell_splash(x: float, z: float, size: float) -> void:
+	var s := clampf(size, 0.5, 3.0)
+	var H := 9.0 * s * s + 9.0
+	var w := 2.0 + 2.0 * s
+	var white := Color(0.96, 0.98, 1.0)
+	# the column: puffs launched up to different heights, so it stands, then collapses
+	var nc := int(8 + 7 * s)
+	for j in nc:
+		var hj := H * (0.25 + 0.75 * float(j + 1) / nc) * randf_range(0.85, 1.05)
+		var v := sqrt(2.0 * SPRAY_G * hj)
+		var a := randf() * TAU
+		var o := randf_range(0.0, w * 0.35)
+		var lf := 2.0 * v / SPRAY_G + randf_range(0.6, 1.4)
+		add(SPLASH, x + cos(a) * o, 1.0, z + sin(a) * o, cos(a) * randf_range(0.3, 1.2), sin(a) * randf_range(0.3, 1.2), v,
+			w * randf_range(0.5, 0.8) * (1.0 - 0.3 * float(j) / nc), w * randf_range(0.35, 0.6), lf, 0.9, white, 0.0)
+	# the crown: water flung outward and up round the foot
+	for j in int(8 + 4 * s):
+		var a := randf() * TAU
+		var sp := randf_range(3.0, 7.0) * (0.6 + 0.4 * s)
+		var v := randf_range(5.0, 11.0) * (0.6 + 0.4 * s)
+		add(SPLASH, x + cos(a) * w * 0.5, 1.0, z + sin(a) * w * 0.5, cos(a) * sp, sin(a) * sp, v,
+			w * randf_range(0.35, 0.55), w * 0.45, 2.0 * v / SPRAY_G + 0.8, 0.85, white, 0.0)
+	# spray drifting off the top as it falls
+	for j in int(2 + 2 * s):
+		add(SPLASH, x + randf_range(-w, w), H * randf_range(0.6, 0.95), z + randf_range(-w, w), randf_range(-1.5, 1.5) + wind.x * 0.3, randf_range(-1.5, 1.5) + wind.y * 0.3, 0.0,
+			w * 0.8, w * 0.7, randf_range(3.0, 4.5), 0.45, Color(0.93, 0.96, 1.0), 0.0)
+	# the base boil and the foam ring left behind
+	add(SPLASH, x, 1.5, z, 0, 0, 0, w * 1.2, w * 1.4, 2.5, 0.85, white, 1.0)
+	for j in int(10 + 6 * s):
+		var a := randf() * TAU
+		var o := randf_range(2.0, 6.0) * (0.6 + 0.4 * s)
+		foam(x + cos(a) * w * 0.6, z + sin(a) * w * 0.6, cos(a) * o, sin(a) * o, randf_range(2.0, 4.0) * (0.6 + 0.4 * s), 1.2, randf_range(10, 22), 0.85)
 
 ## Shader-built explosion from PYROLUX: radius in meters.
 func pyro_explosion(pos: Vector3, radius: float, smoke_s: float) -> void:
@@ -413,6 +453,9 @@ func small_hit(x: float, y: float, z: float, dmg: float) -> void:
 ## Splash from a light gun: small spout and a ring of foam.
 func small_splash(x: float, z: float, size: float) -> void:
 	add(SPLASH, x, 1.0, z, 0, 0, 0, 0.8 + size * 2.0, 2.0 * size + 0.5, 0.9, 0.8, Color(0.95, 0.98, 1.0), 1.0)
+	for j in 2:
+		var v := sqrt(2.0 * SPRAY_G * (2.0 + 8.0 * size)) * randf_range(0.7, 1.0)
+		add(SPLASH, x + randf_range(-0.5, 0.5), 0.8, z + randf_range(-0.5, 0.5), 0, 0, v, 0.5 + size * 1.2, 0.8, 2.0 * v / SPRAY_G + 0.3, 0.8, Color(0.95, 0.98, 1.0), 0.0)
 	for i in 3:
 		var a := randf() * TAU
 		foam(x, z, cos(a) * 2.0, sin(a) * 2.0, randf_range(0.6, 1.2), 0.6, randf_range(3, 6), 0.6)
@@ -465,6 +508,13 @@ func step(dt: float) -> void:
 				vz[i] += (wind.y - vz[i]) * dt * 0.15
 				# smoke stays low: from straight above, tall columns would fill the camera
 				py[i] = minf(py[i] + vy[i] * dt, top[i])
+			elif k == SPLASH and (vy[i] != 0.0 or py[i] > 0.6):
+				# thrown-up water climbs, slows and falls back into the sea
+				# spray falls slower than a stone: air holds it up, so a column hangs for seconds
+				vy[i] -= SPRAY_G * dt
+				py[i] += vy[i] * dt
+				if py[i] < 0.6:
+					py[i] = 0.6; vy[i] = 0.0
 			px[i] += vx[i] * dt; pz[i] += vz[i] * dt
 			r[i] += gr[i] * dt
 		i += 1
@@ -487,7 +537,7 @@ func _alpha(i: int) -> float:
 			# flak (shape 0.3) pops open at once; other smoke billows in
 			a *= minf(1.0, age[i] * (10.0 if (shape[i] > 0.25 and shape[i] < 0.35) else 1.5)) * (1.0 - t) * (1.0 + 0.6 * t)
 		SPLASH:
-			a *= (1.0 - t) * (1.0 - t)
+			a *= (1.0 - t * t) * (1.0 - t * 0.3)
 		FIRE, FLASH:
 			a *= 1.0 - t
 		DEBRIS:
