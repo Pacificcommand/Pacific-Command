@@ -94,7 +94,7 @@ const DOTS := [
 ## garrison (1-4 coastal batteries), key (taking it flips the zone), shape: [[dx, dz, r, h] ...]
 ## circles in metres that approximate the real island for the bombardment battle}
 const ISLANDS := {
-	"wake": {"name": "Wake Island", "lon": 166.6, "lat": 19.3, "zone": "midway", "base": "", "garrison": 2, "key": false,
+	"wake": {"name": "Wake Island", "lon": 166.6, "lat": 19.3, "zone": "wake", "base": "", "garrison": 2, "key": true,
 		"shape": [[0, 0, 1500, 25], [1800, 900, 1100, 20], [1600, -1100, 1000, 20]]},
 	"midway": {"name": "Midway", "lon": 182.6, "lat": 28.2, "zone": "midway", "base": "Midway", "garrison": 3, "key": true,
 		"shape": [[0, 0, 1400, 20], [2200, 500, 900, 15]]},

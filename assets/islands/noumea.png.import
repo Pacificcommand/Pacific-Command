@@ -1,0 +1,14 @@
+[remap]
+
+importer="image"
+type="Image"
+uid="uid://cd6an8e5k4ysv"
+path="res://.godot/imported/noumea.png-ae90f918ef87eccdf59501c7caf00ae8.image"
+
+[deps]
+
+source_file="res://assets/islands/noumea.png"
+dest_files=["res://.godot/imported/noumea.png-ae90f918ef87eccdf59501c7caf00ae8.image"]
+
+[params]
+

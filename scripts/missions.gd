@@ -82,45 +82,82 @@ static func convoy_escort(rng: RandomNumberGenerator) -> Dictionary:
 		"text": "Four Liberty ships with supplies for the Marines are steaming %s at 10 knots. A coastwatcher reports three Japanese destroyers bearing %s, about %s away, coming to get them, and there may be a submarine on the route.\n\nYou command %s with USS Raby on the convoy's other flank. Keep between the raiders and the merchantmen, use your radar to open fire first, lay smoke to hide the convoy, and listen on sonar. The convoy must reach safety; the mission is won when it gets through or the raiders are sunk or driven off."}
 
 
-static func shore_bombardment(rng: RandomNumberGenerator) -> Dictionary:
-	var ib := deg_to_rad(20.0 + rng.randf_range(-20.0, 20.0))
-	var idist := 11000.0
-	var ix := sin(ib) * idist
-	var iz := -cos(ib) * idist
-	var r := 2600.0
+## A baked real island placed so the battle opens on its historical approach: the player at the
+## origin heading in, the landing beach dead ahead. Returns the window centre (cx, cz), the
+## heading in (h), the distance and the island's data; at(p) turns map metres into battle metres.
+static func island_frame(id: String, dist := -1.0) -> Dictionary:
+	var m: Dictionary = IslandMaps.MAPS[id]
+	var a := deg_to_rad(float(m.approach[0]))
+	var dd: float = float(m.approach[1]) if dist < 0.0 else minf(dist, float(m.approach[1]))
+	var outv := Vector2(sin(a), -cos(a))         # from the beach out to sea
+	var start: Vector2 = Vector2(m.beach[0], m.beach[1]) + outv * dd
+	return {"id": id, "cx": -start.x, "cz": -start.y, "h": fposmod(a + PI, TAU), "dist": dd, "meta": m, "out": outv}
+
+static func at(f: Dictionary, p: Array) -> Vector2:
+	return Vector2(f.cx + float(p[0]), f.cz + float(p[1]))
+
+## Islands for the sandbox missions: high islands with guns ashore, and atolls.
+const BOMBARD_ISLANDS := ["saipan", "guam", "iwo", "tulagi", "munda", "bougainville", "palau", "okinawa", "tarawa", "kwajalein", "wake", "rabaul"]
+const RESCUE_ISLANDS := ["tulagi", "munda", "bougainville", "milne", "manus", "espiritu", "saipan", "guam", "truk", "midway", "wake", "makin"]
+
+
+## An island of the operation's zone for a scripted battle (an operation card), from a list;
+## "" if none of them lies in the zone.
+static func zone_island(zone: String, ids: Array) -> String:
+	for id in ids:
+		if Geo.ISLANDS.has(id) and Geo.ISLANDS[id].zone == zone:
+			return id
+	return ""
+
+
+static func shore_bombardment(rng: RandomNumberGenerator, island_id := "") -> Dictionary:
+	var id: String = island_id if IslandMaps.MAPS.has(island_id) else BOMBARD_ISLANDS[rng.randi() % BOMBARD_ISLANDS.size()]
+	var f := island_frame(id)
+	var m: Dictionary = f.meta
 	var shore := []
-	for i in 3:
-		var a := ib + PI + deg_to_rad(-40.0 + i * 40.0)   # on the side facing us
-		shore.append([["shore_battery", "shore_battery", "supply_dump"][i], ["Battery A", "Battery B", "Supply dump"][i], ix + sin(a) * r * (0.78 if i < 2 else 0.5), iz - cos(a) * r * (0.78 if i < 2 else 0.5)])
-	return {"id": "bombard", "title": "Shore bombardment", "kind": "bombard", "weather": "clear",
+	var sites: Array = m.batteries
+	for i in mini(2, sites.size()):
+		var w := at(f, sites[i])
+		shore.append(["shore_battery", ["Battery A", "Battery B"][i], w.x, w.y])
+	var dw := at(f, m.dump)
+	shore.append(["supply_dump", "Supply dump", dw.x, dw.y])
+	var bw := at(f, m.boats)
+	return {"id": "bombard", "title": "Shore bombardment: %s" % m.name, "kind": "bombard", "weather": "clear", "start_h": f.h,
 		"choices": [["cleveland", "USS Columbia (Cleveland)"], ["brooklyn", "USS Honolulu (Brooklyn)"], ["texas", "USS Texas"], ["north_carolina", "USS Washington (North Carolina)"]],
 		"friends": [["fletcher", "USS Charles Ausburne", 900.0, -700.0], ["fletcher", "USS Dyson", 900.0, 700.0]],
-		"islands": [{"x": ix, "z": iz, "r": r, "h": 140.0, "seed": rng.randi() % 1000}],
+		"islands": [{"map": id, "x": f.cx, "z": f.cz}],
 		"shore": shore,
-		"enemies": [{"group": "", "x": ix + sin(ib + PI / 2) * (r * 1.45), "z": iz - cos(ib + PI / 2) * (r * 1.45), "h": fposmod(ib + PI, TAU), "kn": 7.0,
+		"enemies": [{"group": "", "x": bw.x, "z": bw.y, "h": fposmod(f.h + PI / 2.0, TAU), "kn": 7.0,
 			"ships": [["daihatsu", "Barge 1", 0.0, 0.0], ["daihatsu", "Barge 2", 120.0, 60.0], ["daihatsu_gun", "Barge 3", 240.0, -60.0]], "objective": false, "route": true, "dest": 6000.0}],
-		"report": {"brg": ib, "dist": idist, "h": 0.0, "kn": 0.0, "r": 2000.0, "fixed": true},
+		"report": {"brg": f.h, "dist": f.dist, "h": 0.0, "kn": 0.0, "r": 1200.0, "fixed": true},
 		"escape_r": 30000.0,
-		"text": "The landing goes in at dawn. Our troops want the two coastal batteries on the island bearing %s, about %s away, silenced, and the supply dump behind the beach destroyed. The batteries are 14 cm guns in concrete; they will shoot back, and the water shoals close inshore.\n\nYou command %s with two destroyers. Steam in to gun range, pick each battery as your target and pound it; the destroyers will deal with any barges. Watch your depth: ground the ship and you are a sitting target."}
+		"text": "The landing on " + m.name + " goes in at dawn. Our troops want the two coastal batteries on the shore bearing %s, about %s away, silenced, and the supply dump behind the beach destroyed. The batteries are 14 cm guns in concrete; they will shoot back, and the water shoals over the reef close inshore.\n\nYou command %s with two destroyers. Steam in to gun range, pick each battery as your target and pound it; the destroyers will deal with any barges. Watch your depth: ground the ship and you are a sitting target."}
 
 
-static func rescue(rng: RandomNumberGenerator) -> Dictionary:
-	var b := deg_to_rad(60.0 + rng.randf_range(-20.0, 20.0))
+static func rescue(rng: RandomNumberGenerator, island_id := "") -> Dictionary:
+	var id: String = island_id if IslandMaps.MAPS.has(island_id) else RESCUE_ISLANDS[rng.randi() % RESCUE_ISLANDS.size()]
+	var f := island_frame(id)
+	var m: Dictionary = f.meta
+	var beach := Vector2(m.beach[0], m.beach[1])
+	var side := Vector2(-f.out.y, f.out.x)
 	var rafts := []
 	for i in 3:
-		var a := b + rng.randf_range(-0.12, 0.12)
-		var d := rng.randf_range(5500.0, 7500.0)
-		rafts.append(["raft", ["Raft 1", "Raft 2", "Raft 3"][i], sin(a) * d, -cos(a) * d])
-	var eb := deg_to_rad(20.0 + rng.randf_range(-10.0, 10.0))
-	return {"id": "rescue", "title": "Rescue", "kind": "rescue", "weather": "clear",
+		# in the clear water off the island, along the approach, drifting apart
+		var k := rng.randf_range(0.3, 0.62)
+		var p: Vector2 = beach + f.out * f.dist * k + side * rng.randf_range(-450.0, 450.0)
+		var w := at(f, [p.x, p.y])
+		rafts.append(["raft", ["Raft 1", "Raft 2", "Raft 3"][i], w.x, w.y])
+	var r0: Array = rafts[0]
+	var eb: float = f.h + (PI / 2.0 if rng.randf() < 0.5 else -PI / 2.0)
+	return {"id": "rescue", "title": "Rescue off %s" % m.name, "kind": "rescue", "weather": "clear", "start_h": f.h,
 		"choices": [["fletcher", "USS Taylor (Fletcher)"], ["pt_elco", "PT-109 (Elco)"], ["mahan", "USS Dunlap (Mahan)"]],
 		"friends": [],
 		"rafts": rafts,
-		"islands": [{"x": sin(b) * 11000.0, "z": -cos(b) * 11000.0, "r": 3200.0, "h": 220.0, "seed": rng.randi() % 1000}],
+		"islands": [{"map": id, "x": f.cx, "z": f.cz}],
 		"enemies": [{"group": "", "x": sin(eb) * 15000.0, "z": -cos(eb) * 15000.0, "h": fposmod(eb + PI, TAU), "kn": 24.0, "ships": [["fubuki", "Ushio", 0.0, 0.0]], "objective": false, "delay": 240.0}],
-		"report": {"brg": b, "dist": 6500.0, "h": 0.0, "kn": 0.0, "r": 1500.0, "fixed": true},
+		"report": {"brg": U.bearing(0, 0, r0[2], r0[3]), "dist": U.hyp(r0[2], r0[3]), "h": 0.0, "kn": 0.0, "r": 1500.0, "fixed": true},
 		"escape_r": 30000.0,
-		"text": "A PBY has spotted survivors in the water bearing %s, about %s away, off an enemy-held island: the crew of a bomber and men from the destroyer sunk here last night. A Japanese destroyer patrols these waters.\n\nYou command %s. Find the rafts (they drift), come alongside each one slowly (under 5 knots, within 60 yards) to take the men aboard, and get them home. If the Japanese destroyer turns up, decide whether to fight or run with the men you have."}
+		"text": "A PBY has spotted survivors in the water off " + m.name + ", bearing %s, about %s away: the crew of a bomber and men from the destroyer sunk here last night. A Japanese destroyer patrols these waters.\n\nYou command %s. Find the rafts (they drift), come alongside each one slowly (under 5 knots, within 60 yards) to take the men aboard, and get them home. If the Japanese destroyer turns up, decide whether to fight or run with the men you have."}
 
 
 ## Build a plan into a battle. B is battle.gd.
@@ -130,7 +167,7 @@ static func build(B, plan: Dictionary, choice: String) -> void:
 		if c[0] == choice:
 			pc = c
 	var team_plan: Array = [[pc[0], pc[1].split(" (")[0], 0.0, 0.0]] + plan.friends
-	var tf: Array = B._formation(team_plan, "us", "TF", 0.0, 0.0, deg_to_rad(0.0), 20.0)
+	var tf: Array = B._formation(team_plan, "us", "TF", 0.0, 0.0, float(plan.get("start_h", 0.0)), 20.0)
 	B.player = tf[0]
 	if plan.has("convoy"):
 		var cv: Dictionary = plan.convoy
@@ -451,38 +488,36 @@ static func _enemy_text(kind: String) -> String:
 ## dump to raise the flag. `isl` is a Geo.ISLANDS entry, `garrison` the number of batteries,
 ## `friends` the ships in company, `boats` any small craft the defenders have in the lagoon.
 static func island_assault(rng: RandomNumberGenerator, isl: Dictionary, garrison: int, friends: Array, player_type: String, player_name: String, weather: String, enemy_side: String) -> Dictionary:
-	var ib := rng.randf_range(0.0, TAU)
-	var idist := 10000.0
-	var ix := sin(ib) * idist
-	var iz := -cos(ib) * idist
-	var islands := []
-	var biggest := 0.0
-	for c in isl.shape:
-		islands.append({"x": ix + c[0], "z": iz + c[1], "r": float(c[2]), "h": float(c[3]), "seed": rng.randi() % 1000})
-		biggest = maxf(biggest, float(c[2]))
+	var id: String = ""
+	for k in Geo.ISLANDS:
+		if Geo.ISLANDS[k] == isl:
+			id = k
+	if not IslandMaps.MAPS.has(id):
+		id = "saipan"
+	var f := island_frame(id)
+	var m: Dictionary = f.meta
 	# batteries on the shore facing the sea the player comes from, the dump behind the beach
 	var shore := []
-	var face := ib + PI
-	for i in garrison:
-		var a := face + deg_to_rad(-50.0 + 100.0 * float(i) / maxf(1.0, garrison - 1)) if garrison > 1 else face
-		var c0: Array = isl.shape[i % isl.shape.size()]
-		var r0: float = float(c0[2])
-		shore.append(["shore_battery", "Battery %s" % char(65 + i), ix + c0[0] + sin(a) * r0 * 0.78, iz + c0[1] - cos(a) * r0 * 0.78])
-	var c1: Array = isl.shape[0]
-	shore.append(["supply_dump", "Supply dump", ix + c1[0] + sin(face) * float(c1[2]) * 0.45, iz + c1[1] - cos(face) * float(c1[2]) * 0.45])
+	var sites: Array = m.batteries
+	for i in mini(garrison, sites.size()):
+		var w := at(f, sites[i])
+		shore.append(["shore_battery", "Battery %s" % char(65 + i), w.x, w.y])
+	var dw := at(f, m.dump)
+	shore.append(["supply_dump", "Supply dump", dw.x, dw.y])
 	var fl := []
 	var fr_ships := layout([[player_type, player_name]] + friends, rng)
 	for i in range(1, fr_ships.size()):
 		fl.append(fr_ships[i])
 	var enemies := []
+	var bw := at(f, m.boats)
 	if enemy_side == "ijn":
 		var boats := [["daihatsu_gun", "Gun barge 1", 0.0, 0.0], ["daihatsu", "Barge 2", 120.0, 60.0]]
 		if garrison >= 3:
 			boats.append(["jp_mtb", "T-%d" % (1 + rng.randi() % 50), 240.0, -60.0])
-		enemies.append({"group": "", "x": ix + sin(ib + PI / 2) * (biggest * 1.5), "z": iz - cos(ib + PI / 2) * (biggest * 1.5), "h": fposmod(ib + PI, TAU), "kn": 7.0, "ships": boats, "objective": false, "route": true, "dest": 6000.0})
+		enemies.append({"group": "", "x": bw.x, "z": bw.y, "h": fposmod(f.h + PI / 2.0, TAU), "kn": 7.0, "ships": boats, "objective": false, "route": true, "dest": 6000.0})
 	else:
-		enemies.append({"group": "", "x": ix + sin(ib + PI / 2) * (biggest * 1.5), "z": iz - cos(ib + PI / 2) * (biggest * 1.5), "h": fposmod(ib + PI, TAU), "kn": 20.0, "ships": [["pt_elco", "PT-%d" % (100 + rng.randi() % 99), 0.0, 0.0]], "objective": false})
-	return {"id": "assault", "title": "Assault on %s" % isl.name, "kind": "bombard", "weather": weather,
-		"choices": [[player_type, player_name]], "friends": fl, "islands": islands, "shore": shore, "enemies": enemies,
-		"report": {"brg": ib, "dist": idist, "h": 0.0, "kn": 0.0, "r": biggest, "fixed": true}, "escape_r": 30000.0,
-		"text": "%s lies bearing %%s, about %%s away, held by the enemy with %d coastal batter%s and a supply dump behind the beach. Silence the guns and burn the dump and the landing force raises the flag.\n\nYou command %%s. The batteries shoot back and the water shoals close inshore; pick each one as your target and pound it." % [isl.name, garrison, "y" if garrison == 1 else "ies"]}
+		enemies.append({"group": "", "x": bw.x, "z": bw.y, "h": fposmod(f.h + PI, TAU), "kn": 20.0, "ships": [["pt_elco", "PT-%d" % (100 + rng.randi() % 99), 0.0, 0.0]], "objective": false})
+	return {"id": "assault", "title": "Assault on %s" % isl.name, "kind": "bombard", "weather": weather, "start_h": f.h,
+		"choices": [[player_type, player_name]], "friends": fl, "islands": [{"map": id, "x": f.cx, "z": f.cz}], "shore": shore, "enemies": enemies,
+		"report": {"brg": f.h, "dist": f.dist, "h": 0.0, "kn": 0.0, "r": 1500.0, "fixed": true}, "escape_r": 30000.0,
+		"text": "%s lies bearing %%s, about %%s away, held by the enemy with %d coastal batter%s and a supply dump behind the beach. Silence the guns and burn the dump and the landing force raises the flag.\n\nYou command %%s. The batteries shoot back and the water shoals over the reef close inshore; pick each one as your target and pound it." % [isl.name, garrison, "y" if garrison == 1 else "ies"]}

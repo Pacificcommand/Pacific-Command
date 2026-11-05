@@ -164,6 +164,15 @@ func _test_shot(path: String) -> void:
 			Game.career.offers = [int(a.split("=")[1])]
 			_close_card()
 			_check_offers()
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--mapisland="):
+			# test: centre the map on an island, zoomed in, and select it
+			var iid: String = a.split("=")[1]
+			if Geo.ISLANDS.has(iid):
+				cam_lon = Geo.ISLANDS[iid].lon; cam_lat = Geo.ISLANDS[iid].lat
+				zoom = 40.0
+				selected = iid
+				_refresh_side()
 	if "--career" in OS.get_cmdline_user_args():
 		add_child(CareerPanel.new())
 		for i in 10:
@@ -816,6 +825,7 @@ func _capture(iid: String, side: String, who: String) -> void:
 	var isl: Dictionary = Geo.ISLANDS[iid]
 	var st: Dictionary = C.islands[iid]
 	st.side = side
+	st.capt = true
 	st.garrison = 1
 	st.grow = C.day
 	if isl.base != "":
@@ -850,6 +860,22 @@ func _grow_garrisons() -> void:
 
 ## Both sides' task forces go for weakly held enemy islands at the front, and take them when
 ## they arrive unopposed; the other side's guards or a passing fleet can stop them.
+## History runs on where the player has not changed it: an island nobody has fought over falls to
+## Japan on the day its zone did (Wake on 23 December 1941, the Gilberts, the Solomons ...).
+func _history_captures() -> void:
+	for iid in Geo.ISLANDS:
+		var st: Dictionary = C.islands[iid]
+		if st.side != "us" or st.get("capt", false):
+			continue
+		var isl: Dictionary = Geo.ISLANDS[iid]
+		var z: Dictionary = War.ZONES[isl.zone]
+		if isl.base != "" and War.BASES[isl.base].side == "us" and War.BASES[isl.base].from >= 0 and C.day >= War.BASES[isl.base].from:
+			continue
+		if int(z.jp) >= 0 and C.day >= int(z.jp) and (int(z.us) < 0 or C.day < int(z.us) - C.shift) and not C.zone_owner.has(isl.zone):
+			_capture(iid, "ijn", "The Japanese")
+			st.garrison = isl.garrison
+
+
 func _ai_captures() -> void:
 	var fronts := _front_zones()
 	for g in C.groups:
@@ -969,6 +995,7 @@ func _tick_hour() -> void:
 	_resolve_fights()
 	if int(C.day * 24.0) % 6 == 0:
 		_ai_captures()
+		_history_captures()
 	_grow_garrisons()
 	_spawn_guards()
 

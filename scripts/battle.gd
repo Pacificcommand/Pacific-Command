@@ -294,6 +294,10 @@ func _test_args() -> void:
 		var isl: Dictionary = terrain.islands[clampi(int(_test.camisland), 0, terrain.islands.size() - 1)]
 		camst.free = true
 		camst.ox = float(isl.x); camst.oz = float(isl.z)
+		if _test.has("cambeach") and isl.has("map"):
+			# --cambeach: on the landing beach instead of the window centre
+			var bm: Dictionary = IslandMaps.MAPS[isl.map]
+			camst.ox += float(bm.beach[0]); camst.oz += float(bm.beach[1])
 		camst.x = camst.ox; camst.z = camst.oz
 	if _test.has("nohud"):
 		hud.visible = false
@@ -308,8 +312,6 @@ func _shoot() -> void:
 		await get_tree().process_frame
 	var img := get_viewport().get_texture().get_image()
 	img.save_png(_test.shot)
-	for c in terrain.get_children():
-		print("  mesh aabb ", c.mesh.get_aabb(), " vis ", c.visible, " gpos ", c.global_position)
 	print("saved ", _test.shot)
 	if _test.has("quit"):
 		get_tree().quit()
@@ -415,9 +417,9 @@ func new_game() -> void:
 			"escort":
 				Missions.build(self, Missions.convoy_escort(rng), ship_choice)
 			"bombard":
-				Missions.build(self, Missions.shore_bombardment(rng), ship_choice)
+				Missions.build(self, Missions.shore_bombardment(rng, String(_test.get("island", Missions.zone_island(String(Game.mission.get("zone", "")), Missions.BOMBARD_ISLANDS)))), ship_choice)
 			"rescue":
-				Missions.build(self, Missions.rescue(rng), ship_choice)
+				Missions.build(self, Missions.rescue(rng, String(_test.get("island", Missions.zone_island(String(Game.mission.get("zone", "")), Missions.RESCUE_ISLANDS)))), ship_choice)
 			"barges":
 				_setup_barges()
 			"convoy":
@@ -1050,6 +1052,7 @@ func save_state() -> Dictionary:
 	d.smokes = smokes.duplicate(true)
 	d.stars = stars.duplicate(true)
 	d.air = air.save()
+	d.terrain = terrain.save()
 	d.aa_mode = air.aa_mode
 	var cl := []
 	for c in charges:
@@ -1085,6 +1088,7 @@ func load_state(d: Dictionary) -> void:
 		torps.append({"x": td.x, "z": td.z, "h": td.h, "v": td.v, "left": td.left, "team": td.team, "owner": ships[oi] if oi >= 0 else null, "dud": td.dud, "warned": td.warned, "depth": td.depth})
 	smokes = d.smokes.duplicate(true)
 	stars = d.stars.duplicate(true)
+	terrain.setup(d.get("terrain", []))
 	air.restore(d.get("air", []))
 	charges.clear()
 	for c in d.get("charges", []):

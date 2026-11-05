@@ -1,0 +1,14 @@
+[remap]
+
+importer="image"
+type="Image"
+uid="uid://dvfkxacdlelx6"
+path="res://.godot/imported/guam.png-203c3bf352bd39507f07d9c583f05b0a.image"
+
+[deps]
+
+source_file="res://assets/islands/guam.png"
+dest_files=["res://.godot/imported/guam.png-203c3bf352bd39507f07d9c583f05b0a.image"]
+
+[params]
+

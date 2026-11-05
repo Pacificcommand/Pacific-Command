@@ -9,6 +9,7 @@ class_name War
 const ZONES := {
 	"hawaii": {"name": "Hawaiian waters", "lon": 202.0, "lat": 21.0, "r": 350, "jp": -1, "us": 0, "act": 0.2},
 	"midway": {"name": "Midway", "lon": 182.6, "lat": 28.2, "r": 250, "jp": -1, "us": 0, "act": 0.3},
+	"wake": {"name": "Wake Island", "lon": 166.6, "lat": 19.3, "r": 160, "jp": 16, "us": -1, "act": 0.3},
 	"marshalls": {"name": "Marshall Islands", "lon": 168.0, "lat": 8.5, "r": 300, "jp": 0, "us": 790, "act": 0.5},
 	"gilberts": {"name": "Gilbert Islands", "lon": 173.0, "lat": 1.5, "r": 240, "jp": 3, "us": 715, "act": 0.4},
 	"solomons": {"name": "Solomon Islands", "lon": 160.0, "lat": -9.0, "r": 320, "jp": 150, "us": 430, "act": 1.0},
@@ -55,7 +56,9 @@ const BASES := {
 ## Historical operations the player is offered a part in: day, name, zone, scenario, text.
 const OPERATIONS := [
 	{"day": 0, "name": "Pearl Harbor", "zone": "hawaii", "scenario": "rescue", "text": "The Japanese carrier force has struck Pearl Harbor. Rescue survivors from the harbor approaches and the outlying patrols."},
+	{"day": 14, "name": "Relief of Wake", "zone": "wake", "scenario": "cruisers", "text": "The Marines on Wake have beaten off one landing and sunk two destroyers. Task Force 14 races west to relieve them before the second Japanese invasion force arrives."},
 	{"day": 60, "name": "Marshalls-Gilberts raid", "zone": "marshalls", "scenario": "carriers", "text": "Enterprise and Yorktown raid the Japanese bases in the Marshalls and Gilberts, the first blows back."},
+	{"day": 79, "name": "Raid on Wake", "zone": "wake", "scenario": "bombard", "text": "Enterprise's task force hits Wake, now Japanese: cruisers and destroyers shell the island while the air group strikes the airfield."},
 	{"day": 82, "name": "Battle of the Java Sea", "zone": "java", "scenario": "cruisers", "text": "The ABDA cruiser force meets the Japanese covering force for the Java landings."},
 	{"day": 150, "name": "Battle of the Coral Sea", "zone": "coral", "scenario": "carriers", "text": "Carriers fight carriers for the first time: Lexington and Yorktown against Shokaku and Zuikaku, over the Port Moresby invasion."},
 	{"day": 181, "name": "Battle of Midway", "zone": "midway", "scenario": "carriers", "text": "Four Japanese carriers come for Midway. Three American carriers wait where the codebreakers said they would."},
