@@ -1205,7 +1205,7 @@ func _settle() -> void:
 	if Game.campaign_active():
 		for a in SteamHook.check_battle(self):
 			say("Achievement: %s" % SteamHook.name_of(a), "good")
-	Game.last_result = {"over": over, "sunk": stats.sunk.duplicate(), "lost_friends": stats.get("lost_friends", []).duplicate(), "rescued": stats.get("rescued", 0), "player_alive": player.alive, "crew_lost": stats.start_crew - player.crew,
+	Game.last_result = {"over": over, "sunk": stats.sunk.duplicate(), "lost_friends": stats.get("lost_friends", []).duplicate(), "land": stats.get("land", []).duplicate(), "lost_land": stats.get("lost_land", []).duplicate(), "rescued": stats.get("rescued", 0), "player_alive": player.alive, "crew_lost": stats.start_crew - player.crew,
 		"flood": player.flood / maxf(1.0, player.flood_cap()), "mission": Game.mission.duplicate(true)}
 	Game.career.missions += 1
 	var tons := 0.0
@@ -2450,6 +2450,9 @@ func _step_shore(s: Ship, dt: float) -> void:
 			stats.sunk.append(s.ship_name)
 			stats.land = stats.get("land", [])
 			stats.land.append(s.ship_name)
+		else:
+			stats.lost_land = stats.get("lost_land", [])
+			stats.lost_land.append(s.ship_name)
 		var w := s.to_world_xz(0.0, 0.0)
 		fx.boom(w.x, 8.0, w.y, true)
 		fx.debris(w.x, 6.0, w.y, 30, 30.0)

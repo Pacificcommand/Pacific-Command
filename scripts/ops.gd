@@ -38,6 +38,10 @@ var _asked_fight := ""                 # fight id the player was already offered
 func _ready() -> void:
 	_rng.randomize()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--fresh="):
+			# test: a new campaign from that day (overwrites the saved one)
+			Game.campaign = new_campaign(int(a.split("=")[1]), "fletcher", "USS Fletcher")
 	if Game.campaign.is_empty():
 		Game.campaign = new_campaign(0, "pt_elco", "PT-109")
 	C = Game.campaign
@@ -70,6 +74,8 @@ func _ready() -> void:
 			_test_shot(a.split("=")[1])
 		if a.begins_with("--dock="):
 			_test_dock(a.split("=")[1])
+		if a.begins_with("--campaigntest="):
+			_campaign_test.call_deferred(float(a.split("=")[1]))
 
 
 ## Older campaign saves get the new fields.
@@ -87,6 +93,8 @@ func _migrate() -> void:
 	for k in ["zone_owner", "base_owner", "islands"]:
 		if not C.has(k):
 			C[k] = {}
+	if not C.has("sieges"):
+		C.sieges = []
 	# islands start with their historical holder
 	for iid in Geo.ISLANDS:
 		if not C.islands.has(iid):
@@ -142,6 +150,58 @@ func _test_dock(path: String) -> void:
 	get_tree().quit()
 
 
+var _print_log := "--oplog" in OS.get_cmdline_user_args()
+
+
+## Test: run the war fast without drawing (--campaigntest=DAYS [--give=id,id] islands start ours,
+## [--jpstrong] Japan always finds the ships), printing the log and the islands at the end.
+func _shot_now(path: String) -> void:
+	for i in 12:
+		await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png(path)
+	print("saved ", path)
+	get_tree().quit()
+
+
+## Test: --squad=type,type,... puts those ships in the player's squadron.
+func _test_squad() -> void:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--squad="):
+			C.squadron = []
+			var k := 0
+			for t in a.split("=")[1].split(","):
+				k += 1
+				C.squadron.append([t, "USS Test %d" % k])
+
+
+func _campaign_test(days: float) -> void:
+	_print_log = true
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--give="):
+			for iid in a.split("=")[1].split(","):
+				if C.islands.has(iid):
+					_capture(iid, "us", "Test")
+	var end: float = C.day + days
+	while C.day < end:
+		var d0 := int(C.day)
+		C.day += 1.0 / 24.0
+		_move_groups(1.0)
+		_tick_hour()
+		if int(C.day) != d0:
+			_tick_day()
+			_reinforce_islands()
+			_jp_counterattack()
+			_radar_islands()
+		if card != null:
+			_close_card()
+	for iid in C.islands:
+		var st: Dictionary = C.islands[iid]
+		print("%-13s %-3s tier %d  batteries %d  fleet %s  airfield %s/%d  %s" % [iid, st.side, island_tier(iid), int(st.garrison), _describe(st.get("fleet", [])),
+			str(st.get("af", "-")), int(st.get("planes", 0)), "radar" if st.get("radar_on", false) else ""])
+	print("sieges ", C.sieges)
+	get_tree().quit()
+
+
 func _test_shot(path: String) -> void:
 	var days := 0.3
 	for a in OS.get_cmdline_user_args():
@@ -188,6 +248,61 @@ func _test_shot(path: String) -> void:
 		if start_pos.has(g.id):
 			moved = War.dist_nm(start_pos[g.id][0], start_pos[g.id][1], g.lon, g.lat)
 		print("  %s %s %s [%s] at %.1f,%.1f -> %s %s (moved %d nm)" % [g.side, g.kind, g.name, _describe(g.ships), g.lon, g.lat, _dest_name(g), g.state, int(moved)])
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--assaultat="):
+			# test: assault that island with its full defence (--squad=type,type adds ships)
+			var iid: String = a.split("=")[1]
+			if C.islands[iid].side != "ijn":
+				_capture(iid, "ijn", "Test")
+				C.islands[iid].erase("fleet")
+			_test_squad()
+			C.lon = Geo.ISLANDS[iid].lon + 0.3; C.lat = Geo.ISLANDS[iid].lat
+			var st := _island_def(iid)
+			print("assaulting ", iid, " tier ", island_tier(iid), " batteries ", st.garrison, " fleet ", _describe(st.fleet), " planes ", st.planes, " strength ", _def_strength(iid), " vs ", Missions.group_strength(_our_force()))
+			if "--bop" in OS.get_cmdline_user_args():
+				_balance_card(iid, "assault")
+				_shot_now(path)
+				return
+			_assault(iid)
+			return
+		if a.begins_with("--give="):
+			for gi in a.split("=")[1].split(","):
+				if C.islands.has(gi) and C.islands[gi].side != "us":
+					_capture(gi, "us", "Test")
+		if a.begins_with("--defendat="):
+			# test: the Japanese land on an island of ours; join the defence (or --bop: show the card)
+			var iid2: String = a.split("=")[1]
+			if C.islands[iid2].side != "us":
+				_capture(iid2, "us", "Test")
+			_test_squad()
+			var isl2: Dictionary = Geo.ISLANDS[iid2]
+			var g := _make_group("ijn", _base_weighted("ijn", isl2.lon, isl2.lat), [isl2.lon, isl2.lat], false, War.year_of(int(C.day)), "taskforce")
+			g.lon = isl2.lon + 0.2; g.lat = isl2.lat
+			g.assault = iid2
+			C.groups.append(g)
+			C.lon = isl2.lon + 0.3; C.lat = isl2.lat
+			_start_siege(iid2, g)
+			var sg = _siege_of(iid2)
+			print("defending ", iid2, " against ", _describe(g.ships))
+			if "--bop" in OS.get_cmdline_user_args():
+				_shot_now(path)
+				return
+			if "--mapshot" in OS.get_cmdline_user_args():
+				# the map with the invasion on it (and radar rings): centred on the island
+				_close_card()
+				for iid3 in C.islands:
+					if C.islands[iid3].side == "us" and C.islands[iid3].has("radar_t"):
+						C.islands[iid3].radar_t = C.day - 1.0
+				_radar_islands()
+				cam_lon = isl2.lon; cam_lat = isl2.lat
+				zoom = 9.0
+				selected = iid2
+				_refresh_side()
+				_shot_now(path)
+				return
+			_close_card()
+			_defend_island(sg)
+			return
 	if "--assault" in OS.get_cmdline_user_args():
 		var best := ""
 		var bd := 1e9
@@ -449,13 +564,24 @@ func _island_side_panel(iid: String) -> void:
 		side.add_child(UI.wrap("%s threatening it: %s." % ["Enemy ships" if ours else "Our ships", ", ".join(guards.map(func(g): return g.name if g.side == "us" else _kind_lc(g.kind)))], 350, 12, UI.BRASS))
 	var go := UI.button("Set course", func(): C.attached = ""; C.intercept = ""; _set_dest(isl.lon + 0.2, isl.lat); _refresh_side())
 	side.add_child(go)
+	var dst := _island_def(iid)
+	var sg = _siege_of(iid)
 	if not ours:
+		side.add_child(UI.wrap("%s. Guard force: %s. Airfield: %s." % [TIER_NAME[island_tier(iid)], _describe(dst.get("fleet", [])) if not dst.get("fleet", []).is_empty() else "none",
+			("%d planes" % int(dst.planes)) if dst.get("af", false) and Missions.has_airfield(iid) else ("wrecked" if Missions.has_airfield(iid) else "none")], 350, 12, Color(0.95, 0.6, 0.5)))
+	if sg != null:
+		var left: float = maxf(0.0, float(sg.ends) - C.day)
+		side.add_child(UI.wrap(("INVASION: the Japanese are landing. The garrison holds for about %.1f more days." if sg.side == "ijn" else "Our troops are ashore: the fight for the island lasts about %.1f more days.") % left, 350, 12, UI.BRASS))
+		side.add_child(UI.button("Balance of power: %s" % ("join the defence" if sg.side == "ijn" else "join the landing"), func(): _balance_card(iid, "defend" if sg.side == "ijn" else "support", sg)))
+	elif not ours:
 		var blocked := not own_guards.is_empty()
-		var txt := "Assault (land and raise the flag)" if d < ENGAGE_NM and not blocked else ("Assault (%.0f nm to go)" % (d - ENGAGE_NM) if d >= ENGAGE_NM else "Assault: drive off the guard first")
-		var b := UI.button(txt, func(): _assault(iid))
-		b.disabled = d >= ENGAGE_NM or blocked
+		var txt := "Assault: balance of power" if not blocked else "Assault: drive off the guard first"
+		var b := UI.button(txt, func(): _balance_card(iid, "assault"))
+		b.disabled = blocked and d < ENGAGE_NM
 		side.add_child(b)
-		side.add_child(UI.wrap("Taking an island: silence its coastal guns and burn the supply dump in a bombardment action; the landing force does the rest. The island then spots for us, its base is ours, and a key island brings the whole zone with it. Garrisons grow a battery a month.", 350, 11, UI.MUTED))
+		side.add_child(UI.wrap("Taking an island: sink its guard force, silence its coastal guns, burn the supply dump and wreck the airfield; the landing force does the rest. The island then gets a radar station (%d nm of warning), its base is ours, and a key island brings the whole zone with it. Take every island to win the war." % int(RADAR_NM), 350, 11, UI.MUTED))
+	elif dst.has("radar_t"):
+		side.add_child(UI.wrap("Radar station: %s." % ("operating, %d nm" % int(RADAR_NM) if C.day >= float(dst.radar_t) else "being set up"), 350, 12, Color(0.55, 0.85, 1.0)))
 
 
 func _gname(gid: String) -> String:
@@ -648,6 +774,8 @@ func _refit_menu() -> void:
 
 
 func _log(txt: String) -> void:
+	if _print_log:
+		print("[%s] %s" % [War.date_str(int(C.day)), txt])
 	var l := UI.label("%s  %s" % [War.date_str(int(C.day)), txt], 12)
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.custom_minimum_size.x = 540
@@ -685,6 +813,9 @@ func _process(delta: float) -> void:
 		_tick_hour()
 	if int(C.day) != day0:
 		_tick_day()
+		_reinforce_islands()
+		_jp_counterattack()
+		_radar_islands()
 	_check_operations()
 	_save_t += delta
 	if _save_t > 10.0:
@@ -802,6 +933,454 @@ func _advance(o: Dictionary, dest: Array, step: float) -> bool:
 	return false      # boxed in: wait
 
 
+# ---------------------------------------------------------------- the island campaign
+# Every island Japan holds has a defence: a guard fleet, coastal batteries and (where there is
+# one) an airfield with its planes. The further from Japan, the lighter it is held. Before any
+# island battle the balance-of-power card shows how the two sides stack up; the player always
+# fights it out (no auto-resolve). An attack on an island is a siege lasting days, so the player
+# has time to sail there and join in, on either side. Islands we take get radar stations; Japan
+# counterattacks when it has the ships. Take every island to win.
+
+const TOKYO := [139.7, 35.7]
+const FORTRESS := ["rabaul", "truk"]            # Japan's great bases: one tier harder
+const RADAR_NM := 300.0                        # what a radar station on a captured island sees
+const TIER_NAME := ["", "Outer island: lightly held", "Forward base: a cruiser and destroyers", "Fortified base: heavy cruisers", "Inner defence ring: battleships", "The last line before Japan"]
+const JP_CLASS_NAMES := {
+	"kagero": ["Kagero", "Shiranui", "Kuroshio", "Oyashio", "Hatsukaze", "Yukikaze", "Amatsukaze", "Tokitsukaze", "Urakaze", "Isokaze", "Hamakaze", "Tanikaze", "Nowaki", "Arashi", "Hagikaze", "Maikaze", "Akigumo"],
+	"fubuki": ["Fubuki", "Shirayuki", "Hatsuyuki", "Miyuki", "Murakumo", "Shinonome", "Usugumo", "Shirakumo", "Isonami", "Uranami", "Ayanami", "Shikinami", "Amagiri", "Sagiri", "Oboro", "Akebono", "Ushio", "Sazanami"],
+	"akizuki": ["Akizuki", "Teruzuki", "Suzutsuki", "Hatsuzuki", "Niizuki", "Wakatsuki", "Shimotsuki", "Fuyutsuki"],
+	"nagara": ["Nagara", "Isuzu", "Yura", "Natori", "Kinu", "Abukuma", "Sendai", "Jintsu", "Naka"],
+	"myoko": ["Myoko", "Nachi", "Haguro", "Ashigara"], "takao": ["Takao", "Atago", "Maya", "Chokai"],
+	"mogami": ["Mogami", "Mikuma", "Suzuya", "Kumano"], "tone": ["Tone", "Chikuma"],
+	"kongo": ["Kongo", "Haruna", "Kirishima", "Hiei"], "fuso": ["Fuso", "Yamashiro"], "ise": ["Ise", "Hyuga"],
+	"nagato": ["Nagato", "Mutsu"], "yamato": ["Yamato", "Musashi"],
+}
+
+
+## How hard an island is to take: 1 (the outer islands) to 5 (the last ring round Japan).
+static func island_tier(iid: String) -> int:
+	var isl: Dictionary = Geo.ISLANDS[iid]
+	var d := War.dist_nm(TOKYO[0], TOKYO[1], isl.lon, isl.lat)
+	var t := 1
+	if d < 2600.0: t = 2
+	if d < 2150.0: t = 3
+	if d < 1650.0: t = 4
+	if d < 1000.0: t = 5
+	if FORTRESS.has(iid):
+		t = mini(5, t + 1)
+	return t
+
+
+## What Japan keeps at an island of a tier: the guard fleet's classes, batteries and planes.
+func _jp_template(iid: String) -> Dictionary:
+	var tier := island_tier(iid)
+	var year := War.year_of(int(C.day))
+	var dd := "akizuki" if year >= 1943 else "kagero"
+	var fleet: Array = []
+	match tier:
+		1: fleet = ["kagero", "jp_mtb", "jp_mtb"]
+		2: fleet = ["nagara", "kagero", "fubuki"]
+		3: fleet = ["myoko", "nagara", "kagero", "fubuki", "kagero"]
+		4: fleet = ["kongo", "takao", "mogami", "nagara", dd, "kagero", "fubuki"]
+		_: fleet = ["yamato" if iid == "okinawa" else "nagato", "ise", "takao", "tone", "nagara", dd, "kagero", "kagero", "fubuki"]
+	var planes: int = [0, 9, 18, 24, 30, 36][tier]
+	return {"fleet": fleet, "batteries": mini(6, tier + 1), "planes": planes if Missions.has_airfield(iid) else 0}
+
+
+func _jp_ship(tid: String, used: Array) -> Array:
+	if tid == "jp_mtb":
+		var nm := "T-%d" % (1 + _rng.randi() % 60)
+		used.append(nm)
+		return [tid, nm]
+	var pool: Array = JP_CLASS_NAMES.get(tid, [Data.TYPES[tid].name])
+	var free: Array = pool.filter(func(x): return not used.has(x))
+	var name: String = free[_rng.randi() % free.size()] if not free.is_empty() else "%s %d" % [pool[0], used.size() + 2]
+	used.append(name)
+	return [tid, name]
+
+
+## The island's defence state (made on first use): fleet, planes, airfield intact.
+func _island_def(iid: String) -> Dictionary:
+	var st: Dictionary = C.islands[iid]
+	if st.side == "ijn" and not st.has("fleet"):
+		var tp := _jp_template(iid)
+		var used := []
+		var fl := []
+		for t in tp.fleet:
+			fl.append(_jp_ship(t, used))
+		st.fleet = fl
+		st.planes = tp.planes
+		st.af = Missions.has_airfield(iid)
+		st.garrison = maxi(int(st.garrison), int(tp.batteries) - 1)
+	elif st.side == "us" and not st.has("planes"):
+		st.fleet = []
+		st.planes = 12 if Missions.has_airfield(iid) else 0
+		st.af = Missions.has_airfield(iid)
+	return st
+
+
+## Strength points of what holds the island: its ships, guns and planes.
+func _def_strength(iid: String) -> float:
+	var st := _island_def(iid)
+	var pts: float = Missions.group_strength(st.get("fleet", [])) + 2.0 * int(st.garrison)
+	if st.get("af", false):
+		pts += float(st.get("planes", 0)) / 12.0 * 2.5
+	return pts
+
+
+## Our side: the player's ship, the squadron and the warships of the group we escort.
+func _our_force() -> Array:
+	var out: Array = [[C.ship, C.name]] + C.squadron.duplicate(true)
+	var ag = _group(C.attached)
+	if ag != null:
+		for sh in ag.ships:
+			if Data.TYPES[sh[0]].get("cls", "") != "merchant":
+				out.append(sh)
+	return out
+
+
+## Island fleets come back to strength slowly, planes are flown in, wrecked airfields repaired.
+func _reinforce_islands() -> void:
+	for iid in C.islands:
+		var st: Dictionary = C.islands[iid]
+		if not st.has("planes"):
+			continue
+		if not st.get("af", true) and Missions.has_airfield(iid) and C.day >= float(st.get("af_fix", 0.0)):
+			st.af = true
+			st.planes = maxi(int(st.planes), 6)
+			if st.side == "us":
+				_log("The airfield on %s is back in action." % Geo.ISLANDS[iid].name)
+		var cap: int = int(_jp_template(iid).planes) if st.side == "ijn" else (24 if Missions.has_airfield(iid) else 0)
+		if st.get("af", false) and int(st.planes) < cap and C.day - float(st.get("plane_t", 0.0)) > 6.0:
+			st.planes = mini(cap, int(st.planes) + 6)
+			st.plane_t = C.day
+		if st.side == "ijn" and C.day - float(st.get("ref_t", C.day)) > 20.0:
+			st.ref_t = C.day
+			var want: Array = _jp_template(iid).fleet
+			var have: Array = st.fleet.map(func(sh): return sh[0])
+			for t in want:
+				if have.has(t):
+					have.erase(t)
+				else:
+					var used: Array = st.fleet.map(func(sh): return sh[1])
+					st.fleet.append(_jp_ship(t, used))
+					break
+		if not st.has("ref_t"):
+			st.ref_t = C.day
+
+
+# ---------------------------------------------------------------- the balance of power card
+
+func _verdict(us: float, them: float) -> Array:
+	var r := us / maxf(0.5, them)
+	if r >= 2.0: return ["Overwhelming advantage", Color(0.45, 0.85, 0.55)]
+	if r >= 1.3: return ["The advantage is ours", Color(0.6, 0.85, 0.55)]
+	if r >= 0.8: return ["Evenly matched", UI.BRASS]
+	if r >= 0.5: return ["Outnumbered", Color(0.95, 0.6, 0.35)]
+	return ["Hopeless odds", Color(0.95, 0.4, 0.35)]
+
+
+func _side_lines(ships: Array, batteries: int, af: bool, planes: int, iid: String, ijn: bool) -> String:
+	var lines := []
+	lines.append("Ships: %s" % (_describe(ships) if not ships.is_empty() else "none"))
+	var cv_air := 0
+	for sh in ships:
+		var T: Dictionary = Data.TYPES[sh[0]]
+		if T.has("aircraft") and not T.get("ground", false):
+			cv_air += int(T.aircraft)
+	if cv_air > 0:
+		lines.append("Carrier aircraft: about %d" % cv_air)
+	if batteries > 0:
+		lines.append("Coastal batteries: %d (%s guns in concrete)" % [batteries, "14 cm" if ijn else "5-inch and 6-inch"])
+	if Missions.has_airfield(iid) and iid != "":
+		if af and planes > 0:
+			lines.append("%s: %d aircraft (%s)" % [Missions.airfield_name(iid), planes, "Zeros, Vals and Kates" if ijn else "Wildcats, Dauntlesses and Avengers"])
+		elif not af:
+			lines.append("%s: wrecked, under repair" % Missions.airfield_name(iid))
+	return "\n".join(lines)
+
+
+## The card before an island battle. mode "assault" (we attack), "support" (help our landing
+## force at a siege), "defend" (the Japanese are landing on our island).
+func _balance_card(iid: String, mode: String, sg = null) -> void:
+	if card != null and is_instance_valid(card):
+		_close_card()
+	speed_i = 0
+	_refresh_top()
+	var isl: Dictionary = Geo.ISLANDS[iid]
+	var st := _island_def(iid)
+	var d := War.dist_nm(C.lon, C.lat, isl.lon, isl.lat)
+	var ours: Array = _our_force()
+	var their_ships: Array = []
+	var us_txt := ""
+	var them_txt := ""
+	var us_pts := 0.0
+	var them_pts := 0.0
+	var ag = _group(sg.gid) if sg != null else null
+	if mode == "defend":
+		their_ships = ag.ships if ag != null else []
+		var guards := _guards_near(iid, "us")
+		for gg in guards:
+			for sh in gg.ships:
+				if Data.TYPES[sh[0]].get("cls", "") != "merchant":
+					ours.append(sh)
+		us_pts = Missions.group_strength(ours) + _def_strength(iid)
+		them_pts = Missions.group_strength(their_ships)
+		us_txt = _side_lines(ours, int(st.garrison), st.get("af", false), int(st.get("planes", 0)), iid, false)
+		them_txt = _side_lines(their_ships, 0, false, 0, "", true) + "\nTroop transports behind them"
+	else:
+		if mode == "support" and ag != null:
+			for sh in ag.ships:
+				if Data.TYPES[sh[0]].get("cls", "") != "merchant":
+					ours.append(sh)
+		their_ships = st.get("fleet", [])
+		us_pts = Missions.group_strength(ours)
+		them_pts = _def_strength(iid)
+		us_txt = _side_lines(ours, 0, false, 0, "", false)
+		them_txt = _side_lines(their_ships, int(st.garrison), st.get("af", false), int(st.get("planes", 0)), iid, true)
+	card = Control.new()
+	card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	card.add_child(UI.backdrop(0.5))
+	var p := UI.panel(24)
+	p.custom_minimum_size.x = 720
+	var psb: StyleBoxFlat = p.get_theme_stylebox("panel").duplicate()
+	psb.bg_color = Color(0.035, 0.07, 0.10, 0.97)       # solid: the map must not show through the figures
+	psb.border_color = UI.BRASS
+	p.add_theme_stylebox_override("panel", psb)
+	var v := UI.column(10)
+	var kick: String = {"assault": "BALANCE OF POWER · ASSAULT", "support": "BALANCE OF POWER · LANDING IN PROGRESS", "defend": "BALANCE OF POWER · INVASION"}[mode]
+	v.add_child(UI.label("%s · %s" % [kick, War.date_str(int(C.day))], 11, UI.BRASS))
+	v.add_child(UI.label(isl.name, 28))
+	var sub: String = TIER_NAME[island_tier(iid)] if mode != "defend" else "Held by us"
+	if sg != null:
+		sub += " · %s, %.1f days left" % ["the garrison holds" if mode == "defend" else "our troops are ashore", maxf(0.0, float(sg.ends) - C.day)]
+	v.add_child(UI.label(sub, 13, UI.MUTED))
+	# the two sides, side by side
+	var cols := UI.row([], 24)
+	var left := UI.column(4)
+	left.add_child(UI.label("YOUR FORCE", 12, Color(0.55, 0.85, 1.0)))
+	left.add_child(UI.wrap(us_txt, 330, 13))
+	var right := UI.column(4)
+	right.add_child(UI.label("THE ENEMY", 12, Color(0.95, 0.45, 0.35)))
+	right.add_child(UI.wrap(them_txt, 330, 13))
+	cols.add_child(left)
+	cols.add_child(right)
+	v.add_child(cols)
+	# the strength bar
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 0)
+	var tot := maxf(0.5, us_pts + them_pts)
+	var w_us := clampf(us_pts / tot, 0.04, 0.96) * 672.0
+	var b1 := ColorRect.new(); b1.color = Color(0.35, 0.65, 0.95); b1.custom_minimum_size = Vector2(w_us, 16)
+	var b2 := ColorRect.new(); b2.color = Color(0.85, 0.32, 0.27); b2.custom_minimum_size = Vector2(672.0 - w_us, 16)
+	bar.add_child(b1); bar.add_child(b2)
+	v.add_child(bar)
+	var vd := _verdict(us_pts, them_pts)
+	v.add_child(UI.row([UI.label("Strength %.0f" % us_pts, 12, Color(0.55, 0.85, 1.0)), UI.label(vd[0], 18, vd[1]), UI.label("Strength %.0f" % them_pts, 12, Color(0.95, 0.45, 0.35))], 150))
+	var how := ""
+	match mode:
+		"assault", "support":
+			how = "To take the island: sink or drive off the guard force, silence every battery, burn the supply dump and wreck the airfield. While the airfield stands its planes keep taking off against you: gunfire or dive bombers will finish it."
+		"defend":
+			how = "Sink the transports and beat off the warships. If you stay away, the garrison fights on alone until the siege ends, and may fall."
+	v.add_child(UI.wrap(how + " There is no auto-resolve: you fight this battle yourself.", 672, 12, UI.MUTED))
+	var row := UI.row([])
+	var near := d < ENGAGE_NM
+	var blocked := mode == "assault" and not _guards_near(iid, "ijn").is_empty()
+	if near and not blocked:
+		var label: String = {"assault": "Attack", "support": "Join the landing", "defend": "Join the defence"}[mode]
+		row.add_child(UI.big_button(label, func():
+			_close_card()
+			if mode == "defend":
+				_defend_island(sg)
+			else:
+				_assault(iid, sg)))
+	elif blocked and near:
+		row.add_child(UI.wrap("An enemy guard group is near the island: drive it off first.", 360, 12, UI.BRASS))
+	else:
+		row.add_child(UI.big_button("Set course (%.0f nm)" % d, func():
+			_close_card()
+			C.attached = ""; C.intercept = ""
+			_set_dest(isl.lon + 0.2, isl.lat)
+			_refresh_side()))
+	row.add_child(UI.big_button("Not yet", _close_card))
+	v.add_child(row)
+	p.add_child(v)
+	card.add_child(p)
+	UI.center(p)
+	add_child(card)
+
+
+# ---------------------------------------------------------------- sieges
+
+func _siege_of(iid: String):
+	for sg in C.sieges:
+		if sg.iid == iid:
+			return sg
+	return null
+
+
+## A landing force has reached its island: the fighting ashore goes on for days.
+func _start_siege(iid: String, g: Dictionary) -> void:
+	var isl: Dictionary = Geo.ISLANDS[iid]
+	var dur := _rng.randf_range(4.0, 6.0) if g.side == "ijn" else _rng.randf_range(3.0, 5.0)
+	var sg := {"id": "s%d" % int(C.next_id), "iid": iid, "gid": g.id, "side": g.side, "start": C.day, "ends": C.day + dur}
+	C.next_id = int(C.next_id) + 1
+	C.sieges.append(sg)
+	g.state = "siege"
+	g.siege = sg.id
+	g.dest = null
+	g.seen = C.day; g.seen_lon = g.lon; g.seen_lat = g.lat      # an invasion is no secret
+	_island_def(iid)
+	Audio.ui("radio", 0.8, "Radio")
+	if g.side == "ijn":
+		_log("INVASION: a Japanese landing force (%s) is off %s. The garrison can hold for about %d days." % [_describe(g.ships), isl.name, int(dur)])
+		_balance_card(iid, "defend", sg)
+	else:
+		_log("%s has put troops ashore on %s. The fighting will last about %d days: join it to make sure." % [g.name, isl.name, int(dur)])
+
+
+## Sieges nobody joined are decided when their time is up: weight of metal, with luck.
+func _resolve_sieges() -> void:
+	var keep := []
+	for sg in C.sieges:
+		var iid: String = sg.iid
+		var g = _group(sg.gid)
+		if g == null or g.ships.is_empty() or _island_side(iid) == sg.side:
+			if g != null:
+				g.state = "sail"; g.erase("siege")
+			continue
+		if C.day < float(sg.ends):
+			keep.append(sg)
+			continue
+		var isl: Dictionary = Geo.ISLANDS[iid]
+		var st := _island_def(iid)
+		var holder: String = st.side
+		var A: float = Missions.group_strength(g.ships) * _rng.randf_range(0.75, 1.3)
+		var D: float = _def_strength(iid)
+		for gg in _guards_near(iid, holder):
+			D += Missions.group_strength(gg.ships)
+		D *= _rng.randf_range(0.75, 1.3)
+		var lost_att := _losses(g, D / maxf(0.5, A + D))
+		var tmp := {"ships": st.get("fleet", [])}
+		var lost_def := _losses(tmp, A / maxf(0.5, A + D))
+		st.fleet = tmp.ships
+		st.garrison = maxi(1, int(st.garrison) - int(round(2.0 * A / maxf(0.5, A + D))))
+		g.state = "sail"
+		g.erase("siege"); g.erase("assault")
+		# a landing against a dug-in garrison needs clear superiority
+		if A > D * 1.25 and not g.ships.is_empty():
+			_capture(iid, sg.side, g.name if sg.side == "us" else "A Japanese landing force")
+		else:
+			_log("The %s landing on %s has been thrown back.%s" % ["Japanese" if sg.side == "ijn" else "American", isl.name, (" Ships lost: %s." % ", ".join(lost_att)) if not lost_att.is_empty() else ""])
+		if not lost_def.is_empty():
+			_log("Lost in the fighting off %s: %s." % [isl.name, ", ".join(lost_def)])
+		var hb: Dictionary = War.BASES.get(g.get("home", ""), {})
+		if not hb.is_empty():
+			g.dest = [hb.lon, hb.lat]; g.leg = 1
+	C.sieges = keep
+	C.groups = C.groups.filter(func(gg): return not gg.ships.is_empty())
+
+
+## Join the defence of an island we hold against a landing.
+func _defend_island(sg: Dictionary) -> void:
+	var iid: String = sg.iid
+	var g = _group(sg.gid)
+	if g == null:
+		return
+	var isl: Dictionary = Geo.ISLANDS[iid]
+	var st := _island_def(iid)
+	var friends: Array = C.squadron.duplicate(true)
+	var ag = _group(C.attached)
+	if ag != null:
+		for sh in ag.ships:
+			if Data.TYPES[sh[0]].get("cls", "") != "merchant":
+				friends.append(sh)
+	for gg in _guards_near(iid, "us"):
+		if gg.id != C.attached:
+			for sh in gg.ships:
+				if Data.TYPES[sh[0]].get("cls", "") != "merchant" and friends.size() < 10:
+					friends.append(sh)
+	var planes: int = int(st.get("planes", 0)) if st.get("af", false) else 0
+	var plan := Missions.island_defence(_rng, isl, g.ships, int(st.garrison), planes, friends, C.ship, C.name, _weather_now())
+	_launch(plan, "defend", iid, g.id, ag.id if ag != null else "", {"siege": sg.id})
+
+
+# ---------------------------------------------------------------- Japanese counterattacks
+
+## Now and then Japan gathers a force to retake an island we hold: the nearest one it can beat.
+func _jp_counterattack() -> void:
+	if C.get("war_over", false) or C.day < float(C.get("jp_counter_t", 0.0)):
+		return
+	C.jp_counter_t = C.day + _rng.randf_range(18.0, 30.0)
+	for g in C.groups:
+		if g.side == "ijn" and g.has("assault"):
+			return               # one at a time
+	var year := War.year_of(int(C.day))
+	var best := ""
+	var best_d := 1e9
+	var best_base := ""
+	for iid in C.islands:
+		var st: Dictionary = C.islands[iid]
+		# Japan goes for the islands we took from it, not America's own bases
+		if st.side != "us" or not st.get("won_t", -1.0) >= 0.0 or _siege_of(iid) != null:
+			continue
+		var isl: Dictionary = Geo.ISLANDS[iid]
+		var home := _base_weighted("ijn", isl.lon, isl.lat)
+		if home == "":
+			continue
+		var d := War.dist_nm(War.BASES[home].lon, War.BASES[home].lat, isl.lon, isl.lat)
+		if d < 1600.0 and d < best_d:
+			best_d = d; best = iid; best_base = home
+	if best == "":
+		return
+	var need := _def_strength(best) * 1.3
+	var isl2: Dictionary = Geo.ISLANDS[best]
+	var g := {}
+	for k in 4:
+		var tf := _make_group("ijn", best_base, [isl2.lon, isl2.lat], false, year, "taskforce")
+		if tf.is_empty():
+			return
+		g = tf
+		if Missions.group_strength(tf.ships) >= need:
+			break
+	# Japan is running out of ships late in the war: no force strong enough, no counterattack
+	if g.is_empty() or Missions.group_strength(g.ships) < need * (0.8 if year <= 1943 else 1.0):
+		return
+	g.assault = best
+	g.name = "%s Invasion Force" % String(isl2.name).get_slice(" (", 0).get_slice(" and ", 0)
+	C.groups.append(g)
+	_log("Radio intelligence: a Japanese invasion force (%s) has sailed from %s. Its target may be %s." % [_describe(g.ships), best_base, isl2.name])
+	Audio.ui("radio", 0.6, "Radio")
+
+
+# ---------------------------------------------------------------- radar and victory
+
+## Radar stations on the islands we have taken: they see surface ships out to RADAR_NM, day and night.
+func _radar_islands() -> Array:
+	var out := []
+	for iid in C.islands:
+		var st: Dictionary = C.islands[iid]
+		if st.side == "us" and st.has("radar_t") and C.day >= float(st.radar_t):
+			out.append(iid)
+			if not st.get("radar_on", false):
+				st.radar_on = true
+				_log("The radar station on %s is operating: %d nm of warning." % [Geo.ISLANDS[iid].name, int(RADAR_NM)])
+	return out
+
+
+func _check_victory() -> void:
+	if C.get("victory", false):
+		return
+	for iid in C.islands:
+		if C.islands[iid].side != "us":
+			return
+	C.victory = true
+	C.war_over = true
+	_show_card("VICTORY · %s" % War.date_str(int(C.day)), "The Pacific is ours",
+		"Every island from Midway to Okinawa flies the Stars and Stripes. The Japanese fleet has been driven back to its home waters and the way to Japan lies open.\n\n%s led the way: %d battles won, %d enemy ships sunk. The war is won." % [C.name, int(C.get("won", 0)), int(C.get("sunk_total", 0))], "Carry on")
+
+
 # ---------------------------------------------------------------- islands and captures
 
 func _island_side(iid: String) -> String:
@@ -828,14 +1407,31 @@ func _capture(iid: String, side: String, who: String) -> void:
 	st.capt = true
 	st.garrison = 1
 	st.grow = C.day
+	for k in ["fleet", "planes", "af", "af_fix", "ref_t", "plane_t", "radar_t", "radar_on"]:
+		st.erase(k)
+	_island_def(iid)
+	if side == "us":
+		# the Marines dig in at once and the Seabees have the strip working in days
+		st.won_t = C.day
+		st.garrison = 2
+		st.radar_t = C.day + 2.0
+		st.planes = 12 if Missions.has_airfield(iid) else 0
+	else:
+		# a force that has just landed has not brought the whole garrison: half the guard fleet
+		st.fleet = st.fleet.slice(0, maxi(1, int(st.fleet.size() / 2)))
+		st.planes = int(int(st.planes) / 2)
+	var sgc = _siege_of(iid)
+	if sgc != null:
+		C.sieges.erase(sgc)
 	if isl.base != "":
 		C.base_owner[isl.base] = side
 	if isl.key:
 		C.zone_owner[isl.zone] = side
-	_log("%s %s %s%s." % [who, "took" if side == "us" else "took", isl.name, (" and with it %s" % War.ZONES[isl.zone].name) if isl.key else ""])
+	_log("%s took %s%s." % [who, isl.name, (" and with it %s" % War.ZONES[isl.zone].name) if isl.key and War.ZONES[isl.zone].name != isl.name else ""])
 	Audio.ui("radio", 0.7, "Radio")
 	if side == "us":
 		C.shift += 6.0 if isl.key else 2.0
+		_check_victory()
 	else:
 		C.shift -= 6.0 if isl.key else 2.0
 	# guards with nothing left to guard go home
@@ -852,7 +1448,7 @@ func _capture(iid: String, side: String, who: String) -> void:
 func _grow_garrisons() -> void:
 	for iid in C.islands:
 		var st: Dictionary = C.islands[iid]
-		var mx: int = Geo.ISLANDS[iid].garrison
+		var mx: int = maxi(int(Geo.ISLANDS[iid].garrison), mini(6, island_tier(iid) + 1)) if st.side == "ijn" else mini(4, 1 + int(island_tier(iid) / 2))
 		if st.garrison < mx and C.day - float(st.get("grow", C.day)) > 30.0:
 			st.garrison += 1
 			st.grow = C.day
@@ -881,8 +1477,8 @@ func _ai_captures() -> void:
 	for g in C.groups:
 		if g.state != "sail" or not (g.kind in ["taskforce", "carriers", "patrol"]):
 			continue
-		if g.has("assault"):
-			continue
+		if g.has("assault") or g.side == "ijn":
+			continue          # Japan's landings are its counterattacks (_jp_counterattack)
 		if Missions.group_strength(g.ships) < 8.0 or _rng.randf() > 0.08:
 			continue
 		var best := ""
@@ -891,8 +1487,7 @@ func _ai_captures() -> void:
 			var isl: Dictionary = Geo.ISLANDS[iid]
 			if _island_side(iid) == g.side or not fronts.has(isl.zone):
 				continue
-			var st: Dictionary = C.islands[iid]
-			if int(st.garrison) > 2 and Missions.group_strength(g.ships) < 12.0:
+			if Missions.group_strength(g.ships) < _def_strength(iid) * 1.3 or _siege_of(iid) != null:
 				continue
 			if not _guards_near(iid, "us" if g.side == "ijn" else "ijn").is_empty():
 				continue
@@ -916,25 +1511,8 @@ func _assault_arrived(g: Dictionary) -> bool:
 	if _island_side(iid) == g.side:
 		g.erase("assault")
 		return false
-	var enemy := "us" if g.side == "ijn" else "ijn"
-	if not _guards_near(iid, enemy).is_empty() or (enemy == "us" and War.dist_nm(C.lon, C.lat, isl.lon, isl.lat) < 30.0):
-		# opposed: stand off and wait for the guards to be dealt with (or fight them)
-		g.dest = [isl.lon + 0.3, isl.lat]
-		return true
-	if not g.has("assault_t"):
-		g.assault_t = C.day + 1.0
-		if g.side == "ijn":
-			_log("Radio: enemy landing force reported off %s." % isl.name)
-		g.dest = [isl.lon + 0.2, isl.lat + 0.1]
-		return true
-	if C.day >= g.assault_t:
-		_capture(iid, g.side, g.name if g.side == "us" else "A Japanese landing force")
-		g.erase("assault"); g.erase("assault_t")
-		g.dest = g.get("orig_dest", null)
-		g.erase("orig_dest")
-		if g.dest == null:
-			g.arrived = true
-		return false
+	if _siege_of(iid) == null:
+		_start_siege(iid, g)
 	return true
 
 
@@ -993,9 +1571,11 @@ func _tick_hour() -> void:
 	_hunt()
 	_meet()
 	_resolve_fights()
+	_resolve_sieges()
 	if int(C.day * 24.0) % 6 == 0:
 		_ai_captures()
 		_history_captures()
+
 	_grow_garrisons()
 	_spawn_guards()
 
@@ -1395,6 +1975,11 @@ func _detect() -> void:
 		if not found:
 			for u in C.groups:
 				if u.side == "us" and War.dist_nm(u.lon, u.lat, g.lon, g.lat) < (90.0 if not sub else 25.0):
+					found = true
+					break
+		if not found and not sub:
+			for iid in _radar_islands():
+				if War.dist_nm(Geo.ISLANDS[iid].lon, Geo.ISLANDS[iid].lat, g.lon, g.lat) < RADAR_NM:
 					found = true
 					break
 		if not found and day and not sub:
@@ -1816,17 +2401,27 @@ func _engage(g: Dictionary) -> void:
 
 
 ## Assault an enemy-held island: a bombardment action against its batteries.
-func _assault(iid: String) -> void:
+func _assault(iid: String, sg = null) -> void:
 	var isl: Dictionary = Geo.ISLANDS[iid]
-	var st: Dictionary = C.islands[iid]
+	var st := _island_def(iid)
 	var friends: Array = C.squadron.duplicate(true)
 	var ag = _group(C.attached)
 	if ag != null:
 		for sh in ag.ships:
 			if Data.TYPES[sh[0]].get("cls", "") != "merchant":
 				friends.append(sh)
-	var plan := Missions.island_assault(_rng, isl, int(st.garrison), friends, C.ship, C.name, "clear" if _rng.randf() < 0.7 else "overcast", st.side)
-	_launch(plan, "assault", iid, "", ag.id if ag != null else "")
+	var sgid := ""
+	if sg != null:
+		# our landing force already at the island fights alongside
+		var lg = _group(sg.gid)
+		if lg != null and lg != ag:
+			for sh in lg.ships:
+				if Data.TYPES[sh[0]].get("cls", "") != "merchant" and friends.size() < 12:
+					friends.append(sh)
+		sgid = sg.id
+	var defence := {"fleet": st.get("fleet", []), "af": st.get("af", false), "planes": int(st.get("planes", 0))}
+	var plan := Missions.island_assault(_rng, isl, int(st.garrison), friends, C.ship, C.name, "clear" if _rng.randf() < 0.7 else "overcast", st.side, defence)
+	_launch(plan, "assault", iid, "", ag.id if ag != null else "", {"siege": sgid, "siege_gid": sg.gid if sg != null else ""})
 
 
 ## Join a battle between a friendly group and an enemy group.
@@ -1849,7 +2444,7 @@ func _join_fight(f: Dictionary) -> void:
 	_launch(plan, "fight", f.id, gj.id, gu.id)
 
 
-func _launch(plan: Dictionary, kind: String, ref: String, enemy_gid: String, friend_gid: String) -> void:
+func _launch(plan: Dictionary, kind: String, ref: String, enemy_gid: String, friend_gid: String, extra := {}) -> void:
 	var zone := ""
 	var bd := 1e9
 	for zid in War.ZONES:
@@ -1858,6 +2453,7 @@ func _launch(plan: Dictionary, kind: String, ref: String, enemy_gid: String, fri
 		if d < bd:
 			bd = d; zone = zid
 	Game.mission = {"plan": plan, "weather": plan.weather, "kind": kind, "ref": ref, "zone": zone, "day": C.day, "enemy_gid": enemy_gid, "friend_gid": friend_gid}
+	Game.mission.merge(extra)
 	Game.career.year = War.year_of(int(C.day))
 	Game.pending_load = -1
 	_save()
@@ -1910,13 +2506,59 @@ func _apply_result() -> void:
 			_group(m.friend_gid).state = "sail"
 	if m.get("kind", "") == "assault" and Geo.ISLANDS.has(m.get("ref", "")):
 		var iid: String = m.ref
+		var st := _island_def(iid)
+		var land: Array = r.get("land", [])
+		# the defences lose what was destroyed, whether or not the island falls
+		var g_n: int = int(st.garrison)
+		st.fleet = st.get("fleet", []).filter(func(sh): return not sunk.has(sh[1]))
+		var bat_lost := land.filter(func(n): return String(n).begins_with("Battery")).size()
+		st.garrison = maxi(1, int(st.garrison) - bat_lost)
+		if land.has(Missions.airfield_name(iid)):
+			st.af = false
+			st.af_fix = C.day + 12.0
+			st.planes = 0
+		var lg = _group(m.get("siege_gid", ""))
+		if lg != null:
+			lg.ships = lg.ships.filter(func(sh): return not lost_friends.has(sh[1]))
+		var tier := island_tier(iid)
 		if r.get("over", "") == "won":
-			var g_n: int = int(C.islands[iid].garrison)
 			_capture(iid, "us", "Our landing force")
-			Game.career.reputation += 60 * g_n + (120 if Geo.ISLANDS[iid].key else 0)
-			_log("Reputation +%d for %s." % [60 * g_n + (120 if Geo.ISLANDS[iid].key else 0), Geo.ISLANDS[iid].name])
+			var rep: int = 60 * g_n + 80 * tier + (120 if Geo.ISLANDS[iid].key else 0)
+			Game.career.reputation += rep
+			_log("Reputation +%d for %s." % [rep, Geo.ISLANDS[iid].name])
+			if lg != null:
+				lg.state = "sail"; lg.erase("siege"); lg.erase("assault")
 		else:
-			_log("The assault on %s failed; the batteries still hold the beach." % Geo.ISLANDS[iid].name)
+			var left := []
+			if not st.fleet.is_empty():
+				left.append("%d warships" % st.fleet.size())
+			left.append("%d batter%s" % [int(st.garrison), "y" if int(st.garrison) == 1 else "ies"])
+			if st.get("af", false) and Missions.has_airfield(iid):
+				left.append("the airfield")
+			_log("The assault on %s failed. Still holding out: %s." % [Geo.ISLANDS[iid].name, ", ".join(left)])
+			if lg != null and _siege_of(iid) != null:
+				lg.state = "siege"
+	if m.get("kind", "") == "defend" and Geo.ISLANDS.has(m.get("ref", "")):
+		var iid2: String = m.ref
+		var st2 := _island_def(iid2)
+		var lost_land: Array = r.get("lost_land", [])
+		st2.garrison = maxi(1, int(st2.garrison) - lost_land.filter(func(n): return String(n).begins_with("Battery")).size())
+		if lost_land.has(Missions.airfield_name(iid2)):
+			st2.af = false
+			st2.af_fix = C.day + 10.0
+			st2.planes = 0
+		var sg2 = _siege_of(iid2)
+		var ig = _group(m.get("enemy_gid", ""))
+		if r.get("over", "") == "won":
+			if sg2 != null:
+				C.sieges.erase(sg2)
+			if ig != null:
+				C.groups.erase(ig)
+			Game.career.reputation += 100 + 60 * island_tier(iid2)
+			_log("The invasion of %s has been beaten off. The island is still ours. Reputation +%d." % [Geo.ISLANDS[iid2].name, 100 + 60 * island_tier(iid2)])
+		elif ig != null and sg2 != null:
+			ig.state = "siege"
+			_log("The Japanese are still landing on %s; the garrison fights on." % Geo.ISLANDS[iid2].name)
 	selected = ""
 	C.sunk_total += sunk.size()
 	match r.get("over", ""):
@@ -2154,6 +2796,26 @@ func _draw_map() -> void:
 		map.draw_rect(Rect2(p - Vector2(4, 4), Vector2(8, 8)), col)
 		if zoom > 7.0 and not named.has(nm):
 			map.draw_string(font, p + Vector2(7, 4), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(col, 0.9))
+	# radar stations on the islands we have taken: a faint ring of what they watch
+	for iid in C.islands:
+		var rst: Dictionary = C.islands[iid]
+		if rst.side == "us" and rst.get("radar_on", false):
+			var rp := _to_px(Geo.ISLANDS[iid].lon, Geo.ISLANDS[iid].lat)
+			var rr: float = RADAR_NM / 60.0 * zoom
+			map.draw_circle(rp, rr, Color(0.45, 0.9, 0.85, 0.035))
+			map.draw_arc(rp, rr, 0, TAU, 64, Color(0.45, 0.9, 0.85, 0.35), 1.2)
+			# the sweep
+			var sw := fposmod(Time.get_ticks_msec() / 1400.0 + iid.hash() % 7, TAU)
+			map.draw_line(rp, rp + Vector2(sin(sw), -cos(sw)) * rr, Color(0.45, 0.9, 0.85, 0.25), 1.0)
+	# islands under attack: a pulsing ring and the days the garrison has left
+	for sg in C.sieges:
+		var ip := _to_px(Geo.ISLANDS[sg.iid].lon, Geo.ISLANDS[sg.iid].lat)
+		var pulse := 16.0 + 5.0 * sin(Time.get_ticks_msec() / 220.0)
+		var scol := Color(1.0, 0.45, 0.3) if sg.side == "ijn" else Color(1.0, 0.8, 0.35)
+		map.draw_arc(ip, pulse, 0, TAU, 32, Color(scol, 0.85), 2.0)
+		map.draw_arc(ip, pulse + 6.0, 0, TAU, 32, Color(scol, 0.35), 1.0)
+		var lt := "INVASION · %.1f days" % maxf(0.0, float(sg.ends) - C.day) if sg.side == "ijn" else "LANDING · %.1f days" % maxf(0.0, float(sg.ends) - C.day)
+		map.draw_string(font, ip + Vector2(14, 18), lt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, scol)
 	# the player's detection circle
 	var pp := _to_px(C.lon, C.lat)
 	map.draw_arc(pp, _detect_range() / 60.0 * zoom, 0, TAU, 48, Color(0.55, 0.85, 1.0, 0.18), 1.0)

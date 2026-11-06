@@ -186,9 +186,13 @@ static func build(B, plan: Dictionary, choice: String) -> void:
 	if plan.has("islands"):
 		B.terrain.setup(plan.islands)
 	for sd in plan.get("shore", []):
-		var s: Ship = B._add_ship(sd[0], "ijn", sd[1], sd[2], sd[3], 0.0, 0.0)
-		s.objective = true
+		var ex: Dictionary = sd[4] if sd.size() > 4 else {}
+		var team: String = ex.get("team", "ijn")
+		var s: Ship = B._add_ship(sd[0], team, sd[1], sd[2], sd[3], float(ex.get("h", 0.0)), 0.0)
+		s.objective = team != "us"
 		s.tele = 1
+		if ex.has("aircraft"):
+			s.set_meta("aircraft", int(ex.aircraft))
 	for rd in plan.get("rafts", []):
 		var r: Ship = B._add_ship(rd[0], "us", rd[1], rd[2], rd[3], 0.0, 0.0)
 		r.objective = true
@@ -206,7 +210,8 @@ static func build(B, plan: Dictionary, choice: String) -> void:
 		for sh in e.ships:
 			enemy_types.append(sh[0])
 	for sd in plan.get("shore", []):
-		enemy_types.append(sd[0])
+		if sd.size() <= 4 or sd[4].get("team", "ijn") != "us":
+			enemy_types.append(sd[0])
 	var th := threat(enemy_types, B.weather)
 	var args := [U.deg3(rp.brg), U.yards(rp.dist), B.player.ship_name]
 	if plan.id == "escort":
@@ -484,16 +489,45 @@ static func _enemy_text(kind: String) -> String:
 	return "a Japanese surface force. Fleet command wants it brought to action."
 
 
+## Wartime names of the island airfields (or "<island> airfield").
+const AIRFIELD_NAMES := {"tulagi": "Henderson Field", "midway": "Eastern Island airfield", "saipan": "Aslito airfield", "guam": "Orote airfield",
+	"iwo": "Motoyama No. 1 airfield", "okinawa": "Yontan airfield", "tarawa": "Betio airstrip", "rabaul": "Lakunai airfield", "palau": "Peleliu airfield",
+	"kwajalein": "Roi airfield", "wake": "Wake airfield", "munda": "Munda Point airfield", "bougainville": "Torokina airfield", "milne": "Gurney Field",
+	"manus": "Momote airfield", "leyte": "Tacloban airfield", "eniwetok": "Engebi airfield", "truk": "Moen airfield", "espiritu": "Bomber One",
+	"noumea": "Tontouta airfield", "majuro": "Majuro airfield", "makin": "Makin airstrip", "ulithi": "Falalop airstrip"}
+
+static func airfield_name(id: String) -> String:
+	if AIRFIELD_NAMES.has(id):
+		return AIRFIELD_NAMES[id]
+	return "%s airfield" % String(IslandMaps.MAPS.get(id, {}).get("name", id)).get_slice(" (", 0)
+
+
+static func has_airfield(id: String) -> bool:
+	return IslandMaps.MAPS.has(id) and not IslandMaps.MAPS[id].get("fields", []).is_empty()
+
+
+## The island's airfield as a shore target [type, name, x, z, {h, aircraft, team}], or [] if none.
+static func _airfield_entry(f: Dictionary, id: String, planes: int, team: String) -> Array:
+	if not has_airfield(id):
+		return []
+	var fd: Array = f.meta.fields[0]
+	var aw := at(f, fd)
+	return ["airfield", airfield_name(id), aw.x, aw.y, {"h": deg_to_rad(float(fd[2])), "aircraft": planes, "team": team}]
+
+
+static func _map_id(isl: Dictionary) -> String:
+	for k in Geo.ISLANDS:
+		if Geo.ISLANDS[k] == isl:
+			return k if IslandMaps.MAPS.has(k) else "saipan"
+	return "saipan"
+
+
 ## Assault on a held island (operations map): silence its coastal batteries and the supply
 ## dump to raise the flag. `isl` is a Geo.ISLANDS entry, `garrison` the number of batteries,
 ## `friends` the ships in company, `boats` any small craft the defenders have in the lagoon.
-static func island_assault(rng: RandomNumberGenerator, isl: Dictionary, garrison: int, friends: Array, player_type: String, player_name: String, weather: String, enemy_side: String) -> Dictionary:
-	var id: String = ""
-	for k in Geo.ISLANDS:
-		if Geo.ISLANDS[k] == isl:
-			id = k
-	if not IslandMaps.MAPS.has(id):
-		id = "saipan"
+## `defence` (from the operations map): {fleet: [[type, name]], af: airfield intact, planes: its aircraft}.
+static func island_assault(rng: RandomNumberGenerator, isl: Dictionary, garrison: int, friends: Array, player_type: String, player_name: String, weather: String, enemy_side: String, defence := {}) -> Dictionary:
+	var id: String = _map_id(isl)
 	var f := island_frame(id)
 	var m: Dictionary = f.meta
 	# batteries on the shore facing the sea the player comes from, the dump behind the beach
@@ -504,6 +538,12 @@ static func island_assault(rng: RandomNumberGenerator, isl: Dictionary, garrison
 		shore.append(["shore_battery", "Battery %s" % char(65 + i), w.x, w.y])
 	var dw := at(f, m.dump)
 	shore.append(["supply_dump", "Supply dump", dw.x, dw.y])
+	# the airfield is a target of its own: while it stands, its planes take off against us
+	if defence.get("af", false):
+		var ae := _airfield_entry(f, id, int(defence.get("planes", 0)), enemy_side)
+		if not ae.is_empty():
+			ae[4].team = "ijn"
+			shore.append(ae)
 	var fl := []
 	var fr_ships := layout([[player_type, player_name]] + friends, rng)
 	for i in range(1, fr_ships.size()):
@@ -517,7 +557,58 @@ static func island_assault(rng: RandomNumberGenerator, isl: Dictionary, garrison
 		enemies.append({"group": "", "x": bw.x, "z": bw.y, "h": fposmod(f.h + PI / 2.0, TAU), "kn": 7.0, "ships": boats, "objective": false, "route": true, "dest": 6000.0})
 	else:
 		enemies.append({"group": "", "x": bw.x, "z": bw.y, "h": fposmod(f.h + PI, TAU), "kn": 20.0, "ships": [["pt_elco", "PT-%d" % (100 + rng.randi() % 99), 0.0, 0.0]], "objective": false})
+	# the guard fleet, patrolling between the beach and the open sea
+	var fleet: Array = defence.get("fleet", [])
+	var gtxt := ""
+	if not fleet.is_empty():
+		var bwp := at(f, m.beach)
+		var to_sea := (-bwp).normalized()
+		var gp: Vector2 = bwp + to_sea * minf(5200.0, f.dist * 0.45)
+		var short: String = String(isl.name).get_slice(" (", 0).get_slice(" and ", 0)
+		enemies.append({"group": "%s guard force" % short, "x": gp.x, "z": gp.y, "h": fposmod(f.h + PI / 2.0, TAU), "kn": 14.0, "ships": layout(fleet, rng), "objective": true})
+		gtxt = " A guard force of %d warships patrols off the beach: sink it or drive it off." % fleet.size()
+	var atxt := ""
+	if defence.get("af", false) and has_airfield(id):
+		atxt = " %s still flies %d aircraft; wreck it with gunfire or dive bombers and no more planes can take off." % [airfield_name(id), int(defence.get("planes", 0))]
 	return {"id": "assault", "title": "Assault on %s" % isl.name, "kind": "bombard", "weather": weather, "start_h": f.h,
 		"choices": [[player_type, player_name]], "friends": fl, "islands": [{"map": id, "x": f.cx, "z": f.cz}], "shore": shore, "enemies": enemies,
 		"report": {"brg": f.h, "dist": f.dist, "h": 0.0, "kn": 0.0, "r": 1500.0, "fixed": true}, "escape_r": 30000.0,
-		"text": "%s lies bearing %%s, about %%s away, held by the enemy with %d coastal batter%s and a supply dump behind the beach. Silence the guns and burn the dump and the landing force raises the flag.\n\nYou command %%s. The batteries shoot back and the water shoals over the reef close inshore; pick each one as your target and pound it." % [isl.name, garrison, "y" if garrison == 1 else "ies"]}
+		"text": "%s lies bearing %%s, about %%s away, held by the enemy with %d coastal batter%s and a supply dump behind the beach.%s%s Take out the guns, the dump, the airfield and the guard force and the landing force raises the flag.\n\nYou command %%s. The batteries shoot back and the water shoals over the reef close inshore; pick each target and pound it." % [isl.name, garrison, "y" if garrison == 1 else "ies", gtxt, atxt]}
+
+
+## The Japanese are landing on an island we hold (operations map): their invasion force comes in
+## from the sea; our coastal batteries and the airfield (if it stands) fight beside the player.
+## `garrison` is our battery count, `planes` our aircraft on the island (0: none or wrecked).
+static func island_defence(rng: RandomNumberGenerator, isl: Dictionary, attackers: Array, garrison: int, planes: int, friends: Array, player_type: String, player_name: String, weather: String) -> Dictionary:
+	var id: String = _map_id(isl)
+	var f := island_frame(id)
+	var m: Dictionary = f.meta
+	var shore := []
+	var sites: Array = m.batteries
+	for i in mini(garrison, sites.size()):
+		var w := at(f, sites[i])
+		shore.append(["shore_battery", "Battery %s" % char(65 + i), w.x, w.y, {"team": "us"}])
+	if planes > 0:
+		var ae := _airfield_entry(f, id, planes, "us")
+		if not ae.is_empty():
+			shore.append(ae)
+	var fl := []
+	var fr_ships := layout([[player_type, player_name]] + friends, rng)
+	for i in range(1, fr_ships.size()):
+		fl.append(fr_ships[i])
+	# the invasion force comes in from the open sea, the transports behind the warships
+	var outv: Vector2 = f.out
+	var ep: Vector2 = outv * 11000.0
+	var war := []
+	for sh in attackers:
+		war.append(sh)
+	var tr := []
+	for i in 2 + rng.randi() % 2:
+		tr.append(["cargo_maru", ["Kinugawa Maru", "Azumasan Maru", "Sado Maru", "Toyo Maru", "Hokko Maru"][(i + rng.randi()) % 5]])
+	var enemies := [{"group": "Invasion Force", "x": ep.x, "z": ep.y, "h": f.h, "kn": 16.0, "ships": layout(war, rng), "objective": true},
+		{"group": "", "x": ep.x + outv.x * 3000.0, "z": ep.y + outv.y * 3000.0, "h": f.h, "kn": 9.0, "ships": layout(tr, rng), "objective": true, "route": true, "dest": 14000.0}]
+	var ptxt := (" %s is still flying: our %d planes will join the fight." % [airfield_name(id), planes]) if planes > 0 and has_airfield(id) else ""
+	return {"id": "defence", "title": "Defence of %s" % isl.name, "kind": "defend", "weather": weather, "start_h": fposmod(f.h + PI, TAU),
+		"choices": [[player_type, player_name]], "friends": fl, "islands": [{"map": id, "x": f.cx, "z": f.cz}], "shore": shore, "enemies": enemies,
+		"report": {"brg": fposmod(f.h + PI, TAU), "dist": 11000.0, "h": f.h, "kn": 16.0, "r": 2000.0}, "escape_r": 30000.0,
+		"text": "A Japanese invasion force, bearing %%s, about %%s away, is closing the beaches of %s with troop transports behind it. Our %d coastal batter%s will fire as it comes in.%s Sink the transports and beat off the warships, and the island stays ours.\n\nYou command %%s." % [isl.name, garrison, "y" if garrison == 1 else "ies", ptxt]}

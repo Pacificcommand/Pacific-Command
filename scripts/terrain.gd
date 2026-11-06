@@ -246,6 +246,8 @@ func _plant(m: Dictionary) -> void:
 			var o := (j * n + i) * 4
 			if raw[o] < 134 or raw[o + 3] < 90 or raw[o + 3] > 170:
 				continue
+			if _on_field(meta, x, z, 120.0):
+				continue      # the soft edge of an airfield's cleared ground is not a town
 			if rng.randf() > 0.5:
 				continue
 			var hgt: float = _lut[raw[o + 1]]
@@ -396,6 +398,19 @@ func _tree_mesh() -> Mesh:
 	mat.roughness = 0.95
 	mesh.surface_set_material(0, mat)
 	return mesh
+
+
+## Is the map point (x, z) on or within `pad` metres of one of the island's airfields?
+static func _on_field(meta: Dictionary, x: float, z: float, pad: float) -> bool:
+	for fd in meta.get("fields", []):
+		var a := deg_to_rad(float(fd[2]))
+		var dx: float = x - float(fd[0])
+		var dz: float = z - float(fd[1])
+		var along: float = dx * sin(a) - dz * cos(a)
+		var across: float = dx * cos(a) + dz * sin(a)
+		if absf(along) < float(fd[3]) * 0.5 + pad and absf(across) < float(fd[4]) * 0.5 + pad + 60.0:
+			return true
+	return false
 
 
 ## A house, shed or hangar 1 x 1 x 1 m before the instance scale: pale walls, a gable roof whose

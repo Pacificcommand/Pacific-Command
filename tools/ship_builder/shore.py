@@ -54,4 +54,61 @@ def build_raft():
         B.set_mat(P['skin']); B.cyl((x, 1.0, z), (x, 1.3, z), 0.18, n=8); B.set_mat(P['vest'])
     return M
 
-SHORE = [('shore_battery', build_battery), ('supply_dump', build_dump), ('raft', build_raft)]
+def build_airfield():
+    """An island airstrip: the runway (x along it, 1000 m), with hangars, a control tower, fuel
+    tanks, earth revetments for the planes and anti-aircraft pits along the north side (+z)."""
+    P = dict(PAL['ijn']); P.update(dict(strip='#a59f8c', line='#d8d2bd', hangar='#6f7363', roof='#565a4c',
+        tower='#8b8574', tank='#5d6655', earth='#6b5a3e', sand='#b8a77c', gun='#3c3f38'))
+    M = Mesh()
+    B = Builder(M, 'Hull', P['strip'])
+    # the runway surface (rolled coral or earth, a little darker than the cleared ground) and its marks
+    B.box((0, 0.08, 0), (1000.0, 0.16, 45.0))
+    B.set_mat(P['line'])
+    for i in range(-11, 12):
+        B.box((i * 42.0, 0.17, 0), (20.0, 0.04, 1.2))
+    for sx in (-1, 1):
+        for k in range(6):
+            B.box((sx * 488.0, 0.17, -15 + k * 6.0), (14.0, 0.04, 2.5))
+    # taxiway and apron to the north
+    B.set_mat(P['strip'])
+    B.box((0, 0.06, 52.0), (420.0, 0.12, 50.0))
+    B.box((-260, 0.06, 36.0), (22.0, 0.12, 50.0))
+    B.box((260, 0.06, 36.0), (22.0, 0.12, 50.0))
+    # hangars: low walls with a curved (polygonal) roof
+    for hx in (-120.0, -40.0, 60.0):
+        B.set_mat(P['hangar'])
+        B.box((hx, 3.0, 96.0), (54.0, 6.0, 34.0))
+        B.set_mat(P['roof'])
+        arc = [(np.cos(t) * 17.5, 6.0 + np.sin(t) * 7.0) for t in np.linspace(0, np.pi, 9)]
+        for j in range(len(arc) - 1):
+            (z0, y0), (z1, y1) = arc[j], arc[j + 1]
+            zc, yc = (z0 + z1) / 2, (y0 + y1) / 2
+            ln = np.hypot(z1 - z0, y1 - y0)
+            B.box((hx, yc, 96.0 + zc), (55.0, 0.5, ln + 0.3))
+    # the control tower and the operations hut
+    B.set_mat(P['tower'])
+    B.box((150.0, 4.5, 84.0), (7.0, 9.0, 7.0))
+    B.box((150.0, 10.0, 84.0), (9.5, 2.4, 9.5))
+    B.set_mat(P['roof'])
+    B.box((150.0, 11.4, 84.0), (10.5, 0.4, 10.5))
+    B.set_mat(P['hangar'])
+    B.box((175.0, 2.0, 92.0), (22.0, 4.0, 10.0))
+    # fuel tanks
+    B.set_mat(P['tank'])
+    for k in range(4):
+        B.cyl((220.0 + (k % 2) * 16.0, 0, 110.0 + (k // 2) * 16.0), (220.0 + (k % 2) * 16.0, 6.0, 110.0 + (k // 2) * 16.0), 6.0, n=16)
+    # U-shaped earth revetments for parked planes along the apron
+    B.set_mat(P['earth'])
+    for k in range(8):
+        rx = -330.0 + k * 34.0 + (300.0 if k >= 4 else 0.0)
+        B.box((rx, 1.2, 128.0), (20.0, 2.4, 3.0))
+        B.box((rx - 9.0, 1.2, 120.0), (3.0, 2.4, 16.0))
+        B.box((rx + 9.0, 1.2, 120.0), (3.0, 2.4, 16.0))
+    # anti-aircraft gun pits round the field, named so the guns train
+    for i, (gx, gz) in enumerate([(-420.0, 70.0), (0.0, 140.0), (380.0, 70.0), (-200.0, -60.0), (240.0, -60.0)]):
+        B.set_mat(P['sand'])
+        B.cyl((gx, 0, gz), (gx, 1.4, gz), 5.0, 4.6, n=12)
+        turret(M, 'AA%d' % (i + 1), (gx, 1.4, gz), 0.0, P, 60, 2, shielded=False)
+    return M
+
+SHORE = [('shore_battery', build_battery), ('supply_dump', build_dump), ('raft', build_raft), ('airfield', build_airfield)]

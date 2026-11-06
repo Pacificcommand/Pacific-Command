@@ -55,6 +55,15 @@ func reset() -> void:
 ## Give a carrier (or a ship with floatplanes) its air group, all on deck and ready.
 func setup_ship(s: Ship) -> void:
 	var T: Dictionary = s.T
+	if T.get("ground", false) and T.has("aircraft"):
+		# an island airfield: its air group (the battle plan sets how many) in the side's types
+		var n_air: int = int(s.get_meta("aircraft", T.aircraft))
+		if n_air > 0:
+			for g in Data.air_group(s.team, n_air):
+				_new_sq(s, g[0], g[1], "ready")
+			if B._test.has("trace"):
+				print("airfield ", s.ship_name, " air group ", Data.air_group(s.team, n_air))
+		return
 	if T.has("aircraft") and T.has("fdeck"):
 		# the whole air group is parked on the flight deck: as many as the deck can hold
 		var dk := _deck_new(s)
@@ -651,6 +660,8 @@ func _find_target(sq: Dictionary) -> Ship:
 			continue
 		if o.is_sub() and (o.depth == 2 or sq.get("kind", "") == "torpedo"):
 			continue   # a deep boat can't be seen; torpedoes can't be used on a submarine
+		if o.T.get("ground", false) and sq.get("kind", "") == "torpedo":
+			continue   # nor on a target ashore
 		var known := false
 		for a in B.ships:
 			if a.team == sq.team and a.alive and a.contact(o):
@@ -668,7 +679,11 @@ func _find_target(sq: Dictionary) -> Ship:
 
 func _target_value(o: Ship, sq: Dictionary) -> float:
 	var d := U.hyp(o.x - sq.x, o.z - sq.z)
-	return o.T.displacement * (3.0 if o.cls() in ["cv", "cvl", "cve"] else 1.0) - d * 0.5
+	var val: float = o.T.displacement * (3.0 if o.cls() in ["cv", "cvl", "cve"] else 1.0)
+	if o.T.get("ground", false):
+		# an enemy airfield still flying planes is worth a strike; guns and dumps less so
+		val = (14000.0 if o.T.has("aircraft") else 1500.0)
+	return val - d * 0.5
 
 
 func _nearest_carrier(sq: Dictionary) -> Ship:
@@ -886,6 +901,8 @@ func _ai_carriers() -> void:
 				strike_up = true
 		if not strike_up and not ready_squadrons(s, ["dive", "torpedo"]).is_empty():
 			var sent := launch_strike(s, tgt, Vector2(tgt.x, tgt.z))
+			if B._test.has("trace") and not sent.is_empty():
+				print("  [%d] %s strike: %s at %s" % [int(B.t), s.ship_name, sent.map(func(q): return "%d %s" % [q.n, q.type]), tgt.ship_name])
 			if not sent.is_empty() and B.player.contact(s):
 				B.say("%s is launching aircraft!" % s.ship_name, "bad")
 	# floatplane scouts from AI cruisers and battleships
@@ -1019,6 +1036,8 @@ func _plane_scene(sq: Dictionary) -> PackedScene:
 
 ## Ship-local deck geometry: the flight deck height and where the roll starts and ends.
 func _deck_y(home: Ship) -> float:
+	if home.T.get("ground", false):
+		return 1.2       # on the runway
 	if not home.park.is_empty():
 		return home.park[0].ly
 	if not home.floats.is_empty():
@@ -1901,6 +1920,9 @@ func command(sq: Dictionary, order: String, target: Ship = null) -> void:
 	match order:
 		"attack":
 			if target == null or not target.alive:
+				return
+			if sq.kind == "torpedo" and target.T.get("ground", false):
+				B.say("%s: torpedoes are no use against a target ashore. Send the dive bombers." % nm, "bad")
 				return
 			sq.ordered = true
 			sq.attacked = false

@@ -915,6 +915,11 @@ DATA['supply_dump'] = dict(name='Supply dump', nation='ijn', cls='fort', role='s
     gun='jp77', gunnery=0.5, draft=0.0, size_vis=0.7, radar=0.0, smoke=False, night_eye=1.3, funnels=[], funnel_top=5.0,
     mounts=[], torps=[], torp={}, aa=[],
     modules=[['Fuel drums', 'fuel', 10.0, 2.0], ['Ammunition', 'magazine', -8.0, 2.0], ['Stores', 'cargo', 0.0, 3.0], ['Stores', 'cargo', -14.0, 3.0]])
+DATA['airfield'] = dict(name='Airfield', nation='ijn', cls='fort', role='shore', ground=True, L=1000.0, B=60.0, max_kn=0.0, turn=0.0, crew=300, displacement=20000.0,
+    gun='jp25', gunnery=0.6, draft=0.0, size_vis=1.6, radar=0.0, smoke=False, night_eye=1.0, funnels=[], funnel_top=8.0, armor=0.3,
+    mounts=[], torps=[], torp={}, aa=['AA1', 'AA2', 'AA3', 'AA4', 'AA5'], aircraft=24,
+    modules=[['Runway', 'deck', 0.0, 14.0], ['Runway', 'deck', -300.0, 12.0], ['Runway', 'deck', 300.0, 12.0], ['Hangars', 'hangar', -40.0, 8.0],
+             ['Fuel tanks', 'fuel', 220.0, 4.0], ['Bomb store', 'magazine', 160.0, 4.0], ['Control tower', 'bridge', 150.0, 3.0]])
 DATA['raft'] = dict(name='Life raft', nation='us', cls='raft', role='survivors', L=5.2, B=3.2, max_kn=0.0, turn=0.0, crew=4, displacement=1.0,
     gun='browning50', draft=0.3, size_vis=0.25, radar=0.0, smoke=False, night_eye=1.0, funnels=[], funnel_top=1.0,
     mounts=[], torps=[], torp={}, aa=[], modules=[['Raft', 'cargo', 0.0, 1.0]])
