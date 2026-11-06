@@ -37,6 +37,19 @@ var quay_z := -8.0                       # z of the quay edge
 var gang_top := Vector3.ZERO
 var gang_bot := Vector3.ZERO
 var into_side := false                   # the brow ends at a door in the ship's side
+var quay_len := 160.0
+var quay_blocks: Array = []              # Rect2 (x, z) on the quay the figures walk round
+# walking grids: the main deck (on the deck height map's cells) and the quay
+var deck_open := PackedByteArray()       # 1 = a figure can stand here (clear of walls and edges)
+var deck_astar: AStarGrid2D
+var open_cells: Array = []               # Vector2 (x, z) of the clear deck cells
+const Q_CELL := 0.5
+var q_x0 := 0.0
+var q_z0 := 0.0
+var q_nx := 0
+var q_nz := 0
+var quay_open := PackedByteArray()
+var quay_astar: AStarGrid2D
 
 var mounts: Array = []                   # [node, stow, phase]
 var crane_jib: Node3D
@@ -86,9 +99,11 @@ func _ready() -> void:
 	_build_world()
 	_load_ship()
 	_build_heightmap(type_id)
+	_build_deck_walk()
 	_build_quay()
-	_build_crew()
 	_build_lineup()
+	_build_walk()
+	_build_crew()
 	_build_ui()
 	_select(-1, true)
 	Audio.ui("radio", 0.4, "Radio")
@@ -330,10 +345,12 @@ func height_at(x: float, z: float) -> float:
 func _deck_spot(x_target: float, z_target: float, rng: float) -> Vector2:
 	var best := Vector2(x_target, 0.0)
 	var bd := 1e9
+	# clear deck if we know it (a figure can stand there), else any main-deck cell
+	var pool: Array = open_cells if not open_cells.is_empty() else walk_cells
 	for i in 40:
-		if walk_cells.is_empty():
+		if pool.is_empty():
 			break
-		var c: Vector2 = walk_cells[randi() % walk_cells.size()]
+		var c: Vector2 = pool[randi() % pool.size()]
 		var d := absf(c.x - x_target) + absf(c.y - z_target) * 0.5 + randf() * rng
 		if d < bd:
 			bd = d; best = c
@@ -361,25 +378,44 @@ func _build_quay() -> void:
 	for i in nf:
 		var fx := -qlen / 2.0 + 4.5 + i * 9.0
 		_box(Vector3(0.6, 2.4, 0.5), Vector3(fx, QUAY_Y - 1.1, quay_z + 0.2), Color(0.32, 0.24, 0.16))
+	quay_len = qlen
 	for fx in [L * 0.42, L * 0.18, -L * 0.22, -L * 0.44]:
 		var bp := Vector3(fx + (6.0 if fx > 0 else -6.0), QUAY_Y, quay_z - 1.4)
 		_cyl(0.32, 0.8, bp + Vector3(0, 0.4, 0), Color(0.12, 0.12, 0.13))
+		# the bollard and the mooring line running from it over the edge
+		_qblock(bp.x, quay_z - 0.9, 1.2, 2.2)
 		var on_ship := Vector3(fx, height_at(fx, -Bm * 0.35) + 0.4, -Bm * 0.36)
 		_rope(bp + Vector3(0, 0.7, 0), on_ship)
 	# gangway from the quay up (or down) to the deck, abreast the after superstructure
 	var gx := -L * 0.12
-	var top := _deck_spot(gx, -Bm / 2.0, 0.0)
-	var edge_z := top.y
-	for c in walk_cells:
-		if absf(c.x - gx) < 1.2 and c.y < edge_z:
-			edge_z = c.y
-	gang_top = Vector3(gx, deck_y, edge_z + 0.6)
+	# the brow lands on clear deck near the quay side (not on a torpedo tube or a hatch coaming):
+	# the open deck cell nearest the side, close to where we would like it
+	var best_c = null
+	var best_d := 1e9
+	for iz in hm_nz:
+		for ix in hm_nx:
+			if deck_open[iz * hm_nx + ix] == 1:
+				var cx := hm_x0 + (ix + 0.5) * CELL
+				var cz := hm_z0 + (iz + 0.5) * CELL
+				var dd := absf(cx - gx) * 0.6 + (cz + Bm / 2.0) * 2.0
+				if dd < best_d:
+					best_d = dd; best_c = Vector2(cx, cz)
+	if best_c == null:
+		var top := _deck_spot(gx, -Bm / 2.0, 0.0)
+		best_c = top
+	gx = best_c.x
+	gang_top = Vector3(gx, deck_y, best_c.y)
 	if deck_y > QUAY_Y + 6.0:
 		# a carrier or a big ship: the brow runs to a door in the side, not up to the flight deck
 		gang_top = Vector3(gx, QUAY_Y + 5.0, -Bm / 2.0 + 0.2)
 		into_side = true
 	gang_bot = Vector3(gx - 5.0, QUAY_Y, quay_z - 3.0)
 	_plank(gang_bot, gang_top, 1.3, Color(0.45, 0.35, 0.24))
+	# under the brow (and its hand ropes) is not a walkway: only its foot is
+	for k in range(1, 12):
+		var bpk: Vector3 = gang_bot.lerp(gang_top, float(k) / 12.0)
+		if bpk.z < quay_z and Vector2(bpk.x - gang_bot.x, bpk.z - gang_bot.z).length() > 1.6:
+			_qblock(bpk.x, bpk.z, 1.8, 1.8, 0.2)
 	# sheds behind the quay
 	for i in 3:
 		var sx := -qlen * 0.33 + i * qlen * 0.33
@@ -391,6 +427,10 @@ func _build_quay() -> void:
 	# stores and ammunition waiting on the quay
 	_stack(Vector3(gx - 16.0, QUAY_Y, quay_z - 12.0), Color(0.55, 0.45, 0.3), 4, 3)
 	_stack(Vector3(gx + 18.0, QUAY_Y, quay_z - 13.0), Color(0.48, 0.5, 0.36), 3, 2)
+	_qblock(gx - 16.0 + 2.25, quay_z - 12.0 - 1.5, 4 * 1.5, 3 * 1.5)
+	_qblock(gx + 18.0 + 1.5, quay_z - 13.0 - 0.75, 3 * 1.5, 2 * 1.5)
+	_qblock(gx - 4.0 + 1.3, quay_z - 9.0 - 0.65, 3 * 1.3 + 0.2, 2 * 1.3 + 0.2)
+	_qblock(gx + 30.0 + 1.1, quay_z - 6.0 - 0.37, 3.6, 2.2)
 	for i in 6:
 		var p := Vector3(gx - 4.0 + (i % 3) * 1.3, QUAY_Y, quay_z - 9.0 - int(i / 3.0) * 1.3)
 		_box(Vector3(1.1, 0.15, 1.1), p + Vector3(0, 0.08, 0), Color(0.5, 0.4, 0.28))
@@ -398,11 +438,17 @@ func _build_quay() -> void:
 			_cyl(0.16, 0.9, p + Vector3(-0.3 + (s % 2) * 0.6, 0.6, -0.3 + int(s / 2.0) * 0.6), Color(0.58, 0.5, 0.25))
 	for i in 8:
 		_cyl(0.32, 0.9, Vector3(gx + 30.0 + (i % 4) * 0.75, QUAY_Y + 0.45, quay_z - 6.0 - int(i / 4.0) * 0.75), Color(0.35, 0.4, 0.3).lerp(Color(0.6, 0.2, 0.15), float(i % 3 == 0)))
-	# lamp posts
+	# lamp posts (set back where the officers line up)
+	var line_x0 := gx - 5.0 + 4.5
+	var line_x1 := gx - 5.0 + 6.0 + 1.6 * 9.0 + 1.5
 	for i in 6:
 		var lx := -qlen / 2.0 + 15.0 + i * (qlen - 30.0) / 5.0
-		_cyl(0.12, 7.0, Vector3(lx, QUAY_Y + 3.5, quay_z - 5.0), Color(0.15, 0.17, 0.16))
-		_box(Vector3(0.6, 0.35, 0.6), Vector3(lx, QUAY_Y + 7.1, quay_z - 5.0), Color(0.2, 0.22, 0.2))
+		var lz := quay_z - 5.0
+		if lx > line_x0 and lx < line_x1:
+			lz = quay_z - 9.0
+		_cyl(0.12, 7.0, Vector3(lx, QUAY_Y + 3.5, lz), Color(0.15, 0.17, 0.16))
+		_box(Vector3(0.6, 0.35, 0.6), Vector3(lx, QUAY_Y + 7.1, lz), Color(0.2, 0.22, 0.2))
+		_qblock(lx, lz, 0.3, 0.3)
 	# palms at the shore end
 	for i in 7:
 		_palm(Vector3(-qlen / 2.0 + 8.0 + i * 13.0 + randf_range(-3, 3), QUAY_Y, quay_z - shed_back + 16.0 - randf_range(0, 4)))
@@ -415,6 +461,7 @@ func _build_crane(base: Vector3) -> void:
 	for dx in [-2.6, 2.6]:
 		for dz in [-2.6, 2.6]:
 			_box(Vector3(0.5, 9.0, 0.5), base + Vector3(dx, 4.5, dz), Color(0.62, 0.42, 0.12))
+			_qblock(base.x + dx, base.z + dz, 0.5, 0.5)
 	_box(Vector3(6.0, 0.8, 6.0), base + Vector3(0, 9.2, 0), Color(0.62, 0.42, 0.12))
 	var cab := Node3D.new()
 	cab.position = base + Vector3(0, 9.6, 0)
@@ -423,6 +470,9 @@ func _build_crane(base: Vector3) -> void:
 	var body := _box(Vector3(4.0, 3.0, 3.6), Vector3(0, 1.5, 0), Color(0.68, 0.48, 0.15), cab)
 	body.name = "Cab"
 	var jl := maxf(22.0, Bm + 14.0)
+	# where the load comes down on the quay: keep clear
+	var tr := cos(deg_to_rad(10.0)) * jl
+	_qblock(base.x + tr * cos(deg_to_rad(110.0)), base.z - tr * sin(deg_to_rad(110.0)), 3.2, 3.2)
 	var jib := _box(Vector3(jl, 0.7, 0.9), Vector3(jl / 2.0, 3.4, 0), Color(0.66, 0.46, 0.14), cab)
 	jib.rotation.z = deg_to_rad(10.0)
 	cab.set_meta("tip", Vector3(cos(deg_to_rad(10.0)) * jl, 3.4 + sin(deg_to_rad(10.0)) * jl, 0))
@@ -457,6 +507,150 @@ func _step_crane(dt: float) -> void:
 	var mid := (tip + crane_load.position + Vector3(0, 1.0, 0)) / 2.0
 	crane_cable.position = mid
 	crane_cable.scale = Vector3(1, maxf(0.1, tip.y - crane_load.position.y - 1.0), 1)
+
+
+# =====================================================================
+# walking: nobody goes through a deckhouse, a turret, a crate or a lamp post
+# =====================================================================
+
+func _qblock(cx: float, cz: float, sx: float, sz: float, pad := 0.35) -> void:
+	quay_blocks.append(Rect2(cx - sx / 2.0 - pad, cz - sz / 2.0 - pad, sx + 2.0 * pad, sz + 2.0 * pad))
+
+
+func _build_deck_walk() -> void:
+	# the deck: open where the top surface is the main deck, with half a metre clear of anything
+	# standing up (superstructure, mounts, funnels) and of the deck edge
+	var raw := PackedByteArray()
+	raw.resize(hm_nx * hm_nz)
+	for i in raw.size():
+		raw[i] = 1 if absf(hm[i] - deck_y) < 0.35 else 0
+	deck_open.resize(raw.size())
+	deck_astar = AStarGrid2D.new()
+	deck_astar.region = Rect2i(0, 0, hm_nx, hm_nz)
+	deck_astar.cell_size = Vector2.ONE
+	deck_astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+	deck_astar.update()
+	for iz in hm_nz:
+		for ix in hm_nx:
+			var ok := 1
+			for dz in range(-1, 2):
+				for dx in range(-1, 2):
+					var jx := ix + dx
+					var jz := iz + dz
+					if jx < 0 or jz < 0 or jx >= hm_nx or jz >= hm_nz or raw[jz * hm_nx + jx] == 0:
+						ok = 0
+			deck_open[iz * hm_nx + ix] = ok
+			if ok == 0:
+				deck_astar.set_point_solid(Vector2i(ix, iz), true)
+			else:
+				open_cells.append(Vector2(hm_x0 + (ix + 0.5) * CELL, hm_z0 + (iz + 0.5) * CELL))
+
+
+func _build_walk() -> void:
+	# the quay: the strip between the edge and the stores, minus everything standing on it
+	q_x0 = -quay_len / 2.0 + 2.0
+	q_z0 = quay_z - 26.0
+	q_nx = int((quay_len - 4.0) / Q_CELL)
+	q_nz = int((26.0 - 0.7) / Q_CELL)
+	for f in lineup:
+		var lp: Vector3 = f.pos
+		_qblock(lp.x, lp.z, 0.6, 0.6, 0.3)
+	quay_open.resize(q_nx * q_nz)
+	quay_astar = AStarGrid2D.new()
+	quay_astar.region = Rect2i(0, 0, q_nx, q_nz)
+	quay_astar.cell_size = Vector2.ONE
+	quay_astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+	quay_astar.update()
+	for iz in q_nz:
+		for ix in q_nx:
+			var pnt := Vector2(q_x0 + (ix + 0.5) * Q_CELL, q_z0 + (iz + 0.5) * Q_CELL)
+			var ok2 := 1
+			for r in quay_blocks:
+				if (r as Rect2).has_point(pnt):
+					ok2 = 0
+					break
+			quay_open[iz * q_nx + ix] = ok2
+			if ok2 == 0:
+				quay_astar.set_point_solid(Vector2i(ix, iz), true)
+
+
+func _deck_cell(x: float, z: float) -> Vector2i:
+	return Vector2i(clampi(int((x - hm_x0) / CELL), 0, hm_nx - 1), clampi(int((z - hm_z0) / CELL), 0, hm_nz - 1))
+
+
+func _quay_cell(x: float, z: float) -> Vector2i:
+	return Vector2i(clampi(int((x - q_x0) / Q_CELL), 0, q_nx - 1), clampi(int((z - q_z0) / Q_CELL), 0, q_nz - 1))
+
+
+func _open_at(deck: bool, c: Vector2i) -> bool:
+	if deck:
+		return c.x >= 0 and c.y >= 0 and c.x < hm_nx and c.y < hm_nz and deck_open[c.y * hm_nx + c.x] == 1
+	return c.x >= 0 and c.y >= 0 and c.x < q_nx and c.y < q_nz and quay_open[c.y * q_nx + c.x] == 1
+
+
+## The nearest cell a figure can stand on, searching outward up to `rad` metres (or null).
+func _snap(deck: bool, x: float, z: float, rad := 8.0):
+	var c: Vector2i = _deck_cell(x, z) if deck else _quay_cell(x, z)
+	var cs := CELL if deck else Q_CELL
+	var n := int(rad / cs)
+	for r in n + 1:
+		var best = null
+		var bd := 1e9
+		for dz in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if maxi(absi(dx), absi(dz)) != r:
+					continue
+				var cc := c + Vector2i(dx, dz)
+				if _open_at(deck, cc):
+					var d := float(dx * dx + dz * dz)
+					if d < bd:
+						bd = d; best = cc
+		if best != null:
+			return best
+	return null
+
+
+func _cell_pos(deck: bool, c: Vector2i) -> Vector3:
+	if deck:
+		var x := hm_x0 + (c.x + 0.5) * CELL
+		var z := hm_z0 + (c.y + 0.5) * CELL
+		return Vector3(x, height_at(x, z), z)
+	return Vector3(q_x0 + (c.x + 0.5) * Q_CELL, QUAY_Y, q_z0 + (c.y + 0.5) * Q_CELL)
+
+
+func _clear_line(deck: bool, a: Vector2i, b: Vector2i) -> bool:
+	var n := maxi(absi(b.x - a.x), absi(b.y - a.y)) * 2
+	for i in n + 1:
+		var k := float(i) / maxf(1.0, n)
+		var c := Vector2i(roundi(lerpf(a.x, b.x, k)), roundi(lerpf(a.y, b.y, k)))
+		if not _open_at(deck, c):
+			return false
+	return true
+
+
+## A walking route on the deck or the quay, round every obstacle, as world points (straightened
+## wherever the way is clear).
+func _route(deck: bool, from: Vector3, to: Vector3) -> Array:
+	var a = _snap(deck, from.x, from.z, 40.0)
+	var b = _snap(deck, to.x, to.z, 40.0)
+	if a == null or b == null:
+		return [from]          # nowhere clear to go: stay put rather than walk through something
+	var g: AStarGrid2D = deck_astar if deck else quay_astar
+	var ids: Array[Vector2i] = g.get_id_path(a, b, true)
+	if ids.is_empty():
+		return [_cell_pos(deck, a)]
+	var keep: Array = [ids[0]]
+	var i := 0
+	while i < ids.size() - 1:
+		var j := ids.size() - 1
+		while j > i + 1 and not _clear_line(deck, ids[i], ids[j]):
+			j -= 1
+		keep.append(ids[j])
+		i = j
+	var out := []
+	for c in keep:
+		out.append(_cell_pos(deck, c))
+	return out
 
 
 # =====================================================================
@@ -725,27 +919,44 @@ func _build_crew() -> void:
 	for i in nb:
 		var f := _sailor({"prop": "crate"})
 		f.task = "haul"
-		f.src = Vector3(gang_bot.x - 14.0 + randf_range(-2, 2), QUAY_Y, quay_z - 10.5 + randf_range(-1, 1))
+		f.src = Vector3(gang_bot.x - 12.0 + randf_range(-2, 2), QUAY_Y, quay_z - 10.0 + randf_range(-0.6, 0.6))
 		var ds := _deck_spot(gang_top.x + randf_range(-8, 8), 0.0, 6.0)
 		f.dst = Vector3(ds.x, 0, ds.y)
 		f.u = float(i) / nb
+		_haul_route(f)
 		crew.append(f)
 	# ammunition party: white skivvy shirts, shells on the shoulder
 	for i in n_ammo:
 		var f2 := _sailor({"shirt": Color(0.93, 0.93, 0.9), "prop": "shell"})
 		f2.task = "haul"
-		f2.src = Vector3(gang_bot.x + 1.0 + randf_range(-1, 1), QUAY_Y, quay_z - 9.5)
+		f2.src = Vector3(gang_bot.x + 1.0 + randf_range(-1, 1), QUAY_Y, quay_z - 7.6)
 		var ds2 := _deck_spot(gang_top.x + randf_range(-6, 14), 0.0, 6.0)
 		f2.dst = Vector3(ds2.x, 0, ds2.y)
 		f2.u = float(i) / float(n_ammo) + 0.07
+		_haul_route(f2)
 		crew.append(f2)
 	# deck hands mopping fore and aft
 	for i in n_mop:
 		var f3 := _sailor({"prop": "mop", "shirt": Color(0.38, 0.5, 0.7)})
 		f3.task = "mop"
 		var at := _deck_spot(L * (0.32 if i % 2 == 0 else -0.36) + randf_range(-L * 0.06, L * 0.06), randf_range(-Bm * 0.2, Bm * 0.2), 2.0)
-		f3.home = Vector3(at.x, 0, at.y)
+		var ac = _snap(true, at.x, at.y, 6.0)
+		if ac == null:
+			f3.node.queue_free()
+			continue
+		var ap := _cell_pos(true, ac)
+		f3.home = Vector3(ap.x, 0, ap.z)
 		f3.dir = 1.0 if randf() < 0.5 else -1.0
+		# how far the deck is clear fore and aft of where he works (at most 3 m)
+		var run := [0.0, 0.0]
+		for side in 2:
+			var dxs := 1 if side == 0 else -1
+			var k := 1
+			while k * CELL <= 3.0 and _open_at(true, ac + Vector2i(dxs * k, 0)):
+				k += 1
+			run[side] = (k - 1) * CELL
+		f3.fwd_run = run[0]
+		f3.aft_run = run[1]
 		crew.append(f3)
 	# gun crews sighting their mounts
 	var gm := 0
@@ -758,7 +969,13 @@ func _build_crew() -> void:
 			var f4 := _sailor({"hat": "dixie"})
 			f4.task = "sight"
 			var off := Vector3(randf_range(-1.5, 1.5), 0, 2.2 * s)
-			f4.home = Vector3(mp.x + off.x, 0, clampf(mp.z + off.z, -Bm * 0.42, Bm * 0.42))
+			var want := Vector3(mp.x + off.x, 0, clampf(mp.z + off.z, -Bm * 0.42, Bm * 0.42))
+			var gc = _snap(true, want.x, want.z, 5.0)
+			if gc == null:
+				f4.node.queue_free()
+				continue
+			var gp := _cell_pos(true, gc)
+			f4.home = Vector3(gp.x, 0, gp.z)
 			f4.face = mp
 			crew.append(f4)
 			gm += 1
@@ -766,8 +983,14 @@ func _build_crew() -> void:
 	for i in (1 if budget < 10 else 3):
 		var f5 := _sailor({"hat": "civil", "hat_col": Color(0.4, 0.32, 0.22), "shirt": Color(0.6, 0.52, 0.36), "pants": Color(0.4, 0.34, 0.24)})
 		f5.task = "stroll"
-		f5.home = Vector3(randf_range(-L * 0.5, L * 0.5), QUAY_Y, quay_z - randf_range(5, 18))
-		f5.tgt = f5.home
+		var hc = _snap(false, randf_range(-L * 0.5, L * 0.5), quay_z - randf_range(5, 18))
+		if hc == null:
+			f5.node.queue_free()
+			continue
+		f5.home = _cell_pos(false, hc)
+		f5.node.position = f5.home
+		f5.route = []
+		f5.wait = randf_range(0.0, 3.0)
 		crew.append(f5)
 	for f in crew:
 		_place_static(f)
@@ -797,13 +1020,11 @@ func _step_crew(dt: float) -> void:
 				var u: float = f.u
 				var out := u < 0.5
 				var k: float = u * 2.0 if out else (1.0 - u) * 2.0     # 0 at the pile, 1 at the drop
-				var pts := [f.src, gang_bot, gang_top, Vector3(f.dst.x, deck_y, f.dst.z)]
-				if into_side:
-					pts = [f.src, gang_bot, gang_top]
+				var pts: Array = f.route
 				var p := _along(pts, k)
 				n.visible = not (into_side and k > 0.97)
 				var ahead := _along(pts, clampf(k + (0.01 if out else -0.01), 0.0, 1.0))
-				if p.distance_to(gang_bot) > 0.3 and p.distance_to(gang_top) > 0.3 and _on_deck(p):
+				if k > float(f.k_deck) + 0.002:
 					p.y = height_at(p.x, p.z)
 				n.position = p
 				var d := ahead - p
@@ -815,26 +1036,37 @@ func _step_crew(dt: float) -> void:
 				_pose(f, "carry" if out else "walk", f.ph)
 			"mop":
 				var h: Vector3 = f.home
-				var x: float = h.x + sin(t * 0.25 + f.ph * 0.01) * 3.0 * f.dir
+				var sw: float = sin(t * 0.25 + f.ph * 0.01) * f.dir
+				var x: float = h.x + (sw * float(f.fwd_run) if sw > 0.0 else sw * float(f.aft_run))
 				n.position = Vector3(x, height_at(x, h.z), h.z)
-				n.rotation.y = 0.0 if cos(t * 0.25) * f.dir > 0.0 else PI
+				n.rotation.y = 0.0 if cos(t * 0.25 + f.ph * 0.01) * f.dir > 0.0 else PI
 				_pose(f, "mop", f.ph * 0.5)
 			"sight":
 				_pose(f, "sight", f.ph * 0.3)
 			"stroll":
-				var tg: Vector3 = f.tgt
-				var dd := tg - n.position
-				if dd.length() < 0.5:
-					var hm3: Vector3 = f.home
-					f.tgt = hm3 + Vector3(randf_range(-10, 10), 0, randf_range(-4, 4))
-					f.wait = randf_range(1.0, 5.0)
-				elif f.get("wait", 0.0) > 0.0:
+				var rt: Array = f.route
+				if f.get("wait", 0.0) > 0.0:
 					f.wait -= dt
 					_pose(f, "stand", f.ph)
+				elif rt.is_empty():
+					# somewhere new along the quay, by a way round everything in it
+					var hm3: Vector3 = f.home
+					f.route = _route(false, n.position, hm3 + Vector3(randf_range(-10, 10), 0, randf_range(-4, 4)))
+					if not f.route.is_empty():
+						f.route.pop_front()
+					f.wait = randf_range(1.0, 5.0) if f.route.is_empty() else 0.0
 				else:
-					n.position += dd.normalized() * minf(dd.length(), 1.1 * dt)
-					n.rotation.y = atan2(-dd.z, dd.x)
-					_pose(f, "walk", f.ph)
+					var tg: Vector3 = rt[0]
+					var dd := tg - n.position
+					dd.y = 0.0
+					if dd.length() < 0.15:
+						rt.pop_front()
+						if rt.is_empty():
+							f.wait = randf_range(1.0, 5.0)
+					else:
+						n.position += dd.normalized() * minf(dd.length(), 1.1 * dt)
+						n.rotation.y = atan2(-dd.z, dd.x)
+						_pose(f, "walk", f.ph)
 	# the guns traverse slowly as the crews sight them
 	for m in mounts:
 		var mn: Node3D = m[0]
@@ -842,14 +1074,92 @@ func _step_crew(dt: float) -> void:
 		mn.rotation.y = sin(m[2]) * 0.6
 
 
+## Test (--dockcheck): run the crew for two minutes and count the moments a figure stands inside
+## something: on deck where the deck is not clear, or on the quay inside a crate, post or bollard.
+func clip_check(seconds := 120.0) -> Dictionary:
+	var bad := 0
+	var checks := 0
+	var worst := {}
+	var dt := 0.05
+	for step in int(seconds / dt):
+		t += dt
+		_step_crew(dt)
+		for f in crew:
+			var n: Node3D = f.node
+			if not is_instance_valid(n) or not n.visible:
+				continue
+			var p := n.position
+			checks += 1
+			var inside := false
+			var on_gang := false
+			if f.task == "haul":
+				var kk: float = f.u * 2.0 if f.u < 0.5 else (1.0 - f.u) * 2.0
+				on_gang = kk > float(f.k_bot) - 0.005 and kk < float(f.k_deck) + 0.005
+			if on_gang:
+				pass
+			elif absf(p.y - QUAY_Y) < 0.05 and p.z < quay_z - 0.3:
+				for r in quay_blocks:
+					if (r as Rect2).grow(-0.3).has_point(Vector2(p.x, p.z)):
+						inside = true
+			elif _on_deck(p) and p.z > quay_z:
+				# on the ship (not on the brow): the cell must be clear deck
+				var on_brow := false
+				if f.task == "haul":
+					var k: float = f.u * 2.0 if f.u < 0.5 else (1.0 - f.u) * 2.0
+					on_brow = k <= float(f.k_deck) + 0.01
+				if not on_brow and not into_side:
+					var c := _deck_cell(p.x, p.z)
+					if hm[c.y * hm_nx + c.x] > deck_y + 0.6:
+						inside = true
+			if inside:
+				bad += 1
+				worst[f.task] = worst.get(f.task, 0) + 1
+				if bad % 60 == 1 and "--dockverbose" in OS.get_cmdline_user_args():
+					var c2 := _deck_cell(p.x, p.z)
+					print("  inside: ", f.task, " at ", p, " hm ", hm[c2.y * hm_nx + c2.x], " k ", (f.u * 2.0 if f.u < 0.5 else (1.0 - f.u) * 2.0), " kb ", f.get("k_bot", 0), " kd ", f.get("k_deck", 0), " route ", f.get("route", []))
+	var nopen := 0
+	for v in deck_open:
+		nopen += v
+	var raw_n := walk_cells.size()
+	var routes := []
+	for f in crew:
+		if f.task == "haul":
+			routes.append([f.route.size(), snappedf(float(f.k_deck), 0.01), f.dst])
+	return {"bad": bad, "checks": checks, "by_task": worst, "deck_y": deck_y, "open": nopen, "walk_cells": raw_n, "routes": routes, "gang_top": gang_top, "B": Bm}
+
+
 func _on_deck(p: Vector3) -> bool:
 	return absf(p.z) < Bm * 0.5 + 0.5 and absf(p.x) < L * 0.5
 
 
+## A hauler's round: from the pile round the quay clutter to the brow, up it, and round the
+## deckhouses and mounts to the drop spot. k_deck = how far along the route the deck begins.
+func _haul_route(f: Dictionary) -> void:
+	var q: Array = _route(false, f.src, gang_bot)
+	f.src = q[0]
+	var pts: Array = q.duplicate()
+	pts.append(gang_bot)
+	var to_bot := 0.0
+	for i in pts.size() - 1:
+		to_bot += (pts[i] as Vector3).distance_to(pts[i + 1])
+	pts.append(gang_top)
+	var before := 0.0
+	for i in pts.size() - 1:
+		before += (pts[i] as Vector3).distance_to(pts[i + 1])
+	if not into_side:
+		var dk: Array = _route(true, gang_top, Vector3(f.dst.x, deck_y, f.dst.z))
+		for p in dk:
+			pts.append(p)
+	f.route = pts
+	var tot := 0.0
+	for i in pts.size() - 1:
+		tot += (pts[i] as Vector3).distance_to(pts[i + 1])
+	f.k_deck = before / maxf(tot, 0.001)
+	f.k_bot = to_bot / maxf(tot, 0.001)
+
+
 func _trip_len(f: Dictionary) -> float:
-	var pts := [f.src, gang_bot, gang_top, Vector3(f.dst.x, deck_y, f.dst.z)]
-	if into_side:
-		pts = [f.src, gang_bot, gang_top]
+	var pts: Array = f.route
 	var d := 0.0
 	for i in pts.size() - 1:
 		d += (pts[i] as Vector3).distance_to(pts[i + 1])

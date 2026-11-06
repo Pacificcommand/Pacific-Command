@@ -143,6 +143,13 @@ func _test_dock(path: String) -> void:
 			frames = int(a.split("=")[1])
 	await get_tree().process_frame
 	open_dock(selv)
+	if "--dockcheck" in OS.get_cmdline_user_args():
+		await get_tree().process_frame
+		var dpn = get_node_or_null("Dock")
+		if dpn != null:
+			print("dock clip check ", C.ship, ": ", dpn.clip_check(120.0))
+		get_tree().quit()
+		return
 	for i in frames:
 		await get_tree().process_frame
 	get_viewport().get_texture().get_image().save_png(path)
