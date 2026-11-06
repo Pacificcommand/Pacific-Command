@@ -545,7 +545,11 @@ func show_end() -> void:
 			lbl.end_t.text = "Mission failed"
 		_:
 			lbl.end_t.text = "%s lost" % p.ship_name
-	var sunk_txt: String = ", ".join(st.sunk) if not st.sunk.is_empty() else "none"
+	var land: Array = st.get("land", [])
+	var ships_sunk: Array = st.sunk.filter(func(n): return not land.has(n))
+	var sunk_txt: String = ", ".join(ships_sunk) if not ships_sunk.is_empty() else "none"
+	if not land.is_empty():
+		sunk_txt += ".\nShore targets destroyed: " + ", ".join(land)
 	var acc: float = 100.0 * st.hits / maxf(1.0, _shells_fired())
 	var txt := "Battle time %s.\nEnemy sunk: %s.\n" % [_clock(B.t), sunk_txt]
 	if not st.escaped.is_empty():

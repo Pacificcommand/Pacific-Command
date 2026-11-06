@@ -59,8 +59,9 @@ static func after_action(brief: Dictionary, stats: Dictionary, log_lines: Array,
 		lines.append("   %s  %s" % [ln[0], ln[1]])
 		n += 1
 	lines.append("")
-	var sunk: Array = stats.get("sunk", [])
-	lines.append("3. ENEMY. %s" % ("Sunk: %s." % ", ".join(sunk) if not sunk.is_empty() else "No enemy vessels sunk."))
+	var land: Array = stats.get("land", [])
+	var sunk: Array = stats.get("sunk", []).filter(func(n): return not land.has(n))
+	lines.append("3. ENEMY. %s%s" % ["Sunk: %s." % ", ".join(sunk) if not sunk.is_empty() else "No enemy vessels sunk.", (" Shore targets destroyed: %s." % ", ".join(land)) if not land.is_empty() else ""])
 	lines.append("")
 	lines.append("4. AMMUNITION EXPENDED. %d salvos and bursts, %d rounds; %d hits observed (%.0f%%). %d torpedoes fired, %d hits." % [stats.get("salvos", 0), stats.get("shells", 0), stats.get("hits", 0), 100.0 * stats.get("hits", 0) / maxf(1.0, stats.get("shells", 0)), stats.get("torps", 0), stats.get("torp_hits", 0)])
 	lines.append("")

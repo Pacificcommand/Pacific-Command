@@ -1232,7 +1232,7 @@ func _settle() -> void:
 		tally.saved = 1 if player.alive and player.flood > player.flood_cap() * 0.5 else 0
 		tally.night = weather == "night"
 		tally.summary = "%s: %s. %s" % [brief.get("title", "Battle"), {"won": "mission accomplished", "escaped": "the enemy got through", "lost_convoy": "mission failed"}.get(over, "ship lost"),
-			("Sunk %s." % ", ".join(stats.sunk)) if not stats.sunk.is_empty() else ""]
+			_sunk_line()]
 		var day := int(Game.mission.get("day", 0))
 		stats.career_lines = Career.apply_battle(Game.career, tally, over, level, day)
 		var aar := Story.after_action(brief, stats, log_lines, day, player.ship_name, over if player.alive else "lost", stats.start_crew, player.crew, t)
@@ -1937,6 +1937,10 @@ func _hit_report(s: Ship, lx: float, what: Array, dmg: float, kind: String, seen
 	if not isp and not seen:
 		return
 	var where := "forward" if lx > s.T.L * 0.15 else ("aft" if lx < -s.T.L * 0.15 else "amidships")
+	if s.T.get("ground", false):
+		where = ""               # a battery or a dump has no bow and stern
+		if not s.alive:
+			return
 	var key: String = s.ship_name
 	if isp and kind == "torpedo":
 		shake = maxf(shake, 2.0)
@@ -1970,6 +1974,8 @@ func _flush_hit_reports() -> void:
 		if pd.get("dc", false):
 			head = "Depth charges close aboard"
 		var where: String = " and ".join(pd.where) if pd.where.size() <= 2 else "all along the ship"
+		if pd.ship is Ship and pd.ship.T.get("ground", false):
+			where = "on the position"
 		if not pd.what.is_empty():
 			var important := false
 			for w in pd.what:
@@ -2028,6 +2034,27 @@ func add_fire(s: Ship, lx: float, lz: float, intensity: float) -> String:
 	return "forward" if lx > s.T.L * 0.15 else ("aft" if lx < -s.T.L * 0.15 else "amidships")
 
 
+## What we say when a land target is knocked out (it does not sink).
+## "Sunk ships. Destroyed shore targets." for the career log.
+func _sunk_line() -> String:
+	var land: Array = stats.get("land", [])
+	var ships_sunk: Array = stats.sunk.filter(func(n): return not land.has(n))
+	var out := ""
+	if not ships_sunk.is_empty():
+		out += "Sunk %s. " % ", ".join(ships_sunk)
+	if not land.is_empty():
+		out += "Destroyed %s." % ", ".join(land)
+	return out.strip_edges()
+
+
+func _knocked_out_msg(s: Ship) -> String:
+	if s.type_id == "airfield":
+		return "%s is wrecked: no more planes can take off from it!" % s.ship_name
+	if s.type_id == "supply_dump":
+		return "%s destroyed! Fires are spreading through the stores." % s.ship_name
+	return "%s silenced! The guns are wrecked." % s.ship_name
+
+
 func magazine_boom(s: Ship, mx: float) -> void:
 	var w := s.to_world_xz(mx, 0.0)
 	fx.boom(w.x, 10.0, w.y, true)
@@ -2041,7 +2068,10 @@ func magazine_boom(s: Ship, mx: float) -> void:
 	s.mag_blown = true
 	s.crew = maxi(0, int(round(s.crew * 0.08)))
 	s.flood = s.T.displacement * 2.0
-	say("MAGAZINE EXPLOSION! The ship is breaking up!" if s.is_player else "%s has blown up! Magazine explosion!" % s.ship_name, "bad" if s.is_player else "good")
+	if s.T.get("ground", false):
+		say("%s: the ammunition store has gone up!" % s.ship_name, "good" if s.team != player.team else "bad")
+	else:
+		say("MAGAZINE EXPLOSION! The ship is breaking up!" if s.is_player else "%s has blown up! Magazine explosion!" % s.ship_name, "bad" if s.is_player else "good")
 	shake = maxf(shake, 3.0 if s.is_player else 1.0)
 	sfx.play("boom_big", w, cam.position, 1.6)
 
@@ -2251,10 +2281,16 @@ func step_ship(s: Ship, dt: float) -> void:
 			s.alive = false
 			s.sinking = 0.001
 			s.fire = false
-			say("Abandon ship! She is going down." if s.is_player else "%s is sinking!" % s.ship_name, "bad" if s.is_player else "good")
-			sfx.play("creak", Vector2(s.x, s.z), cam.position, 0.9)
+			if s.T.get("ground", false):
+				say(_knocked_out_msg(s), "good" if s.team != player.team else "bad")
+			else:
+				say("Abandon ship! She is going down." if s.is_player else "%s is sinking!" % s.ship_name, "bad" if s.is_player else "good")
+				sfx.play("creak", Vector2(s.x, s.z), cam.position, 0.9)
 			if s.team != player.team:
 				stats.sunk.append(s.ship_name)
+				if s.T.get("ground", false):
+					stats.land = stats.get("land", [])
+					stats.land.append(s.ship_name)
 				if s.last_hit_by == player:
 					tally.kills += 1
 					var by := "torp" if s.last_hit_kind == "torpedo" else ("air" if s.last_hit_kind in ["bomb", "strafe", "air_torpedo"] else "gun")
@@ -2275,16 +2311,16 @@ func step_ship(s: Ship, dt: float) -> void:
 		s.roll = lerpf(s.roll, (1.0 if s.flood_side >= 0.0 else -1.0) * deg_to_rad(30.0 if s.mag_blown else 70.0), dt * 0.03 * fast)
 		s.pitch = lerpf(s.pitch, (1.0 if s.flood_fwd >= 0.0 else -1.0) * deg_to_rad(12.0), dt * 0.03 * fast)
 		s.sink += dt * 0.12 * fast
-		if randf() < dt * 2.0:
+		if randf() < dt * 2.0 and not TT.get("ground", false):
 			fx.oil(s.x + randf_range(-20, 20), s.z + randf_range(-20, 20), randf_range(8, 18))
-		if randf() < dt * 0.8:
+		if randf() < dt * 0.8 and not TT.get("ground", false):
 			fx.debris(s.x + randf_range(-30, 30), 2.0, s.z + randf_range(-30, 30), 2, 4.0)
 		if (not s.fires.is_empty() or s.mag_blown) and randf() < dt * 1.2:
 			fx.plume(s.x + randf_range(-TT.L * 0.25, TT.L * 0.25), 4.0, s.z + randf_range(-10, 10), 0.9)
 		if s.sink > 16.0:
 			s.gone = true
 			# burning fuel on the water where she went down
-			if TT.L > 60.0 and (not s.fires.is_empty() or s.mag_blown or randf() < 0.5):
+			if TT.L > 60.0 and not TT.get("ground", false) and (not s.fires.is_empty() or s.mag_blown or randf() < 0.5):
 				wrecks.append({"x": s.x, "z": s.z, "r": clampf(TT.L * 0.25, 15.0, 60.0), "k": clampf(TT.L / 180.0, 0.4, 1.2) * (1.4 if s.mag_blown else 1.0),
 					"age": 0.0, "life": randf_range(160.0, 260.0)})
 		for f in s.fires:
@@ -2409,8 +2445,11 @@ func _step_shore(s: Ship, dt: float) -> void:
 		s.alive = false
 		s.sinking = 0.001
 		s.fire = false
-		say("%s destroyed!" % s.ship_name, "good")
-		stats.sunk.append(s.ship_name)
+		say(_knocked_out_msg(s), "good" if s.team != player.team else "bad")
+		if s.team != player.team:
+			stats.sunk.append(s.ship_name)
+			stats.land = stats.get("land", [])
+			stats.land.append(s.ship_name)
 		var w := s.to_world_xz(0.0, 0.0)
 		fx.boom(w.x, 8.0, w.y, true)
 		fx.debris(w.x, 6.0, w.y, 30, 30.0)
