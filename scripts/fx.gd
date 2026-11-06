@@ -406,6 +406,7 @@ func pyro_explosion(pos: Vector3, radius: float, smoke_s: float) -> void:
 	e.add_to_group("pyro")
 	add_child(e)
 	e.explode_at(pos)
+	_no_shadows.call_deferred(e)
 
 
 ## A burning fire from PYROLUX, attached to a ship. Size 1 = small, 2 = big.
@@ -418,7 +419,18 @@ func pyro_fire(parent: Node3D, local_pos: Vector3, size: float) -> Node3D:
 	f.position = local_pos
 	f.scale = Vector3.ONE * size
 	parent.add_child(f)
+	_no_shadows.call_deferred(f)
 	return f
+
+
+## PYROLUX smoke must not cast shadows: big columns throw hard black bands across the ground.
+func _no_shadows(n: Node) -> void:
+	if not is_instance_valid(n):
+		return
+	if n is GeometryInstance3D:
+		(n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for c in n.get_children():
+		_no_shadows(c)
 
 
 func boom(x: float, y: float, z: float, big: bool) -> void:

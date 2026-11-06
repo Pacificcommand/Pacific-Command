@@ -162,6 +162,10 @@ func _draw_map(m: Dictionary) -> void:
 			mat.set_shader_parameter("field%d" % fi, Vector4(float(fd[0]), float(fd[1]), deg_to_rad(float(fd[2])), float(fd[3])))
 			fws[fi] = float(fd[4])
 		mat.set_shader_parameter("field_w", fws)
+		if pass_i == 1:
+			# the shallows are see-through: draw them before smoke, fire and splashes so those
+			# show over the water instead of being cut off at the coast
+			mat.render_priority = -20
 		var mi := MeshInstance3D.new()
 		mi.mesh = pm
 		mi.material_override = mat

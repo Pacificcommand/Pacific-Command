@@ -199,6 +199,29 @@ func _test_args() -> void:
 					mates.append(o)
 			if not mates.is_empty():
 				hud._give_order(mates, _test.order))
+	if _test.has("afhit"):
+		# recording: --afhit=T[,N]: a heavy bombardment walks down the airfield from T s; after N
+		# hits (default 14) it is wrecked
+		var av: PackedStringArray = String(_test.afhit).split(",")
+		var at0 := float(av[0])
+		var an := int(av[1]) if av.size() > 1 else 14
+		for o in ships:
+			if o.type_id == "airfield":
+				var af: Ship = o
+				for j in an:
+					after(at0 + j * 0.45 + randf_range(0.0, 0.25), func():
+						if not af.alive:
+							return
+						var lx: float = lerpf(-420.0, 420.0, float(j) / maxf(1.0, an - 1)) + randf_range(-40.0, 40.0)
+						var w: Vector2 = af.to_world_xz(lx, randf_range(-30.0, 110.0))
+						var gy: float = terrain.height_at(w.x, w.y)
+						fx.boom(w.x, gy + 3.0, w.y, j % 3 == 0)
+						fx.debris(w.x, gy + 3.0, w.y, 12, 22.0)
+						fx.hit_smoke(w.x, gy + 4.0, w.y, true)
+						sfx.play("boom", w, cam.position, 1.2)
+						if j == an - 1:
+							af.crew = 0)
+				break
 	if _test.has("run"):
 		# fast-forward the simulation before the first frame
 		var n := int(float(_test.run) / 0.05)
@@ -246,29 +269,6 @@ func _test_args() -> void:
 			print("  ", s.ship_name, " alive=", s.alive, " crew=", s.crew, " flood=", int(s.flood), " fires=", s.fires.size(), " range=", int(player.range_to(s)), " vis=", player.vis.get(s.ship_name, false), " radar=", player.radar.get(s.ship_name, false))
 		if _test.has("quit") and not _test.has("shot"):
 			get_tree().quit()
-	if _test.has("afhit"):
-		# recording: --afhit=T[,N]: a heavy bombardment walks down the airfield from T s; after N
-		# hits (default 14) it is wrecked
-		var av: PackedStringArray = String(_test.afhit).split(",")
-		var at0 := float(av[0])
-		var an := int(av[1]) if av.size() > 1 else 14
-		for o in ships:
-			if o.type_id == "airfield":
-				var af: Ship = o
-				for j in an:
-					after(at0 + j * 0.45 + randf_range(0.0, 0.25), func():
-						if not af.alive:
-							return
-						var lx: float = lerpf(-420.0, 420.0, float(j) / maxf(1.0, an - 1)) + randf_range(-40.0, 40.0)
-						var w: Vector2 = af.to_world_xz(lx, randf_range(-30.0, 110.0))
-						var gy: float = terrain.height_at(w.x, w.y)
-						fx.boom(w.x, gy + 3.0, w.y, j % 3 == 0)
-						fx.debris(w.x, gy + 3.0, w.y, 12, 22.0)
-						fx.hit_smoke(w.x, gy + 4.0, w.y, true)
-						sfx.play("boom", w, cam.position, 1.2)
-						if j == an - 1:
-							af.crew = 0)
-				break
 	if _test.has("salvolive"):
 		# recording: --salvolive=T,SIZE,N[,Ship_Name]: N shells straddle a ship T s into the clip
 		var sv: PackedStringArray = String(_test.salvolive).split(",")
@@ -2445,14 +2445,117 @@ func torp_reload_time(s: Ship) -> float:
 	return base
 
 
+## Where a wrecked shore target keeps burning: [lx, lz, size] in its own frame (lx along the
+## runway for an airfield; +lz is the hangar side).
+func _burn_points(s: Ship) -> Array:
+	match s.type_id:
+		"airfield":
+			return [[220.0, 110.0, 1.6], [236.0, 126.0, 1.4], [-120.0, 96.0, 1.1], [-40.0, 96.0, 1.2], [60.0, 96.0, 1.0],
+				[150.0, 84.0, 0.7], [-300.0, 4.0, 0.6], [110.0, -6.0, 0.6], [360.0, 8.0, 0.5], [-180.0, 128.0, 0.6]]
+		"supply_dump":
+			return [[0.0, 0.0, 1.3], [10.0, -10.0, 1.0], [-14.0, 6.0, 0.9], [12.0, 8.0, 1.1]]
+	return [[0.0, 0.0, 1.0], [-4.0, 3.0, 0.6]]
+
+
+## A shore target that has been knocked out stays as a ruin for the rest of the battle: charred,
+## cratered, burning, with secondary explosions in the first minute and smoke columns that thin
+## slowly but never quite stop.
+func _step_ruin(s: Ship, dt: float) -> void:
+	var pts: Array = s.get_meta("burn", [])
+	if pts.is_empty():
+		pts = _burn_points(s)
+		s.set_meta("burn", pts)
+		if _test.has("trace"):
+			print("  [%d] ruin: %s" % [int(t), s.ship_name])
+		_make_ruin(s, pts)
+	var k: float = clampf(1.0 - s.sinking / 900.0, 0.4, 1.0)
+	for p in pts:
+		if randf() < dt * 1.1 * k * float(p[2]):
+			var w: Vector2 = s.to_world_xz(p[0], p[1])
+			var gy: float = terrain.height_at(w.x, w.y)
+			fx.plume(w.x + randf_range(-5, 5), gy + 4.0, w.y + randf_range(-5, 5), k * float(p[2]))
+			if float(p[2]) >= 1.0 and randf() < 0.55:
+				# the big fires send a tall black column up and away on the wind
+				var c := Color(0.05, 0.045, 0.04).lerp(Color(0.14, 0.13, 0.12), randf())
+				fx.smoke(w.x + randf_range(-4, 4), gy + 8.0, w.y + randf_range(-4, 4), fx.wind.x * 0.6, fx.wind.y * 0.6,
+					randf_range(6.0, 9.0) * k, randf_range(0.9, 1.3), randf_range(120.0, 170.0), randf_range(0.42, 0.6), c,
+					randf_range(3.5, 5.0), randf_range(180.0, 260.0), true)
+		if randf() < dt * 3.0 * k * float(p[2]):
+			var wf: Vector2 = s.to_world_xz(float(p[0]) + randf_range(-8, 8), float(p[1]) + randf_range(-6, 6))
+			fx.fire_puff(wf.x, terrain.height_at(wf.x, wf.y) + randf_range(1.0, 4.0), wf.y, randf_range(2.0, 4.5) * float(p[2]))
+	# fuel and ammunition going up for a while after
+	if s.sinking < 50.0 and randf() < dt * (0.35 if s.type_id != "shore_battery" else 0.15):
+		var q: Array = pts[randi() % pts.size()]
+		var we: Vector2 = s.to_world_xz(float(q[0]) + randf_range(-10, 10), float(q[1]) + randf_range(-10, 10))
+		var ge: float = terrain.height_at(we.x, we.y)
+		fx.boom(we.x, ge + 4.0, we.y, float(q[2]) > 1.0)
+		fx.debris(we.x, ge + 4.0, we.y, 14, 26.0)
+		if float(q[2]) > 1.2:
+			fx.pyro_explosion(Vector3(we.x, ge + 6.0, we.y), 14.0, 10.0)
+		sfx.play("boom", we, cam.position, 0.9)
+	for f in s.fires:
+		f.int = maxf(f.int * exp(-dt * 0.002), 0.45 * k)
+
+
+## Charred buildings, craters and lasting fires on a ruined shore target.
+func _make_ruin(s: Ship, pts: Array) -> void:
+	# scorch: a dark film over the whole model
+	var char_m := StandardMaterial3D.new()
+	char_m.albedo_color = Color(0.03, 0.025, 0.02, 0.62)
+	char_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	char_m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	if s.model != null:
+		for mi in s.model.find_children("*", "MeshInstance3D", true, false):
+			(mi as MeshInstance3D).material_overlay = char_m
+	# craters: a scorch mark, a ring of thrown-up earth and a darker pit, none quite round
+	var pit := StandardMaterial3D.new()
+	pit.albedo_color = Color(0.17, 0.14, 0.11)
+	pit.roughness = 1.0
+	var rim := StandardMaterial3D.new()
+	rim.albedo_color = Color(0.44, 0.38, 0.29)
+	rim.roughness = 1.0
+	var scorch := StandardMaterial3D.new()
+	scorch.albedo_color = Color(0.05, 0.04, 0.03, 0.45)
+	scorch.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	scorch.roughness = 1.0
+	var n_c := 18 if s.type_id == "airfield" else 5
+	for i in n_c:
+		var lx: float = randf_range(-460.0, 460.0) if s.type_id == "airfield" else randf_range(-14.0, 14.0)
+		var lz: float = randf_range(-30.0, 60.0) if s.type_id == "airfield" else randf_range(-12.0, 12.0)
+		var r: float = randf_range(5.0, 11.0) if s.type_id == "airfield" else randf_range(3.0, 6.0)
+		var w: Vector2 = s.to_world_xz(lx, lz)
+		var gy: float = terrain.height_at(w.x, w.y)
+		var squash := Vector3(randf_range(0.7, 1.0), 1.0, randf_range(1.0, 1.4))
+		var rot := randf() * TAU
+		for layer in 3:
+			var c := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = r * [1.9, 1.0, 0.6][layer] * randf_range(0.9, 1.1)
+			cm.bottom_radius = cm.top_radius * 1.05
+			cm.height = [0.1, 0.35, 0.4][layer]
+			cm.radial_segments = 9 + layer * 2
+			c.mesh = cm
+			c.material_override = [scorch, rim, pit][layer]
+			c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(c)
+			c.global_position = Vector3(w.x, gy + [0.08, 0.14, 0.22][layer], w.y)
+			c.rotation.y = rot + layer * 0.7
+			c.scale = squash
+	# lasting flames at the biggest fires
+	var big := pts.duplicate()
+	big.sort_custom(func(a, b): return float(a[2]) > float(b[2]))
+	for i in mini(4, big.size()):
+		s.fires.append({"lx": float(big[i][0]), "lz": float(big[i][1]), "int": 0.9})
+	_sync_fire_nodes(s)
+	var w0: Vector2 = s.to_world_xz(0.0, 0.0)
+	fx.light(Vector3(w0.x, 40.0, w0.y), 900.0 if s.type_id == "airfield" else 300.0, Color(1.0, 0.55, 0.25), 6.0, 2.0)
+
+
 ## Shore batteries and dumps: no motion; destroyed when the crew is gone or everything is wrecked.
 func _step_shore(s: Ship, dt: float) -> void:
 	if not s.alive:
 		s.sinking += dt
-		for f in s.fires:
-			f.int *= exp(-dt * 0.05)
-		if s.sinking > 60.0:
-			s.gone = true
+		_step_ruin(s, dt)
 		return
 	var intact := 0.0
 	var total := 0.0
