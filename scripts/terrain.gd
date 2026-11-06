@@ -155,6 +155,13 @@ func _draw_map(m: Dictionary) -> void:
 		mat.set_shader_parameter("vtype", vtype)
 		mat.set_shader_parameter("sd", SD)
 		mat.set_shader_parameter("lagoon_all", meta.get("deep_lagoon", false) or String(m.id) == "truk")
+		var fws := Vector3.ZERO
+		var flist: Array = meta.get("fields", [])
+		for fi in mini(3, flist.size()):
+			var fd: Array = flist[fi]
+			mat.set_shader_parameter("field%d" % fi, Vector4(float(fd[0]), float(fd[1]), deg_to_rad(float(fd[2])), float(fd[3])))
+			fws[fi] = float(fd[4])
+		mat.set_shader_parameter("field_w", fws)
 		var mi := MeshInstance3D.new()
 		mi.mesh = pm
 		mi.material_override = mat

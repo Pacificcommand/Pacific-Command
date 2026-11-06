@@ -4,6 +4,23 @@ shader_type spatial;
 render_mode cull_disabled, diffuse_lambert;
 #include "island_common.gdshaderinc"
 
+// the island's airfields (map metres: x, z, heading in radians, length; widths in field_w):
+// their soft-edged cleared margins are not town lots
+uniform vec4 field0 = vec4(0.0, 0.0, 0.0, 0.0);
+uniform vec4 field1 = vec4(0.0, 0.0, 0.0, 0.0);
+uniform vec4 field2 = vec4(0.0, 0.0, 0.0, 0.0);
+uniform vec3 field_w = vec3(0.0);
+
+bool near_field(vec2 p, vec4 f, float w) {
+	if (f.w <= 0.0) {
+		return false;
+	}
+	vec2 d = p - f.xy;
+	float along = d.x * sin(f.z) - d.y * cos(f.z);
+	float across = d.x * cos(f.z) + d.y * sin(f.z);
+	return abs(along) < f.w * 0.5 + 160.0 && abs(across) < w * 0.5 + 200.0;
+}
+
 void vertex() {
 	v_uv = island_vertex(VERTEX);
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -81,7 +98,7 @@ void fragment() {
 		vec3 strip = (kind == 0 || kind == 1) ? vec3(0.88, 0.86, 0.80) : vec3(0.60, 0.58, 0.52);
 		strip *= 0.92 + 0.08 * n3;
 		col = mix(col, strip, smoothstep(0.75, 0.95, clear));
-	} else if (clear > 0.3) {
+	} else if (clear > 0.3 && !(near_field((v_uv - 0.5) * 2.0 * half, field0, field_w.x) || near_field((v_uv - 0.5) * 2.0 * half, field1, field_w.y) || near_field((v_uv - 0.5) * 2.0 * half, field2, field_w.z))) {
 		vec2 lot = floor(w / 16.0);
 		float r = hash2(lot);
 		vec3 roof = r < 0.3 ? vec3(0.55, 0.30, 0.22) : (r < 0.6 ? vec3(0.50, 0.48, 0.45) : vec3(0.62, 0.55, 0.42));

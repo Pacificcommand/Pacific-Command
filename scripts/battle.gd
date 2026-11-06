@@ -246,6 +246,29 @@ func _test_args() -> void:
 			print("  ", s.ship_name, " alive=", s.alive, " crew=", s.crew, " flood=", int(s.flood), " fires=", s.fires.size(), " range=", int(player.range_to(s)), " vis=", player.vis.get(s.ship_name, false), " radar=", player.radar.get(s.ship_name, false))
 		if _test.has("quit") and not _test.has("shot"):
 			get_tree().quit()
+	if _test.has("afhit"):
+		# recording: --afhit=T[,N]: a heavy bombardment walks down the airfield from T s; after N
+		# hits (default 14) it is wrecked
+		var av: PackedStringArray = String(_test.afhit).split(",")
+		var at0 := float(av[0])
+		var an := int(av[1]) if av.size() > 1 else 14
+		for o in ships:
+			if o.type_id == "airfield":
+				var af: Ship = o
+				for j in an:
+					after(at0 + j * 0.45 + randf_range(0.0, 0.25), func():
+						if not af.alive:
+							return
+						var lx: float = lerpf(-420.0, 420.0, float(j) / maxf(1.0, an - 1)) + randf_range(-40.0, 40.0)
+						var w: Vector2 = af.to_world_xz(lx, randf_range(-30.0, 110.0))
+						var gy: float = terrain.height_at(w.x, w.y)
+						fx.boom(w.x, gy + 3.0, w.y, j % 3 == 0)
+						fx.debris(w.x, gy + 3.0, w.y, 12, 22.0)
+						fx.hit_smoke(w.x, gy + 4.0, w.y, true)
+						sfx.play("boom", w, cam.position, 1.2)
+						if j == an - 1:
+							af.crew = 0)
+				break
 	if _test.has("salvolive"):
 		# recording: --salvolive=T,SIZE,N[,Ship_Name]: N shells straddle a ship T s into the clip
 		var sv: PackedStringArray = String(_test.salvolive).split(",")

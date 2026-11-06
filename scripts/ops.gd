@@ -295,7 +295,7 @@ func _test_shot(path: String) -> void:
 						C.islands[iid3].radar_t = C.day - 1.0
 				_radar_islands()
 				cam_lon = isl2.lon; cam_lat = isl2.lat
-				zoom = 9.0
+				zoom = 26.0
 				selected = iid2
 				_refresh_side()
 				_shot_now(path)
