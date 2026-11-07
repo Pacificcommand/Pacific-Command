@@ -163,6 +163,9 @@ var _print_log := "--oplog" in OS.get_cmdline_user_args()
 ## Test: run the war fast without drawing (--campaigntest=DAYS [--give=id,id] islands start ours,
 ## [--jpstrong] Japan always finds the ships), printing the log and the islands at the end.
 func _shot_now(path: String) -> void:
+	if "--stay" in OS.get_cmdline_user_args():
+		_film_start()
+		return
 	for i in 12:
 		await get_tree().process_frame
 	get_viewport().get_texture().get_image().save_png(path)
@@ -342,9 +345,45 @@ func _test_shot(path: String) -> void:
 				print("engaging ", g.kind, " ", _describe(g.ships))
 				_engage(g)
 				return
+	if "--stay" in OS.get_cmdline_user_args():
+		_film_start()
+		return
 	get_viewport().get_texture().get_image().save_png(path)
 	print("saved ", path)
 	get_tree().quit()
+
+
+## Recording test (with --ops=X --stay): the map stays open and the camera glides from one view to
+## another: --film=LON0,LAT0,ZOOM0,LON1,LAT1,ZOOM1,SECONDS [--filmspeed=0..3] [--filmsel=island_id]
+## [--filmdest=LON,LAT] [--filmcard] (keep cards open; otherwise they are closed).
+var _film := {}
+func _film_start() -> void:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--film="):
+			var v: PackedStringArray = a.split("=")[1].split(",")
+			_film = {"a": Vector3(float(v[0]), float(v[1]), float(v[2])), "b": Vector3(float(v[3]), float(v[4]), float(v[5])), "secs": float(v[6]), "t": 0.0}
+			cam_lon = _film.a.x; cam_lat = _film.a.y; zoom = _film.a.z
+		elif a.begins_with("--filmspeed="):
+			speed_i = int(a.split("=")[1])
+		elif a.begins_with("--filmsel="):
+			selected = a.split("=")[1]
+		elif a.begins_with("--filmdest="):
+			var d: PackedStringArray = a.split("=")[1].split(",")
+			C.attached = ""; C.intercept = ""
+			C.dest = [float(d[0]), float(d[1])]
+	if not "--filmcard" in OS.get_cmdline_user_args() and card != null:
+		_close_card()
+	_refresh_top()
+	_refresh_side()
+
+
+func _film_step(delta: float) -> void:
+	_film.t = minf(_film.t + delta, _film.secs)
+	var k: float = smoothstep(0.0, 1.0, _film.t / maxf(0.01, _film.secs))
+	cam_lon = lerpf(_film.a.x, _film.b.x, k)
+	cam_lat = lerpf(_film.a.y, _film.b.y, k)
+	zoom = exp(lerpf(log(_film.a.z), log(_film.b.z), k))
+	map.queue_redraw()
 
 
 static func new_campaign(start_day: int, ship: String, name: String) -> Dictionary:
@@ -363,67 +402,181 @@ static func new_campaign(start_day: int, ship: String, name: String) -> Dictiona
 # =====================================================================
 
 func _build_ui() -> void:
-	var back := ColorRect.new()
-	back.color = Color(0.03, 0.10, 0.17)
-	back.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(back)
+	# the War Room: the chart lies on a wooden table under a lamp
+	var wood := TextureRect.new()
+	wood.texture = WT.tex("wood")
+	wood.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	wood.stretch_mode = TextureRect.STRETCH_SCALE
+	wood.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	wood.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(wood)
+	var grad := Gradient.new()
+	grad.set_color(0, Color(1.0, 0.84, 0.59, 0.10))
+	grad.set_color(1, Color(0, 0, 0, 0.62))
+	grad.add_point(0.45, Color(0, 0, 0, 0.12))
+	var gt := GradientTexture2D.new()
+	gt.gradient = grad
+	gt.fill = GradientTexture2D.FILL_RADIAL
+	gt.fill_from = Vector2(0.40, 0.45)
+	gt.fill_to = Vector2(1.05, 1.15)
+	gt.width = 512; gt.height = 288
+	var lamp := TextureRect.new()
+	lamp.texture = gt
+	lamp.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	lamp.stretch_mode = TextureRect.STRETCH_SCALE
+	lamp.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	lamp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(lamp)
+	# the chart, inset in a frame with a shadow
+	var frame := Panel.new()
+	var fsb := WT.flat(Color("d9cfb3"), Color("6b5534"), 1, 0)
+	fsb.shadow_size = 24; fsb.shadow_color = Color(0, 0, 0, 0.6); fsb.shadow_offset = Vector2(0, 14)
+	frame.add_theme_stylebox_override("panel", fsb)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	frame.offset_left = 30; frame.offset_top = 96; frame.offset_right = -CLIP_W - 50; frame.offset_bottom = -130
+	add_child(frame)
 	map = Control.new()
 	map.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	map.offset_left = 6; map.offset_top = 6; map.offset_right = -6; map.offset_bottom = -6
+	map.clip_contents = true
+	map.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	map.draw.connect(_draw_map)
 	map.gui_input.connect(_map_input)
-	add_child(map)
-	# top bar
-	var top := UI.panel(10)
-	var th := UI.row([], 14)
-	lbl.date = UI.label("", 20)
-	th.add_child(lbl.date)
+	map.resized.connect(func(): map.queue_redraw())
+	frame.add_child(map)
+	# top left: the brass date plate and the clock speeds
+	var plate := PanelContainer.new()
+	var psb := WT.flat(WT.BRASS, WT.BRASS_EDGE, 2, 2)
+	psb.content_margin_left = 20; psb.content_margin_right = 20; psb.content_margin_top = 4; psb.content_margin_bottom = 6
+	psb.shadow_size = 8; psb.shadow_color = Color(0, 0, 0, 0.5); psb.shadow_offset = Vector2(0, 4)
+	plate.add_theme_stylebox_override("panel", psb)
+	var pv := VBoxContainer.new()
+	pv.add_theme_constant_override("separation", -4)
+	pv.alignment = BoxContainer.ALIGNMENT_CENTER
+	lbl.date = Label.new()
+	lbl.date.add_theme_font_override("font", WT.font("headb"))
+	lbl.date.add_theme_font_size_override("font_size", 26)
+	lbl.date.add_theme_color_override("font_color", WT.BRASS_TEXT)
+	lbl.date.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.hour = Label.new()
+	lbl.hour.add_theme_font_override("font", WT.font("head"))
+	lbl.hour.add_theme_font_size_override("font_size", 12)
+	lbl.hour.add_theme_color_override("font_color", Color("4a3812"))
+	lbl.hour.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pv.add_child(lbl.date)
+	pv.add_child(lbl.hour)
+	plate.add_child(pv)
 	var sp := HBoxContainer.new()
-	sp.add_theme_constant_override("separation", 2)
+	sp.add_theme_constant_override("separation", 6)
 	for i in SPEEDS.size():
-		var b := UI.button(["Pause", "1 h / 3 s", "Fast", "Very fast"][i], (func(k): speed_i = k; _refresh_top()).bind(i), true)
+		var b := UI.button(["HOLD", "1×", "4×", "24×"][i], (func(k): speed_i = k; _refresh_top()).bind(i), true)
+		b.tooltip_text = ["Hold the clock", "One hour every three seconds", "Fast", "Very fast"][i]
+		WT.wood_button(b, 15, 52)
+		b.custom_minimum_size.x = 62
 		btn["sp%d" % i] = b
 		sp.add_child(b)
-	th.add_child(UI.row([UI.caps("Time", 40), sp]))
-	lbl.ship = UI.label("", 14)
-	th.add_child(lbl.ship)
-	lbl.career = UI.label("", 14, UI.BRASS)
-	th.add_child(lbl.career)
-	th.add_child(UI.button("Main menu", func(): _save(); get_tree().change_scene_to_file("res://scenes/menu.tscn")))
-	top.add_child(th)
-	add_child(top)
-	top.anchor_right = 1.0
-	top.offset_left = 12; top.offset_top = 12; top.offset_right = -12; top.offset_bottom = 12
-	top.grow_vertical = Control.GROW_DIRECTION_END
-	# side panel
-	var sp2 := UI.panel(12)
-	side = UI.column(6)
-	side.custom_minimum_size.x = 380
-	sp2.add_child(side)
-	add_child(sp2)
-	sp2.anchor_left = 1.0; sp2.anchor_right = 1.0; sp2.anchor_top = 0.0
-	sp2.offset_left = -12; sp2.offset_right = -12; sp2.offset_top = 90; sp2.offset_bottom = 90
-	sp2.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	sp2.grow_vertical = Control.GROW_DIRECTION_END
-	# log
-	log_box = UI.column(3)
-	log_box.custom_minimum_size.x = 560
-	add_child(log_box)
-	log_box.anchor_top = 1.0; log_box.anchor_bottom = 1.0
-	log_box.offset_left = 12; log_box.offset_top = -12; log_box.offset_right = 12; log_box.offset_bottom = -12
-	log_box.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	log_box.grow_horizontal = Control.GROW_DIRECTION_END
+	var tl := UI.row([plate, sp], 18)
+	tl.position = Vector2(30, 18)
+	add_child(tl)
+	# top right of the chart: the service record, the mail, the books, the menu
+	var tr := UI.row([], 8)
+	btn.career = UI.button("CAREER", _open_career)
+	btn.mail = UI.button("MAIL", _show_mail)
+	btn.books = UI.button("BOOKS", func(): add_child(EncyclopediaPanel.new()))
+	btn.books.tooltip_text = "The encyclopedia: ships, battles, aircraft and weapons"
+	btn.menu = UI.button("MENU", func(): _save(); get_tree().change_scene_to_file("res://scenes/menu.tscn"))
+	btn.menu.tooltip_text = "Save and go back to the main menu"
+	for k in ["career", "mail", "books", "menu"]:
+		WT.wood_button(btn[k], 15, 52)
+		tr.add_child(btn[k])
+	tr.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	tr.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	tr.offset_right = -CLIP_W - 50; tr.offset_left = -CLIP_W - 50; tr.offset_top = 18
+	add_child(tr)
+	# the clipboard: everything about the selected thing, on paper
+	var board := Panel.new()
+	var bsb := WT.flat(WT.BOARD, Color("4e3519"), 1, 10)
+	bsb.shadow_size = 20; bsb.shadow_color = Color(0, 0, 0, 0.55); bsb.shadow_offset = Vector2(0, 12)
+	board.add_theme_stylebox_override("panel", bsb)
+	board.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	board.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
+	board.offset_left = -CLIP_W - 22; board.offset_right = -22; board.offset_top = 16; board.offset_bottom = -CARDS_H - 14
+	board.rotation_degrees = 0.8
+	add_child(board)
+	var clip := Panel.new()
+	var csb := WT.flat(Color("b8b8b0"), Color("7c7c74"), 0, 6)
+	csb.border_width_bottom = 3
+	clip.add_theme_stylebox_override("panel", csb)
+	clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	clip.position = Vector2(CLIP_W / 2.0 - 64, 10); clip.size = Vector2(128, 34)
+	board.add_child(clip)
+	var sheet := PanelContainer.new()
+	sheet.add_theme_stylebox_override("panel", WT.paper_box(20))
+	sheet.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
+	sheet.offset_left = -CLIP_W - 6; sheet.offset_right = -38; sheet.offset_top = 66; sheet.offset_bottom = -CARDS_H - 28
+	sheet.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(sheet)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	sheet.add_child(scroll)
+	side = UI.column(8)
+	side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(side)
+	# under the clipboard: the latest signals on index cards
+	log_box = UI.column(10)
+	log_box.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	log_box.offset_left = -CLIP_W - 6; log_box.offset_right = -36; log_box.offset_top = -CARDS_H; log_box.offset_bottom = -16
+	log_box.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	log_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(log_box)
+	# bottom left: the dock (in port) and the captain's plaque
+	var bl := UI.row([], 14)
+	btn.dock = UI.button("GO TO THE DOCK", func(): open_dock())
+	WT.brass_button(btn.dock, 18)
+	btn.dock.custom_minimum_size.y = 64
+	bl.add_child(btn.dock)
+	var plq := PanelContainer.new()
+	var qsb := WT.flat(Color(0.08, 0.05, 0.02, 0.62), WT.BRASS_EDGE, 1, 0)
+	qsb.content_margin_left = 16; qsb.content_margin_right = 16; qsb.content_margin_top = 6; qsb.content_margin_bottom = 8
+	plq.add_theme_stylebox_override("panel", qsb)
+	var qv := VBoxContainer.new()
+	qv.add_theme_constant_override("separation", 0)
+	lbl.ship = Label.new()
+	lbl.ship.add_theme_font_override("font", WT.font("head"))
+	lbl.ship.add_theme_font_size_override("font_size", 17)
+	lbl.ship.add_theme_color_override("font_color", WT.WOOD_TEXT)
+	lbl.career = Label.new()
+	lbl.career.add_theme_font_override("font", WT.font("type"))
+	lbl.career.add_theme_font_size_override("font_size", 14)
+	lbl.career.add_theme_color_override("font_color", Color("cdb98a"))
+	qv.add_child(lbl.ship)
+	qv.add_child(lbl.career)
+	plq.add_child(qv)
+	bl.add_child(plq)
+	bl.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	bl.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	bl.offset_left = 30; bl.offset_bottom = -26; bl.offset_top = -26
+	add_child(bl)
+
+
+const CLIP_W := 400.0          # the clipboard's width
+const CARDS_H := 330.0         # room under it for the index cards
 
 
 func _refresh_top() -> void:
 	var h := int(fposmod(C.day, 1.0) * 24.0)
-	lbl.date.text = "%s  %02d:00" % [War.date_str(int(C.day)), h]
+	lbl.date.text = War.date_str(int(C.day)).to_upper()
+	lbl.hour.text = "%02d00 · %s" % [h, "NIGHT" if h < 6 or h > 18 else "DAY"]
 	for i in SPEEDS.size():
 		btn["sp%d" % i].set_pressed_no_signal(i == speed_i)
 	var T: Dictionary = Data.TYPES[C.ship]
-	var sq: String = "" if C.squadron.is_empty() else " +%d" % C.squadron.size()
-	lbl.ship.text = "%s (%s)%s · %s" % [C.name, T.name, sq, _where()]
-	lbl.career.text = "%s · reputation %d · %d sunk, %d won, %d lost" % [Missions.RANKS[clampi(Game.career.rank, 0, 8)], Game.career.reputation, C.sunk_total, C.won, C.lost]
+	var sq: String = "" if C.squadron.is_empty() else "  +%d" % C.squadron.size()
+	lbl.ship.text = ("%s · %s (%s)%s" % [Missions.RANKS[clampi(Game.career.rank, 0, 8)], C.name, T.name, sq]).to_upper()
+	lbl.career.text = "Reputation %d · %d sunk, %d won, %d lost · %s" % [Game.career.reputation, C.sunk_total, C.won, C.lost, _where()]
+	var n: int = Game.career.get("mail", []).size()
+	btn.mail.text = "MAIL · %d" % n if n > 0 else "MAIL"
 
 
 func _where() -> String:
@@ -455,15 +608,13 @@ func _port_here() -> String:
 func _refresh_side() -> void:
 	for c in side.get_children():
 		c.queue_free()
-	side.add_child(UI.label("OPERATIONS", 11, UI.BRASS))
-	side.add_child(UI.row([UI.button("Career", _open_career), UI.button("Encyclopedia", func(): add_child(EncyclopediaPanel.new())), UI.button("Mail (%d)" % Game.career.get("mail", []).size(), _show_mail)]))
+	side.add_child(UI.label("SECRET · CINCPAC OPERATIONS", 11, UI.BRASS))
 	# squadron
 	if not C.squadron.is_empty():
 		side.add_child(UI.wrap("Squadron: %s." % _describe(C.squadron), 350, 12, Color(0.55, 0.85, 1.0)))
 	var port := _port_here()
 	if port != "":
 		side.add_child(UI.label("In port: %s" % port, 16))
-		side.add_child(UI.big_button("Go to the dock", func(): open_dock()))
 		var cs := Career.ship(Game.career)
 		var repair_days := _repair_days(cs)
 		if repair_days > 0:
@@ -512,7 +663,7 @@ func _refresh_side() -> void:
 			eng.disabled = d2 > ENGAGE_NM or age > 6.0
 			side.add_child(UI.row([icpt, eng]))
 	else:
-		side.add_child(UI.wrap("Click a group for details. Blue circles are our convoys, patrols and task forces; red diamonds are enemy groups we have found (hollow when the report is old). Crossed lines mark a battle you can sail to and join. Sail within %d nm to engage or join." % int(ENGAGE_NM), 350, 12, UI.MUTED))
+		side.add_child(UI.wrap("Click a block or a pin for details; click the sea to set a course. Blue blocks are our convoys, patrols and task forces; red blocks are enemy groups we have found (pale when the report is old). A red cross marks a battle you can sail to and join. Sail within %d nm (the orange ring) to engage or join." % int(ENGAGE_NM), 350, 12, UI.MUTED))
 	# nearby list
 	side.add_child(UI.label("Groups in range", 11, UI.BRASS))
 	var near: Array = []
@@ -538,6 +689,8 @@ func _refresh_side() -> void:
 		side.add_child(b2)
 	if near.is_empty():
 		side.add_child(UI.label("Nothing reported nearby.", 12, UI.MUTED))
+	btn.dock.visible = port != ""
+	WT.paperize(side, 318.0)
 
 
 ## "Tokyo Express run" / "convoy" ... for the middle of a sentence.
@@ -739,6 +892,7 @@ func _request_command() -> void:
 	v.add_child(UI.row([UI.button("Cancel", _close_card)]))
 	p.add_child(v)
 	card.add_child(p)
+	WT.paperize_panel(p)
 	UI.center(p)
 	add_child(card)
 
@@ -776,6 +930,7 @@ func _refit_menu() -> void:
 	v.add_child(UI.row([UI.button("Close", _close_card)]))
 	p.add_child(v)
 	card.add_child(p)
+	WT.paperize_panel(p)
 	UI.center(p)
 	add_child(card)
 
@@ -783,20 +938,36 @@ func _refit_menu() -> void:
 func _log(txt: String) -> void:
 	if _print_log:
 		print("[%s] %s" % [War.date_str(int(C.day)), txt])
-	var l := UI.label("%s  %s" % [War.date_str(int(C.day)), txt], 12)
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	l.custom_minimum_size.x = 540
-	var p := UI.panel(6)
-	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	p.add_child(l)
-	log_box.add_child(p)
-	log_box.move_child(p, 0)
-	while log_box.get_child_count() > 5:
-		var last := log_box.get_child(log_box.get_child_count() - 1)
-		log_box.remove_child(last); last.queue_free()
 	C.log.append([int(C.day), txt])
 	if C.log.size() > 200:
 		C.log.pop_front()
+	# the latest signals, typed on index cards pinned under the clipboard
+	var h := int(fposmod(C.day, 1.0) * 24.0)
+	var d: PackedStringArray = War.date_str(int(C.day)).to_upper().split(" ")
+	var card_l := Label.new()
+	card_l.text = "%s %s · %02d00 · %s" % [d[0], d[1], h, txt]
+	card_l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	card_l.custom_minimum_size.x = CLIP_W - 80
+	card_l.add_theme_font_override("font", WT.font("type"))
+	card_l.add_theme_font_size_override("font_size", 14)
+	card_l.add_theme_color_override("font_color", WT.INK)
+	card_l.max_lines_visible = 4
+	var p := PanelContainer.new()
+	var tint: Color = [Color("f7f1df"), Color("efe7cf"), Color("f3ecd6")][C.log.size() % 3]
+	var sb := WT.flat(tint, Color(0, 0, 0, 0), 0, 0)
+	sb.content_margin_left = 16; sb.content_margin_right = 16; sb.content_margin_top = 11; sb.content_margin_bottom = 11
+	sb.shadow_size = 8; sb.shadow_color = Color(0, 0, 0, 0.45); sb.shadow_offset = Vector2(0, 5)
+	p.add_theme_stylebox_override("panel", sb)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_child(card_l)
+	var tilt: float = [-1.6, 1.2, -0.7, 0.9][C.log.size() % 4]
+	p.resized.connect(func(): p.pivot_offset = p.size / 2.0)
+	p.rotation_degrees = tilt
+	log_box.add_child(p)
+	log_box.move_child(p, 0)
+	while log_box.get_child_count() > 3:
+		var last := log_box.get_child(log_box.get_child_count() - 1)
+		log_box.remove_child(last); last.queue_free()
 
 
 # =====================================================================
@@ -804,6 +975,10 @@ func _log(txt: String) -> void:
 # =====================================================================
 
 func _process(delta: float) -> void:
+	if not _film.is_empty():
+		_film_step(delta)
+		if card != null and not "--filmcard" in OS.get_cmdline_user_args():
+			_close_card()
 	if card != null:
 		return
 	var hours: float = delta * SPEEDS[speed_i] * HOURS_PER_SEC
@@ -1214,6 +1389,7 @@ func _balance_card(iid: String, mode: String, sg = null) -> void:
 	v.add_child(row)
 	p.add_child(v)
 	card.add_child(p)
+	WT.paperize_panel(p)
 	UI.center(p)
 	add_child(card)
 
@@ -2228,6 +2404,7 @@ func _offer_fight(f: Dictionary, attached: bool) -> void:
 	v.add_child(row)
 	p.add_child(v)
 	card.add_child(p)
+	WT.paperize_panel(p)
 	UI.center(p)
 	add_child(card)
 
@@ -2269,6 +2446,7 @@ func _show_card(kicker: String, title: String, text: String, button: String) -> 
 	v.add_child(UI.big_button(button, _close_card))
 	p.add_child(v)
 	card.add_child(p)
+	WT.paperize_panel(p)
 	UI.center(p)
 	add_child(card)
 
@@ -2297,6 +2475,7 @@ func _offer_operation(op: Dictionary) -> void:
 	v.add_child(row)
 	p.add_child(v)
 	card.add_child(p)
+	WT.paperize_panel(p)
 	UI.center(p)
 	add_child(card)
 	_log("Operation: %s." % op.name)
@@ -2332,6 +2511,7 @@ func _check_offers() -> void:
 	v.add_child(UI.wrap("Ships that join sail with you on the map and fight under your orders until they are lost.", 600, 12, UI.MUTED))
 	p.add_child(v)
 	card.add_child(p)
+	WT.paperize_panel(p)
 	UI.center(p)
 	add_child(card)
 
@@ -2699,6 +2879,7 @@ func _recruit_menu() -> void:
 	v.add_child(UI.row([UI.button("Close", _close_card)]))
 	p.add_child(v)
 	card.add_child(p)
+	WT.paperize_panel(p)
 	UI.center(p)
 	add_child(card)
 
@@ -2743,113 +2924,131 @@ func _from_px(p: Vector2) -> Vector2:
 	return Vector2(cam_lon + (p.x - s.x / 2) / zoom, cam_lat - (p.y - s.y / 2) / zoom)
 
 
+const CHART := [60.0, 252.0, 62.0, -60.0]      # lon0, lon1, lat0, lat1 of assets/map/chart.png
+const SEA_NAMES := [["PACIFIC OCEAN", 178.0, 24.0, 26], ["CORAL SEA", 156.0, -17.0, 17], ["PHILIPPINE SEA", 132.0, 19.0, 17], ["SOLOMON SEA", 153.5, -8.2, 14], ["SOUTH CHINA SEA", 114.0, 13.0, 15], ["BISMARCK SEA", 148.5, -3.6, 13], ["TASMAN SEA", 160.0, -38.0, 15], ["CELEBES SEA", 122.0, 4.0, 13], ["EAST CHINA SEA", 126.0, 29.5, 13]]
+const BLOCK_KIND := {"convoy": "MARU", "express": "EXP", "taskforce": "TF", "carriers": "CV", "barges": "BRG", "sub": "SUB", "patrol": "PAT", "boats": "PT", "picket": "PKT"}
+
+
 func _draw_map() -> void:
-	var font = ThemeDB.fallback_font
 	var vs := map.size
-	# zones first, tinted by owner
-	# one name per place: islands and bases carry their own labels, so a zone or base
-	# that shares the name keeps quiet
+	var f_head := WT.font("head")
+	var f_bold := WT.font("headb")
+	var f_type := WT.font("type")
+	var f_serif := WT.font("serif")
+	var t_ms := Time.get_ticks_msec()
+	# the sea beyond the chart's edges, then the chart
+	map.draw_rect(Rect2(Vector2.ZERO, vs), Color("a3b4ad"))
+	var chart := WT.tex("chart")
+	if chart != null:
+		var c0 := _to_px(CHART[0], CHART[2])
+		var c1 := _to_px(CHART[1], CHART[3])
+		map.draw_texture_rect(chart, Rect2(c0, c1 - c0), false)
+	else:
+		for nm in Geo.LAND:
+			var pts := PackedVector2Array()
+			for p in Geo.LAND[nm]:
+				pts.append(_to_px(Geo.lon_fix(p[0]), p[1]))
+			if pts.size() >= 3:
+				map.draw_colored_polygon(pts, Color("dccba0"))
+	# graticule, labelled along the top and left edges
+	var step := 10.0 if zoom < 14.0 else 5.0
+	var tl := _from_px(Vector2.ZERO)
+	var br := _from_px(vs)
+	var gcol := Color(WT.GRATICULE, 0.55)
+	var lon := ceilf(tl.x / step) * step
+	while lon <= br.x:
+		var x := _to_px(lon, 0).x
+		map.draw_line(Vector2(x, 0), Vector2(x, vs.y), gcol, 1.0)
+		var ll := int(round(lon))
+		map.draw_string(f_type, Vector2(x + 4, 16), "%d°%s" % [ll if ll <= 180 else 360 - ll, "E" if ll < 180 else ("" if ll == 180 else "W")], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("4f6a60"))
+		lon += step
+	var lat := ceilf(br.y / step) * step
+	while lat <= tl.y:
+		var y := _to_px(0, lat).y
+		map.draw_line(Vector2(0, y), Vector2(vs.x, y), gcol, 1.0)
+		var la := int(round(lat))
+		map.draw_string(f_type, Vector2(6, y - 4), "%d°%s" % [absi(la), "N" if la > 0 else ("S" if la < 0 else "")], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("4f6a60"))
+		lat += step
+	# sea names, printed on the chart in spaced capitals
+	for sn in SEA_NAMES:
+		if sn[3] >= 20 and zoom > 16.0:
+			continue
+		_spaced(f_serif, _to_px(sn[1], sn[2]), sn[0], int(sn[3] * clampf(zoom / 9.0, 0.8, 1.4)), Color(0.20, 0.30, 0.30, 0.42), 0.35)
+	# zone names where nothing else names the place
 	var named := {}
 	for iid in Geo.ISLANDS:
 		named[Geo.ISLANDS[iid].name] = true
 		if Geo.ISLANDS[iid].base != "":
 			named[Geo.ISLANDS[iid].base] = true
-	for zid in War.ZONES:
-		var z: Dictionary = War.ZONES[zid]
-		var c := _to_px(z.lon, z.lat)
-		var r: float = z.r / 60.0 * zoom
-		var own := War.owner(zid, C.day, C.shift)
-		var act := War.activity(zid, C.day, C.shift)
-		var col := Color(0.85, 0.3, 0.25, 0.10 + 0.12 * act) if own == "ijn" else Color(0.35, 0.65, 0.95, 0.06 + 0.06 * act)
-		map.draw_circle(c, r, col)
-		map.draw_arc(c, r, 0, TAU, 48, Color(col, 0.5), 1.0)
-		if not named.has(z.name) and not War.BASES.has(z.name):
-			map.draw_string(font, c + Vector2(-r * 0.5, -r * 0.7), z.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.55))
-	# land: a pale shelf, then the coast
-	for nm in Geo.LAND:
-		var pts := PackedVector2Array()
-		for p in Geo.LAND[nm]:
-			pts.append(_to_px(Geo.lon_fix(p[0]), p[1]))
-		if pts.size() >= 3:
-			map.draw_colored_polygon(pts, Color(0.30, 0.36, 0.24))
-			map.draw_polyline(pts + PackedVector2Array([pts[0]]), Color(0.62, 0.66, 0.5, 0.9), 1.5)
-	for d in Geo.DOTS:
-		var pd := _to_px(Geo.lon_fix(d[0]), d[1])
-		var rr: float = maxf(2.0, d[2] / 60.0 * zoom)
-		map.draw_circle(pd, rr + 1.5, Color(0.5, 0.62, 0.62, 0.35))   # reef
-		map.draw_circle(pd, rr, Color(0.32, 0.38, 0.26))
-	# islands that can be taken: a flag in the holder's colour, pips for the garrison
-	for iid in Geo.ISLANDS:
-		var isl: Dictionary = Geo.ISLANDS[iid]
-		var st: Dictionary = C.islands.get(iid, {})
-		var p := _to_px(isl.lon, isl.lat)
-		var us_held: bool = st.get("side", "ijn") == "us"
-		var col := Color(0.55, 0.85, 1.0) if us_held else Color(0.95, 0.45, 0.35)
-		if iid == selected:
-			col = UI.BRASS
-		map.draw_line(p + Vector2(-5, 6), p + Vector2(-5, -12), Color(0.9, 0.9, 0.85), 1.5)
-		map.draw_colored_polygon(PackedVector2Array([p + Vector2(-5, -12), p + Vector2(6, -9), p + Vector2(-5, -5)]), col)
-		var g: int = int(st.get("garrison", isl.garrison))
-		for k in g:
-			map.draw_rect(Rect2(p + Vector2(-5 + k * 4, 8), Vector2(3, 3)), col)
-		if zoom > 6.0 or iid == selected:
-			map.draw_string(font, p + Vector2(9, -2), isl.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(col, 0.9))
-	# bases
-	for nm in War.BASES:
-		var b: Dictionary = War.BASES[nm]
-		var us: bool = _base_side(nm) == "us"
-		var p := _to_px(b.lon, b.lat)
-		var col := Color(0.55, 0.85, 1.0) if us else Color(0.95, 0.45, 0.35)
-		map.draw_rect(Rect2(p - Vector2(4, 4), Vector2(8, 8)), col)
-		if zoom > 7.0 and not named.has(nm):
-			map.draw_string(font, p + Vector2(7, 4), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(col, 0.9))
-	# radar stations on the islands we have taken: a faint ring of what they watch
+	for sn in SEA_NAMES:
+		named[String(sn[0]).to_lower()] = true
+	if zoom > 12.0:
+		for zid in War.ZONES:
+			var z: Dictionary = War.ZONES[zid]
+			if not named.has(z.name) and not War.BASES.has(z.name) and not named.has(String(z.name).to_lower()):
+				_spaced(f_serif, _to_px(z.lon, z.lat) + Vector2(0, -z.r / 60.0 * zoom * 0.55), String(z.name).to_upper(), 11, Color(0.22, 0.30, 0.30, 0.40), 0.25)
+	# the Japanese perimeter: red grease pencil round everything they hold
+	_draw_perimeter()
+	# radar stations on the islands we have taken: a dashed ring of what they watch
 	for iid in C.islands:
 		var rst: Dictionary = C.islands[iid]
 		if rst.side == "us" and rst.get("radar_on", false):
 			var rp := _to_px(Geo.ISLANDS[iid].lon, Geo.ISLANDS[iid].lat)
 			var rr: float = RADAR_NM / 60.0 * zoom
-			map.draw_circle(rp, rr, Color(0.45, 0.9, 0.85, 0.035))
-			map.draw_arc(rp, rr, 0, TAU, 64, Color(0.45, 0.9, 0.85, 0.35), 1.2)
-			# the sweep
-			var sw := fposmod(Time.get_ticks_msec() / 1400.0 + iid.hash() % 7, TAU)
-			map.draw_line(rp, rp + Vector2(sin(sw), -cos(sw)) * rr, Color(0.45, 0.9, 0.85, 0.25), 1.0)
-	# islands under attack: a pulsing ring and the days the garrison has left
-	for sg in C.sieges:
-		var ip := _to_px(Geo.ISLANDS[sg.iid].lon, Geo.ISLANDS[sg.iid].lat)
-		var pulse := 16.0 + 5.0 * sin(Time.get_ticks_msec() / 220.0)
-		var scol := Color(1.0, 0.45, 0.3) if sg.side == "ijn" else Color(1.0, 0.8, 0.35)
-		map.draw_arc(ip, pulse, 0, TAU, 32, Color(scol, 0.85), 2.0)
-		map.draw_arc(ip, pulse + 6.0, 0, TAU, 32, Color(scol, 0.35), 1.0)
-		var lt := "INVASION · %.1f days" % maxf(0.0, float(sg.ends) - C.day) if sg.side == "ijn" else "LANDING · %.1f days" % maxf(0.0, float(sg.ends) - C.day)
-		map.draw_string(font, ip + Vector2(14, 18), lt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, scol)
-	# the player's detection circle
+			map.draw_circle(rp, rr, Color(WT.RADAR, 0.05))
+			_dashed_arc(rp, rr, Color(WT.RADAR, 0.75), 2.0, 14.0)
+			var sw := fposmod(t_ms / 1400.0 + iid.hash() % 7, TAU)
+			map.draw_line(rp, rp + Vector2(sin(sw), -cos(sw)) * rr, Color(WT.RADAR, 0.30), 1.5, true)
+			if zoom > 6.0:
+				map.draw_string(f_type, rp + Vector2(-34, -rr - 6), "RADAR %d NM" % int(RADAR_NM), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(WT.RADAR, 0.9))
+	# bases: a small square in ink
+	for nm in War.BASES:
+		var bb: Dictionary = War.BASES[nm]
+		var us: bool = _base_side(nm) == "us"
+		var p := _to_px(bb.lon, bb.lat)
+		var col := WT.PIN_US if us else WT.PIN_JP
+		map.draw_rect(Rect2(p - Vector2(4, 4), Vector2(8, 8)), Color(col, 0.85))
+		map.draw_rect(Rect2(p - Vector2(4, 4), Vector2(8, 8)), WT.INK, false, 1.0)
+		if zoom > 8.0 and not named.has(nm):
+			map.draw_string(f_type, p + Vector2(8, 5), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(WT.INK, 0.85))
+	# islands that can be taken: map pins, a paper tag for the key ones
+	for iid in Geo.ISLANDS:
+		var isl: Dictionary = Geo.ISLANDS[iid]
+		var st: Dictionary = C.islands.get(iid, {})
+		var p := _to_px(isl.lon, isl.lat)
+		if p.x < -60 or p.y < -40 or p.x > vs.x + 60 or p.y > vs.y + 40:
+			continue
+		var us_held: bool = st.get("side", "ijn") == "us"
+		var col := WT.PIN_US if us_held else WT.PIN_JP
+		var sel: bool = iid == selected
+		var hr := 7.0 if isl.key else 5.0
+		if sel:
+			map.draw_arc(p, hr + 6.0, 0, TAU, 32, WT.BRASS, 3.0, true)
+		map.draw_circle(p + Vector2(1.5, 3.0), hr, Color(0, 0, 0, 0.35))
+		map.draw_circle(p, hr, col)
+		map.draw_circle(p + Vector2(hr * 0.25, hr * 0.25), hr * 0.7, Color(0, 0, 0, 0.18))
+		map.draw_circle(p - Vector2(hr * 0.3, hr * 0.3), hr * 0.3, Color(1, 1, 1, 0.35))
+		if (isl.key and zoom >= 5.0) or zoom > 13.0 or sel:
+			var g: int = int(st.get("garrison", isl.garrison))
+			var r := _tag(p + Vector2(hr + 5, -9), isl.name, f_head, 13, WT.INK, WT.TAG, g * 5)
+			for k in g:
+				map.draw_rect(Rect2(Vector2(r.end.x - g * 5 - 2 + k * 5, r.position.y + 7), Vector2(3, 5)), col)
+	# the player's search radius and engage ring
 	var pp := _to_px(C.lon, C.lat)
-	map.draw_arc(pp, _detect_range() / 60.0 * zoom, 0, TAU, 48, Color(0.55, 0.85, 1.0, 0.18), 1.0)
-	# friendly groups: circles with a course tick and a track to their destination
-	var blue := Color(0.55, 0.85, 1.0)
+	_dashed_arc(pp, _detect_range() / 60.0 * zoom, Color(WT.INK, 0.28), 1.2, 10.0)
+	# friendly groups: blue wooden blocks
 	for g in C.groups:
 		if g.side != "us":
 			continue
 		var p := _to_px(g.lon, g.lat)
 		var sel: bool = g.id == selected
 		if g.dest != null:
-			var dp := _to_px(g.dest[0], g.dest[1])
-			map.draw_line(p, dp, Color(blue, 0.18 if not sel else 0.5), 1.0)
-		var rr: float = 6.0 if g.kind != "convoy" else 7.0
-		map.draw_circle(p, rr, Color(blue, 0.9) if not sel else UI.BRASS)
-		map.draw_circle(p, rr - 2.5, Color(0.03, 0.10, 0.17))
-		if g.kind == "convoy":
-			map.draw_rect(Rect2(p - Vector2(2, 2), Vector2(4, 4)), blue)
-		elif g.kind == "sub":
-			map.draw_line(p + Vector2(-3, 0), p + Vector2(3, 0), blue, 2.0)
-		else:
-			map.draw_circle(p, 2.0, blue)
-		var course := _course(g)
-		map.draw_line(p, p + Vector2(sin(course), -cos(course)) * 12.0, blue, 1.5)
-		if zoom > 5.0 or sel:
-			map.draw_string(font, p + Vector2(10, -6), "%s · %d" % [g.name, g.ships.size()], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(blue, 0.9) if not sel else UI.BRASS)
-	# enemy groups we know about: diamonds at the last known position
+			_dashed_line(p, _to_px(g.dest[0], g.dest[1]), Color(WT.INK_BLUE, 0.45 if sel else 0.22), 1.5, 6.0)
+		_course_tick(p, _course(g), Color(WT.INK_BLUE, 0.8))
+		var r := _block(p, _block_tag(g), WT.BLOCK_US, WT.BLOCK_US_SIDE, sel, false)
+		if sel or zoom > 15.0:
+			_tag(Vector2(p.x - r.size.x / 2.0, r.end.y + 8), g.name, f_type, 12, WT.INK, WT.TAG)
+	# enemy groups we know about: red blocks at the last known position (faded when the report is old)
 	for g in C.groups:
 		if g.side != "ijn" or g.seen < 0.0:
 			continue
@@ -2860,43 +3059,239 @@ func _draw_map() -> void:
 		var pos: Vector2 = Vector2(g.lon, g.lat) if fresh else Vector2(g.seen_lon, g.seen_lat)
 		var p := _to_px(pos.x, pos.y)
 		var sel: bool = g.id == selected
-		var col: Color = UI.BRASS if sel else Color(0.95, 0.35, 0.3, 1.0 if fresh else 0.6)
-		var pts := PackedVector2Array([p + Vector2(0, -8), p + Vector2(8, 0), p + Vector2(0, 8), p + Vector2(-8, 0)])
 		if fresh:
-			map.draw_colored_polygon(pts, col)
-			var course := _course(g)
-			map.draw_line(p, p + Vector2(sin(course), -cos(course)) * 12.0, col, 1.5)
-		else:
-			map.draw_polyline(pts + PackedVector2Array([pts[0]]), col, 1.5)
-		var label: String = "%s · %d" % [KIND_LABEL.get(g.kind, g.kind), g.ships.size()]
+			_course_tick(p, _course(g), Color(WT.INK_RED, 0.85))
+		var r := _block(p, ("INV %d" if g.get("assault", "") != "" else BLOCK_KIND.get(g.kind, "?") + " %d") % g.ships.size(), WT.BLOCK_JP, WT.BLOCK_JP_SIDE, sel, not fresh)
 		if not fresh:
-			label += " · %dh ago" % int(age)
-		map.draw_string(font, p + Vector2(11, 4), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col)
-	# battles in progress
+			map.draw_string(f_type, Vector2(p.x - r.size.x / 2.0, r.end.y + 16), "%dH AGO" % int(age), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, WT.INK_RED)
+		elif sel:
+			_tag(Vector2(p.x - r.size.x / 2.0, r.end.y + 8), "Enemy " + _kind_lc(g.kind), f_type, 12, WT.INK, WT.TAG)
+	# battles in progress: a big grease-pencil cross
 	for f in C.fights:
 		var p := _to_px(f.lon, f.lat)
-		var pulse := 10.0 + 4.0 * sin(Time.get_ticks_msec() / 250.0)
-		var col: Color = UI.BRASS if f.id == selected else Color(1.0, 0.75, 0.3)
-		map.draw_arc(p, pulse, 0, TAU, 24, Color(col, 0.6), 1.5)
-		map.draw_line(p + Vector2(-7, -7), p + Vector2(7, 7), col, 2.0)
-		map.draw_line(p + Vector2(-7, 7), p + Vector2(7, -7), col, 2.0)
-		map.draw_string(font, p + Vector2(14, 4), "Battle: %s" % _gname(f.us), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col)
-	# the player
+		var pulse := 18.0 + 3.0 * sin(t_ms / 250.0)
+		var col: Color = WT.BRASS if f.id == selected else WT.INK_RED
+		_pencil_circle(p, pulse, Color(col, 0.55), 2.0)
+		_pencil(PackedVector2Array([p + Vector2(-11, -11), p + Vector2(11, 11)]), col, 4.0)
+		_pencil(PackedVector2Array([p + Vector2(-11, 11), p + Vector2(11, -11)]), col, 4.0)
+		_tag(p + Vector2(pulse + 4, -10), "BATTLE · " + _gname(f.us), f_head, 12, Color("fbf3df"), WT.INK_RED)
+	# islands under attack: a red ring with an X, and the days the garrison has left
+	for sg in C.sieges:
+		var ip := _to_px(Geo.ISLANDS[sg.iid].lon, Geo.ISLANDS[sg.iid].lat)
+		var pulse := 22.0 + 2.0 * sin(t_ms / 260.0)
+		var scol := WT.INK_RED if sg.side == "ijn" else WT.PENCIL
+		_pencil_circle(ip, pulse, Color(scol, 0.85), 3.5)
+		_pencil(PackedVector2Array([ip + Vector2(-13, -13), ip + Vector2(13, 13)]), Color(scol, 0.8), 3.0)
+		_pencil(PackedVector2Array([ip + Vector2(-13, 13), ip + Vector2(13, -13)]), Color(scol, 0.8), 3.0)
+		var lt := "INVASION · %.1f DAYS" % maxf(0.0, float(sg.ends) - C.day) if sg.side == "ijn" else "LANDING · %.1f DAYS" % maxf(0.0, float(sg.ends) - C.day)
+		_tag(ip + Vector2(-60, pulse + 6), lt, f_type, 13, Color("fbf3df"), scol)
+	# the player: the course in orange grease pencil, then the yellow block
 	if C.dest != null and C.attached == "":
 		var dp := _to_px(C.dest[0], C.dest[1])
-		map.draw_line(pp, dp, Color(blue, 0.7), 1.5)
-		map.draw_circle(dp, 4, Color(blue, 0.7))
-	map.draw_arc(pp, ENGAGE_NM / 60.0 * zoom, 0, TAU, 32, Color(blue, 0.3), 1.0)
-	var tri := PackedVector2Array([pp + Vector2(0, -10), pp + Vector2(7, 8), pp + Vector2(-7, 8)])
-	map.draw_colored_polygon(tri, blue)
-	var pn: String = C.name if C.squadron.is_empty() else "%s +%d" % [C.name, C.squadron.size()]
-	map.draw_string(font, pp + Vector2(10, -8), pn, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, blue)
-	# scale bar
-	var nm500 := 500.0 / 60.0 * zoom
-	map.draw_line(Vector2(20, vs.y - 110), Vector2(20 + nm500, vs.y - 110), Color(1, 1, 1, 0.6), 2.0)
-	map.draw_string(font, Vector2(20, vs.y - 116), "500 nautical miles", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.6))
+		var dv := dp - pp
+		if dv.length() > 20.0:
+			var pts := PackedVector2Array()
+			var n := maxi(2, int(dv.length() / 16.0))
+			var nrm := Vector2(-dv.y, dv.x).normalized()
+			for i in n + 1:
+				var t := float(i) / n
+				pts.append(pp + dv * t + nrm * sin(t * 9.0 + float(i) * 0.7) * 1.4 * (1.0 if i > 0 and i < n else 0.0))
+			_pencil(pts, Color(WT.PENCIL, 0.9), 5.0)
+			var u := dv.normalized()
+			var head := PackedVector2Array([dp, dp - u * 18.0 + nrm * 9.0, dp - u * 18.0 - nrm * 9.0])
+			map.draw_colored_polygon(head, Color(WT.PENCIL, 0.9))
+	_dashed_arc(pp, ENGAGE_NM / 60.0 * zoom, Color(WT.PENCIL, 0.55), 1.5, 6.0)
+	_block(pp, "YOU", WT.YOU, WT.YOU_SIDE, false, false, Color("3b2a10"), 32.0)
+	if zoom > 5.0:
+		var pn: String = C.name if C.squadron.is_empty() else "%s +%d" % [C.name, C.squadron.size()]
+		_tag(pp + Vector2(26, -12), pn, f_head, 13, WT.INK, WT.TAG)
+	# a ruler and a compass rose on the chart
+	_draw_ruler(Vector2(20, vs.y - 46), f_type)
+	_draw_rose(Vector2(vs.x - 70, vs.y - 80), 44.0, f_bold)
 	if C.get("war_over", false):
-		map.draw_string(font, Vector2(vs.x / 2 - 200, 110), "The war is over. The Pacific stays open for patrols.", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, UI.BRASS)
+		_tag(Vector2(vs.x / 2 - 280, 40), "The war is over. The Pacific stays open for patrols.", WT.font("serifb"), 20, WT.INK, WT.TAG)
+
+
+## The Japanese perimeter: a smoothed hull round every island and base they hold, pushed out a little.
+func _draw_perimeter() -> void:
+	var pts := PackedVector2Array([Vector2(TOKYO[0], TOKYO[1])])
+	for iid in Geo.ISLANDS:
+		if C.islands.get(iid, {}).get("side", "ijn") == "ijn":
+			pts.append(Vector2(Geo.ISLANDS[iid].lon, Geo.ISLANDS[iid].lat))
+	for nm in War.BASES:
+		if _base_side(nm) == "ijn":
+			pts.append(Vector2(War.BASES[nm].lon, War.BASES[nm].lat))
+	if pts.size() < 3:
+		return
+	var hull := Geometry2D.convex_hull(pts)
+	if hull.size() < 4:
+		return
+	var ctr := Vector2.ZERO
+	for i in hull.size() - 1:
+		ctr += hull[i]
+	ctr /= float(hull.size() - 1)
+	var ring := PackedVector2Array()
+	for i in hull.size() - 1:
+		ring.append(hull[i] + (hull[i] - ctr).normalized() * 1.6)
+	# Chaikin smoothing, twice
+	for it in 2:
+		var sm := PackedVector2Array()
+		for i in ring.size():
+			var a := ring[i]
+			var b := ring[(i + 1) % ring.size()]
+			sm.append(a.lerp(b, 0.25)); sm.append(a.lerp(b, 0.75))
+		ring = sm
+	var px := PackedVector2Array()
+	for q in ring:
+		px.append(_to_px(q.x, q.y))
+	px.append(px[0])
+	_pencil(px, Color(WT.PERIMETER, 0.6), 3.5)
+	if zoom < 16.0:
+		# name it where it runs furthest east
+		var best := 0
+		for i in px.size():
+			if px[i].x > px[best].x:
+				best = i
+		_spaced(WT.font("head"), px[best] + Vector2(-80, -14), "JAPANESE PERIMETER", 12, Color(WT.PERIMETER, 0.85), 0.15)
+
+
+## A grease-pencil stroke: a soft wide line with a darker core.
+func _pencil(pts: PackedVector2Array, col: Color, w: float) -> void:
+	if pts.size() < 2:
+		return
+	map.draw_polyline(pts, Color(col, col.a * 0.35), w + 2.0, true)
+	map.draw_polyline(pts, col, w, true)
+	map.draw_polyline(pts, Color(col.darkened(0.25), col.a * 0.6), maxf(1.0, w * 0.3), true)
+
+
+func _pencil_circle(c: Vector2, r: float, col: Color, w: float) -> void:
+	var pts := PackedVector2Array()
+	for i in 41:
+		var a := TAU * i / 40.0 + 0.2
+		pts.append(c + Vector2(cos(a), sin(a)) * (r + sin(a * 3.0) * 0.8))
+	_pencil(pts, col, w)
+
+
+func _dashed_arc(c: Vector2, r: float, col: Color, w: float, dash: float) -> void:
+	if r < 3.0:
+		return
+	var n := clampi(int(TAU * r / dash), 8, 400)
+	if n % 2 == 1:
+		n += 1
+	for i in range(0, n, 2):
+		map.draw_arc(c, r, TAU * i / n, TAU * (i + 1) / n, 4, col, w, true)
+
+
+func _dashed_line(a: Vector2, b: Vector2, col: Color, w: float, dash: float) -> void:
+	map.draw_dashed_line(a, b, col, w, dash, true, true)
+
+
+## A short course line out of a block, in the direction it sails.
+func _course_tick(p: Vector2, course: float, col: Color) -> void:
+	var d := Vector2(sin(course), -cos(course))
+	map.draw_line(p + d * 16.0, p + d * 30.0, col, 2.5, true)
+
+
+## A wooden block on the chart. Returns its face rect.
+func _block(p: Vector2, txt: String, face: Color, side_c: Color, sel: bool, hollow: bool, ink := Color("f6ecd2"), minw := 40.0) -> Rect2:
+	var f := WT.font("headb")
+	var tw := f.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+	var w := maxf(minw, tw + 14.0)
+	var h := 24.0 if minw < 32.0 or txt != "YOU" else 26.0
+	var r := Rect2(p - Vector2(w / 2.0, h / 2.0 + 2.0), Vector2(w, h))
+	var shadow := WT.flat(Color(0, 0, 0, 0.0), Color(0, 0, 0, 0), 0, 4)
+	shadow.shadow_size = 8; shadow.shadow_color = Color(0, 0, 0, 0.42); shadow.shadow_offset = Vector2(0, 6)
+	if hollow:
+		var hb := WT.flat(Color(face, 0.28), Color(face, 0.9), 2, 4)
+		map.draw_style_box(hb, r)
+		map.draw_string(f, Vector2(r.position.x + (w - tw) / 2.0, r.position.y + h - 7), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, face.darkened(0.3))
+	else:
+		map.draw_style_box(shadow, Rect2(r.position + Vector2(0, 4), r.size))
+		map.draw_style_box(WT.flat(side_c, Color(0, 0, 0, 0), 0, 4), Rect2(r.position + Vector2(0, 4), r.size))
+		map.draw_style_box(WT.flat(face, Color(0, 0, 0, 0), 0, 4), r)
+		map.draw_line(r.position + Vector2(3, 1), Vector2(r.end.x - 3, r.position.y + 1), Color(1, 1, 1, 0.25), 1.0)
+		map.draw_string(f, Vector2(r.position.x + (w - tw) / 2.0, r.position.y + h - 7), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, ink)
+	if sel:
+		map.draw_style_box(WT.flat(Color(0, 0, 0, 0), WT.BRASS, 3, 6), r.grow(4).grow_side(SIDE_BOTTOM, 4))
+	return r
+
+
+## The short name on a friendly block: TF 34, TG ABLE, CVY BAKER, DD 38...
+func _block_tag(g: Dictionary) -> String:
+	var nm: String = g.name
+	var parts := nm.split(" ")
+	if nm.begins_with("Task Force "):
+		return "TF " + parts[2]
+	if nm.begins_with("Task Group ") or nm.begins_with("Task Unit "):
+		return ("TG " if parts[1] == "Group" else "TU ") + parts[2].substr(0, 1)
+	if nm.begins_with("DesDiv "):
+		return "DD " + parts[1]
+	if nm.begins_with("Convoy "):
+		return "CVY " + parts[1].substr(0, 1)
+	if nm.ends_with(" patrol") or nm.ends_with(" guard"):
+		return nm.substr(0, 3).to_upper() + (" PAT" if nm.ends_with(" patrol") else " GRD")
+	if nm.ends_with(" Invasion Force"):
+		return "INV " + nm.substr(0, 3).to_upper()
+	if g.kind == "sub":
+		return "SS"
+	return nm.substr(0, 5).to_upper()
+
+
+## A paper tag with text. `extra` widens it (room for garrison pips). Returns its rect.
+func _tag(pos: Vector2, txt: String, f: Font, size: int, ink: Color, bg: Color, extra := 0) -> Rect2:
+	var ts := f.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, size)
+	var r := Rect2(pos, Vector2(ts.x + 12 + extra + (4 if extra > 0 else 0), size + 7))
+	map.draw_rect(Rect2(r.position + Vector2(1, 2), r.size), Color(0, 0, 0, 0.28))
+	map.draw_rect(r, bg)
+	map.draw_string(f, Vector2(r.position.x + 6, r.position.y + size + 1), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, size, ink)
+	return r
+
+
+## Text in spaced capitals, centred on `c` (chart lettering).
+func _spaced(f: Font, c: Vector2, txt: String, size: int, col: Color, spacing: float) -> void:
+	var gap := size * spacing
+	var total := 0.0
+	for ch in txt:
+		total += f.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x + gap
+	var x := c.x - total / 2.0
+	for ch in txt:
+		map.draw_string(f, Vector2(x, c.y), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
+		x += f.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x + gap
+
+
+## A paper ruler: 500 nautical miles in hundreds.
+func _draw_ruler(at: Vector2, f: Font) -> void:
+	var ln := 500.0 / 60.0 * zoom
+	var nm := 500
+	while ln > 360.0 and nm > 50:
+		nm /= 2; ln = nm / 60.0 * zoom
+	while ln < 120.0:
+		nm *= 2; ln = nm / 60.0 * zoom
+	var r := Rect2(at - Vector2(8, 22), Vector2(ln + 16, 34))
+	map.draw_rect(Rect2(r.position + Vector2(2, 3), r.size), Color(0, 0, 0, 0.3))
+	map.draw_rect(r, Color("efe2bd"))
+	map.draw_rect(r, Color("8a6d3b"), false, 1.0)
+	for i in 11:
+		var x := at.x + ln * i / 10.0
+		map.draw_line(Vector2(x, at.y + 12), Vector2(x, at.y + (2 if i % 5 == 0 else 6)), WT.INK, 1.0)
+	map.draw_string(f, at + Vector2(0, -6), "%d NAUTICAL MILES" % nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, WT.INK)
+
+
+## A compass rose, north in red.
+func _draw_rose(c: Vector2, r: float, f: Font) -> void:
+	map.draw_circle(c, r, Color(0.95, 0.91, 0.80, 0.55))
+	map.draw_arc(c, r, 0, TAU, 48, Color(WT.INK, 0.7), 1.5, true)
+	map.draw_arc(c, r * 0.82, 0, TAU, 48, Color(WT.INK, 0.4), 1.0, true)
+	for i in 8:
+		var a := TAU * i / 8.0
+		var l := r * (0.78 if i % 2 == 0 else 0.45)
+		var d := Vector2(sin(a), -cos(a))
+		var nrm := Vector2(-d.y, d.x) * (r * 0.12)
+		var tip := c + d * l
+		var col := WT.INK_RED if i == 0 else WT.INK
+		map.draw_colored_polygon(PackedVector2Array([c + nrm, tip, c]), col)
+		map.draw_colored_polygon(PackedVector2Array([c - nrm, tip, c]), col.lightened(0.35))
+	map.draw_string(f, c + Vector2(-5, -r - 6), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, WT.INK_RED)
 
 
 func _map_input(e: InputEvent) -> void:
@@ -2934,12 +3329,12 @@ func _click(pos: Vector2) -> void:
 	# a group, battle or island under the mouse selects it; otherwise set course
 	for iid in Geo.ISLANDS:
 		var isl: Dictionary = Geo.ISLANDS[iid]
-		if _to_px(isl.lon, isl.lat).distance_to(pos + Vector2(0, 4)) < 12.0:
+		if _to_px(isl.lon, isl.lat).distance_to(pos) < 16.0:
 			selected = iid
 			_refresh_side()
 			return
 	for f in C.fights:
-		if _to_px(f.lon, f.lat).distance_to(pos) < 14.0:
+		if _to_px(f.lon, f.lat).distance_to(pos) < 22.0:
 			selected = f.id
 			_refresh_side()
 			return
@@ -2948,7 +3343,7 @@ func _click(pos: Vector2) -> void:
 			continue
 		var age: float = (C.day - g.seen) * 24.0
 		var p: Vector2 = Vector2(g.lon, g.lat) if g.side == "us" or age < 3.0 else Vector2(g.seen_lon, g.seen_lat)
-		if _to_px(p.x, p.y).distance_to(pos) < 14.0:
+		if _to_px(p.x, p.y).distance_to(pos + Vector2(0, 2)) < 22.0:
 			selected = g.id
 			_refresh_side()
 			return
@@ -2983,5 +3378,6 @@ func _offer_end(title: String, text: String) -> void:
 	v.add_child(UI.big_button("Main menu", func(): get_tree().change_scene_to_file("res://scenes/menu.tscn")))
 	p.add_child(v)
 	card.add_child(p)
+	WT.paperize_panel(p)
 	UI.center(p)
 	add_child(card)

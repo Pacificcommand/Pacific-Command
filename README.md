@@ -13,7 +13,8 @@ to them with their decorations over their heads. **Medals replace experience:** 
 Navy decorations are awarded automatically for what is done in action (a Bronze Star for
 the gunnery officer's first kill, a Navy and Marine Corps Medal for the damage control
 officer who puts out four fires, a Navy Cross for sinking a battleship), and each one makes
-its holder's department a little better for good. The operations map shows the Pacific from
+its holder's department a little better for good. The operations map is a chart on the war-room table (wooden blocks for
+the groups, pins for the islands, your course in grease pencil, orders on a clipboard) and shows the Pacific from
 Pearl Harbor to Japan: sea zones held by either side, bases, and **groups moving like
 you do** - our convoys, destroyer patrols, task forces and submarines (blue), and the
 Japanese Tokyo Express runs, convoys, task forces, barges and submarines (red, once
@@ -122,6 +123,9 @@ All keys can be changed in Settings › Controls.
   groups sail between bases and the front, hunt each other, fight (resolved by weight of
   metal when you are not there) and can be joined; detection by radar, friendly ships,
   air search and coastwatchers; time compression; campaign saved to user://campaign.json.
+  The War Room look (scripts/war_table.gd): the chart is baked from Natural Earth coastlines by
+  tools/map_builder/build_chart.py into assets/map/chart.png; fonts Oswald, Special Elite and
+  Libre Caslon Text (assets/fonts, SIL OFL / Apache licences included).
 - Islands with beaches you can run aground on, coastal gun batteries that shoot back,
   Liberty ships, life rafts; threat ratings (Low to Extreme) from the enemy force;
   reputation earned by results and spent in port on ships for your squadron (PT boats
