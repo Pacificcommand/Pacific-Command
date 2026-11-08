@@ -1115,8 +1115,8 @@ var rdrag := {}
 
 func _draw_overlay() -> void:
 	_edge_used.clear()
-	if B.camst.cine:
-		return      # the cinematic camera shows the ships, not the plot
+	if B.camst.cine or B.camst.get("low", 0.0) > 0.75:
+		return      # the cinematic camera and a camera down at the water show the ships, not the plot
 	var p: Ship = B.player
 	if p == null:
 		return

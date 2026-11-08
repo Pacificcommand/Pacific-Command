@@ -93,7 +93,7 @@ transport), hold their fire on torpedo approaches and make smoke as they withdra
 | C | Camera on the enemy target / back on your own ship |
 | Space | Tactical pause |
 | 1 / 2 / 3 / 4 | Slow ¼× / normal / fast 3× / fast 5× |
-| Mouse wheel | Zoom |
+| Mouse wheel | Zoom; keep zooming in past the Close view and the camera comes down to the waterline beside the ship (middle-drag to swing round it; the map markers hide down there) |
 | Middle drag | Turn the camera (sideways) and tilt it (up/down); `,` and `.` turn it too; R puts it back straight down, north up |
 | B | Cinematic camera: drops down beside your ship (or your target, with C) at sea level and slowly circles it; drag to swing it round, wheel to move in or out, B again to go back. The map markers are hidden in this view |
 | L | Carriers and ships with floatplanes: launch an air strike at your target |

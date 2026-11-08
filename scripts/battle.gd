@@ -3211,7 +3211,7 @@ func _update_camera(delta: float) -> void:
 	elif camst.cine:
 		var fs2 := focus_ship()
 		var L: float = fs2.T.L
-		var D: float = clampf(L * 1.7, 45.0, 520.0) * camst.cine_zoom
+		var D: float = maxf(clampf(L * 1.7, 45.0, 520.0) * camst.cine_zoom, L * 0.55 + 12.0)
 		# circles slowly on its own; a drag or the rotate keys take over for a few seconds
 		if Time.get_ticks_msec() / 1000.0 - camst.cine_hand_t > 4.0:
 			camst.cine_yaw += delta * 0.09
@@ -3219,8 +3219,8 @@ func _update_camera(delta: float) -> void:
 		var cy: float = camst.cine_yaw
 		var look := Vector3(fs2.x, 3.0 + L * 0.03 - fs2.sink, fs2.z)
 		var eye := look + Vector3(-sin(cy) * D * cos(el), D * sin(el), cos(cy) * D * cos(el))
-		eye.y = maxf(eye.y, 2.5)
-		cam.near = 0.5
+		eye.y = maxf(eye.y, 2.0)
+		cam.near = 0.3
 		cam.far = 26000.0
 		cam.look_at_from_position(eye + Vector3(sh_off.x * 0.3, 0.0, sh_off.y * 0.3), look, Vector3.UP)
 		camst.x = fs2.x; camst.z = fs2.z
@@ -3237,7 +3237,24 @@ func _update_camera(delta: float) -> void:
 	else:
 		var target := Vector3(camst.x + sh_off.x, 0.0, camst.z + sh_off.y)
 		var tl := deg_to_rad(camst.tilt)
-		if tl < 0.01:
+		# zooming in below LOW_START the camera comes down to the water: it tips towards the
+		# horizon, stands back far enough to see the whole ship, and looks at its upperworks
+		var lowk := clampf((LOW_START - hgt) / (LOW_START - LOW_MIN), 0.0, 1.0)
+		camst.low = lowk
+		if lowk > 0.0:
+			var fsl := focus_ship()
+			var Ll: float = fsl.T.L if fsl != null else 100.0
+			tl = maxf(tl, deg_to_rad(86.0) * pow(lowk, 0.6))
+			var back := maxf(hgt * tan(tl), (Ll * 0.6 + 25.0) * lowk)
+			target.y = lerpf(0.0, clampf(Ll * 0.04, 2.0, 9.0), lowk)
+			var eye := target + Vector3(-sin(yaw) * back, 0.0, cos(yaw) * back)
+			eye.y = maxf(hgt, 2.0)
+			cam.near = 0.3
+			cam.far = 26000.0
+			cam.look_at_from_position(eye, target, Vector3.UP)
+			dist = eye.distance_to(target)
+			fog_ref = lerpf(dist, clampf(dist * 6.0, 900.0, 4000.0), lowk)
+		elif tl < 0.01:
 			# straight down; yaw turns which way is up on the screen (0 = north up)
 			cam.look_at_from_position(target + Vector3(0.0, hgt, 0.0), target, Vector3(sin(yaw), 0.0, -cos(yaw)))
 		else:
@@ -3250,6 +3267,8 @@ func _update_camera(delta: float) -> void:
 	var span := hgt * 2.5 + 4000.0
 	if _test.has("tilt") or camst.tilt > 0.5:
 		span = hgt * 12.0 + 8000.0
+	if camst.get("low", 0.0) > 0.0:
+		span = 40000.0
 	if camst.cine or chase != null:
 		span = 40000.0
 	ocean.position = Vector3(camst.x, 0.0, camst.z)
@@ -3303,11 +3322,15 @@ func _chase_point():
 	return null
 
 
+const LOW_START := 150.0     # below this height the camera starts to tip towards the horizon
+const LOW_MIN := 3.0         # the lowest it goes: just above the waves
+
+
 func zoom(factor: float) -> void:
 	if camst.cine:
-		camst.cine_zoom = clampf(camst.cine_zoom * factor, 0.35, 4.0)
+		camst.cine_zoom = clampf(camst.cine_zoom * factor, 0.3, 4.0)
 		return
-	camst.th = clampf(camst.th * factor, 90.0, 14000.0)
+	camst.th = clampf(camst.th * factor, LOW_MIN, 14000.0)
 	camst.salvo = null
 
 
@@ -3316,7 +3339,7 @@ func zoom(factor: float) -> void:
 func rotate_view(dx_px: float, dy_px: float) -> void:
 	if camst.cine:
 		camst.cine_yaw += dx_px * 0.006
-		camst.cine_elev = clampf(camst.cine_elev - dy_px * 0.08, 2.0, 50.0)
+		camst.cine_elev = clampf(camst.cine_elev - dy_px * 0.08, 0.3, 50.0)
 		camst.cine_hand_t = Time.get_ticks_msec() / 1000.0
 		return
 	camst.yaw = wrapf(camst.yaw + dx_px * 0.005, -PI, PI)
