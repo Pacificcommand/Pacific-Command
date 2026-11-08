@@ -42,8 +42,10 @@ var flood_fwd := 0.0
 var holes: Array = []        # {lx, side, rate, fix}
 var fires: Array = []        # {lx, lz, int}
 var crew_figs: Array = []    # the visible crew (scripts/crew.gd)
-var order := ""              # player's order to a friendly ship: "", follow, engage, fallback, rescue, attack
-var order_target: Ship = null
+var order := ""              # player's order to a friendly ship: "", follow, engage, fallback, rescue, attack, move, hold
+var order_target: Ship = null # attack: the ship to go after; move/hold: the ship to shoot at (null = the ship's own choice)
+var order_pos := Vector2.ZERO # move/hold: where the player sent it
+var order_head := -1.0       # move/hold: the heading to take there (radians), < 0 = none
 var modules: Array = []      # {label, kind, x, hp, max, ref}
 var mounts: Array = []       # {g, x, stow, arc, ang, reload, hp, recoil, node}
 var torps: Array = []        # {g, x, n, ang, left, hp, reload_t, node}

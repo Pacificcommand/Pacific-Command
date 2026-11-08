@@ -7,7 +7,7 @@ signal graphics_changed
 const CFG := "user://settings.cfg"
 const SAVE_DIR := "user://saves"
 const SLOTS := 5
-const VERSION := "0.26.1"
+const VERSION := "0.27"
 
 ## Graphics and sound settings with their defaults.
 var settings := {
@@ -35,6 +35,7 @@ const ACTIONS := [
 	["strike", "Launch air strike", KEY_L], ["air_panel", "Show / hide the air group panel", KEY_K],
 	["dive", "Submarine: dive (periscope depth, then deep)", KEY_X], ["surface", "Submarine: come up", KEY_E],
 	["charges", "Drop depth charges", KEY_G], ["hedgehog", "Fire hedgehog", KEY_H],
+	["select_fleet", "Select all ships in company", KEY_N], ["hold_pos", "Selected ships: hold position", KEY_J],
 	["menu", "Pause menu", KEY_ESCAPE],
 ]
 var keys := {}                 # action -> keycode

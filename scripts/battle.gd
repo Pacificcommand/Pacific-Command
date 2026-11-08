@@ -199,6 +199,56 @@ func _test_args() -> void:
 					mates.append(o)
 			if not mates.is_empty():
 				hud._give_order(mates, _test.order))
+	if _test.has("view") or _test.has("height"):
+		# the battle setup picks its own view; put the asked-for one back a moment in
+		after(0.3, func():
+			if _test.has("view"):
+				set_view(_test.view)
+			if _test.has("height"):
+				camst.th = float(_test.height)
+			camst.h = camst.th)
+	if _test.has("rtsfire"):
+		# recording: --rtsfire=T: the selected ships are told to fire at the nearest enemy at T s
+		after(float(_test.rtsfire), func():
+			var best: Ship = null
+			for o in ships:
+				if o.team != player.team and o.alive and (best == null or player.range_to(o) < player.range_to(best)):
+					best = o
+			if best != null and not hud.sel.is_empty():
+				hud._target_order(best))
+	if _test.has("rtsselect"):
+		# recording: --rtsselect=T selects every ship in company at T s
+		after(float(_test.rtsselect), func(): hud.sel = hud._mates())
+	if _test.has("rtsmove"):
+		# test: --rtsmove=T,DX,DZ[,DX2,DZ2]: at T s select every ship in company and send it DX,DZ m
+		# from the player (a click), or along a line to DX2,DZ2 (a drag); --rtstarget also names the
+		# nearest enemy as their target
+		var rv: PackedStringArray = String(_test.rtsmove).split(",")
+		after(float(rv[0]), func():
+			hud.sel = hud._mates()
+			if hud.sel.is_empty():
+				return
+			var b := Vector2(player.x + float(rv[1]), player.z + float(rv[2]))
+			if _test.has("rtsnear"):
+				# --rtsnear=D: the spot D m short of the nearest enemy, on our side of it
+				var ne: Ship = null
+				for o in ships:
+					if o.team != player.team and o.alive and (ne == null or player.range_to(o) < player.range_to(ne)):
+						ne = o
+				if ne != null:
+					var away := (Vector2(player.x, player.z) - Vector2(ne.x, ne.z)).normalized()
+					b = Vector2(ne.x, ne.z) + away * float(_test.rtsnear)
+			if rv.size() >= 5:
+				hud.order_at(b, Vector2(player.x + float(rv[3]), player.z + float(rv[4])))
+			else:
+				hud.order_at(null, b)
+			if _test.has("rtstarget"):
+				var best: Ship = null
+				for o in ships:
+					if o.team != player.team and o.alive and (best == null or player.range_to(o) < player.range_to(best)):
+						best = o
+				if best != null:
+					hud._target_order(best))
 	if _test.has("afhit"):
 		# recording: --afhit=T[,N]: a heavy bombardment walks down the airfield from T s; after N
 		# hits (default 14) it is wrecked
@@ -328,6 +378,10 @@ func _test_args() -> void:
 		camst.x = camst.ox; camst.z = camst.oz
 	if _test.has("nohud"):
 		hud.visible = false
+	if _test.has("hudmarks"):
+		# recording: only the markers drawn on the sea (orders, selection), no panels
+		for c in hud.root.get_children():
+			c.visible = c == hud.overlay
 	if _test.has("pause"):
 		hud.open_pause()
 	if _test.has("shot"):
@@ -1142,7 +1196,33 @@ func load_state(d: Dictionary) -> void:
 # main loop
 # =====================================================================
 
+## Recording: --rtsdrag=T,DX0,DZ0,DX1,DZ1,DUR plays a right-drag (metres from the player at T)
+## over DUR s, with the preview outlines, then gives the order.
+func _test_rts_drag() -> void:
+	var v: PackedStringArray = String(_test.rtsdrag).split(",")
+	var t0 := float(v[0])
+	var dur := float(v[5])
+	if t < t0 or _test.has("rtsdrag_done"):
+		return
+	if not _test.has("rtsdrag_a"):
+		_test.rtsdrag_a = Vector2(player.x, player.z)
+		if hud.sel.is_empty():
+			hud.sel = hud._mates()
+	var o: Vector2 = _test.rtsdrag_a
+	var a := o + Vector2(float(v[1]), float(v[2]))
+	var b := o + Vector2(float(v[3]), float(v[4]))
+	var k := clampf((t - t0) / dur, 0.0, 1.0)
+	var cur := a.lerp(b, smoothstep(0.0, 1.0, k))
+	hud.drag = {"order": true, "moved": 50.0, "w0": a, "last": hud._p(cur.x, cur.y), "start": hud._p(a.x, a.y)}
+	if k >= 1.0:
+		hud.drag = {}
+		hud.order_at(a, b)
+		_test.rtsdrag_done = true
+
+
 func _process(delta: float) -> void:
+	if _test.has("rtsdrag"):
+		_test_rts_drag()
 	delta = minf(delta, 0.1)
 	var sim := delta * speed if started else 0.0
 	# small fixed steps keep fast-forward stable

@@ -41,6 +41,8 @@ var asw_row: HBoxContainer
 var ship_row: HBoxContainer
 var _pause_prev := 1.0
 var drag := {}
+var sel: Array = []               # friendly ships the player has selected (RTS orders)
+var box := {}                     # the selection button held down: {start, now}
 var tele_btns: Array = []
 var dial_view: Control
 var squad_plate: PanelContainer
@@ -60,6 +62,7 @@ func _ready() -> void:
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.draw.connect(_draw_overlay)
+	overlay.draw.connect(_draw_command)
 	root.add_child(overlay)
 	_build_plates()
 	_build_log()
@@ -380,11 +383,11 @@ func _build_plates() -> void:
 
 func _update_keys_help() -> void:
 	var k := Game.key_name
-	lbl.keys.text = "%s/%s engines · %s/%s rudder · %s center · %s crew/manual aim\n%s fire · %s torpedo aim · %s smoke · %s next target · %s follow salvos\n%s camera on target · %s pause · %s/%s/%s/%s slow/normal/3×/5× · %s menu\nWheel zoom · drag to look around (%s locks the camera back on) · middle drag or %s/%s turn and tilt · %s reset · %s cinematic\nLeft-click: target (crew aim) or fire (manual) · right-click: target" % [
+	lbl.keys.text = "%s/%s engines · %s/%s rudder · %s center · %s crew/manual aim\n%s fire · %s torpedo aim · %s smoke · %s next target · %s follow salvos\n%s camera on target · %s pause · %s/%s/%s/%s slow/normal/3×/5× · %s menu\nWheel zoom · drag to look around (%s locks the camera back on) · middle drag or %s/%s turn and tilt · %s reset · %s cinematic\nLeft-click: target (crew aim) or fire (manual) · right-click: target\nShips in company: click or drag a box to select (%s all) · right-click: move · right-drag: form a line · click an enemy: fire at it · right-click it: attack · %s hold" % [
 		k.call("tele_up"), k.call("tele_down"), k.call("rudder_left"), k.call("rudder_right"), k.call("rudder_center"), k.call("aim_mode"),
 		k.call("fire"), k.call("torpedo"), k.call("smoke"), k.call("next_target"), k.call("follow"),
 		k.call("camera"), k.call("pause"), k.call("slow"), k.call("normal"), k.call("fast"), k.call("faster"), k.call("menu"), k.call("recenter"),
-		k.call("rotate_left"), k.call("rotate_right"), k.call("cam_reset"), k.call("cinematic")]
+		k.call("rotate_left"), k.call("rotate_right"), k.call("cam_reset"), k.call("cinematic"), k.call("select_fleet"), k.call("hold_pos")]
 
 
 func _build_log() -> void:
@@ -829,7 +832,7 @@ func _refresh_squad(p: Ship) -> void:
 			squad_box.add_child(st)
 	order_row.call(mates, "All ships", "")
 	for s in mates:
-		var o_txt: String = {"": "", "follow": "following", "engage": "engaging", "fallback": "falling back", "rescue": "rescuing", "attack": "attacking %s" % (s.order_target.ship_name if s.order_target else "")}.get(s.order, "")
+		var o_txt: String = {"": "", "follow": "following", "engage": "engaging", "fallback": "falling back", "rescue": "rescuing", "attack": "attacking %s" % (s.order_target.ship_name if s.order_target else ""), "move": "moving", "hold": "holding"}.get(s.order, "")
 		order_row.call([s], "%s · %s" % [s.ship_name, s.T.name.replace(" class", "")], s.ai_state if (o_txt == "" or s.ai_state.begins_with(o_txt.substr(0, 5))) else "%s · %s" % [s.ai_state, o_txt])
 
 
@@ -1471,6 +1474,17 @@ func _unhandled_input(e: InputEvent) -> void:
 			elif Game.pressed(e, "menu"):
 				open_pause()
 			return
+		if Game.pressed(e, "menu") and not sel.is_empty() and not B.torp_aim:
+			sel.clear()
+			return
+		if Game.pressed(e, "select_fleet"):
+			sel = _mates()
+			if not sel.is_empty():
+				B.say("%d ship%s selected." % [sel.size(), "" if sel.size() == 1 else "s"], "")
+			return
+		if Game.pressed(e, "hold_pos"):
+			_hold_here()
+			return
 		if Game.pressed(e, "tele_up"): B.order_tele(p.tele + 1)
 		elif Game.pressed(e, "tele_down"): B.order_tele(p.tele - 1)
 		elif Game.pressed(e, "rudder_left"): B.order_rudder(p.rud_cmd - 5.0)
@@ -1517,42 +1531,320 @@ func _unhandled_input(e: InputEvent) -> void:
 			# middle drag turns and tilts the camera
 			rdrag = {"last": e.position} if e.pressed else {}
 		elif e.button_index == MOUSE_BUTTON_LEFT or e.button_index == MOUSE_BUTTON_RIGHT:
+			# Total War style: the selection button picks ships (click, shift-click, drag a box);
+			# the other button pans the camera, or with ships selected orders them about
 			var pan_btn: int = MOUSE_BUTTON_LEFT if Game.settings.get("pan_left", false) else MOUSE_BUTTON_RIGHT
 			if e.button_index == pan_btn:
-				# drag moves the camera; a plain click still picks a target
 				if e.pressed:
-					drag = {"start": e.position, "last": e.position, "moved": 0.0}
+					_prune_sel()
+					drag = {"start": e.position, "last": e.position, "moved": 0.0, "order": not sel.is_empty() and B.started}
+					if drag.order:
+						drag.w0 = B.screen_to_world(e.position)
 				else:
-					if not drag.is_empty() and drag.moved < 6.0 and B.started:
-						var w0 = B.screen_to_world(e.position)
-						if w0 != null:
-							B.pick_target_at(w0)
+					if not drag.is_empty() and B.started:
+						if drag.get("order", false):
+							_order_release(e.position)
+						elif drag.moved < 6.0:
+							var w0 = B.screen_to_world(e.position)
+							if w0 != null:
+								B.pick_target_at(w0)
 					drag = {}
-			elif e.pressed and B.started:
-				var w = B.screen_to_world(e.position)
-				if w != null:
-					if B.torp_aim and p.alive:
-						B.torp_click(w)
-					elif B.aim_mode == "manual" and p.alive:
-						# click: one gun; a second click within a third of a second: the whole salvo
-						var now := Time.get_ticks_msec() / 1000.0
-						var dbl: bool = now - _last_click_t < 0.33
-						_last_click_t = now
-						B.click_shot = {"aim": w, "salvo": dbl}
+			elif e.pressed:
+				if B.started:
+					box = {"start": e.position, "now": e.position}
+			elif not box.is_empty():
+				var b0: Dictionary = box
+				box = {}
+				if B.started:
+					if b0.start.distance_to(e.position) >= 8.0:
+						_box_select(b0.start, e.position, e.shift_pressed)
 					else:
-						B.pick_target_at(w)
+						_sel_click(e.position, e.shift_pressed)
 	elif e is InputEventMouseMotion:
 		B.mouse_w = B.screen_to_world(e.position)
 		if not rdrag.is_empty():
 			var rd: Vector2 = e.position - rdrag.last
 			rdrag.last = e.position
 			B.rotate_view(rd.x, rd.y)
+		if not box.is_empty():
+			box.now = e.position
 		if not drag.is_empty():
 			var d: Vector2 = e.position - drag.last
 			drag.last = e.position
 			drag.moved += d.length()
-			if drag.moved >= 6.0:
+			if drag.moved >= 6.0 and not drag.get("order", false):
 				B.pan(d.x, d.y)
+
+
+# =====================================================================
+# RTS orders for the ships in company (Total War style)
+# =====================================================================
+
+## Friendly ships the player can order about (the same ones the orders panel lists).
+func _mates() -> Array:
+	var out := []
+	var p: Ship = B.player
+	for s in B.ships:
+		if s.team == p.team and s != p and s.alive and not s.escaped and s.role() in ["warship", "pt"] and s.T.get("crew", 0) >= 10 and not s.T.get("ground", false):
+			out.append(s)
+	return out
+
+
+func _prune_sel() -> void:
+	sel = sel.filter(func(s): return s.alive and not s.escaped)
+
+
+func _ppm() -> float:
+	return overlay.size.y / (2.0 * tan(deg_to_rad(32.0) / 2.0) * B.camst.h)
+
+
+func _on_screen(s: Ship) -> bool:
+	return not B.cam.is_position_behind(Vector3(s.x, 0.0, s.z))
+
+
+## The friendly ship under the mouse, picked on the screen so small ships are easy to hit.
+func _friend_at(sp: Vector2) -> Ship:
+	var best: Ship = null
+	var bd := 1e9
+	var ppm := _ppm()
+	for s in _mates():
+		if not _on_screen(s):
+			continue
+		var d := _p(s.x, s.z).distance_to(sp)
+		var r := maxf(20.0, s.T.L * ppm * 0.6)
+		if d < r and d < bd:
+			bd = d; best = s
+	return best
+
+
+## A click of the selection button: pick a friendly, fire the selection at an enemy, or (with
+## nothing selected) the usual own-ship target pick, manual shot or torpedo shot.
+func _sel_click(sp: Vector2, shift: bool) -> void:
+	var p: Ship = B.player
+	var w = B.screen_to_world(sp)
+	if w == null:
+		return
+	if B.torp_aim and p.alive:
+		B.torp_click(w)
+		return
+	_prune_sel()
+	var f := _friend_at(sp)
+	if f != null:
+		if shift:
+			if sel.has(f):
+				sel.erase(f)
+			else:
+				sel.append(f)
+		else:
+			sel = [f]
+		Audio.ui("click", 0.3, "UI")
+		return
+	if not sel.is_empty():
+		var en: Ship = B.enemy_at(w)
+		if en != null:
+			_target_order(en)
+		else:
+			sel.clear()
+		return
+	if B.aim_mode == "manual" and p.alive:
+		# click: one gun; a second click within a third of a second: the whole salvo
+		var now := Time.get_ticks_msec() / 1000.0
+		var dbl: bool = now - _last_click_t < 0.33
+		_last_click_t = now
+		B.click_shot = {"aim": w, "salvo": dbl}
+	else:
+		B.pick_target_at(w)
+
+
+func _box_select(a: Vector2, b: Vector2, shift: bool) -> void:
+	var r := Rect2(a, b - a).abs()
+	var got := []
+	for s in _mates():
+		if _on_screen(s) and r.has_point(_p(s.x, s.z)):
+			got.append(s)
+	if shift:
+		for s in got:
+			if not sel.has(s):
+				sel.append(s)
+	else:
+		sel = got
+	if not got.is_empty():
+		Audio.ui("click", 0.3, "UI")
+
+
+## The order button let go with ships selected: a click on an enemy attacks it, a click on the
+## sea moves there in line ahead, a drag lays out the line they form (and the way they head).
+func _order_release(sp: Vector2) -> void:
+	_prune_sel()
+	if sel.is_empty():
+		return
+	var w1 = B.screen_to_world(sp)
+	if w1 == null:
+		return
+	order_at(drag.get("w0") if drag.moved >= 6.0 else null, w1)
+
+
+## Move (or attack) order for the selection at a sea position; `a` = start of a dragged line or null.
+func order_at(a, w1: Vector2) -> void:
+	if a == null:
+		var en: Ship = B.enemy_at(w1)
+		if en != null:
+			for s in sel:
+				s.order = "attack"
+				s.order_target = en
+				s.detached = false
+			B.say("%s: attack %s." % [_who(), en.ship_name], "")
+			Audio.ui("radio", 0.4, "Radio")
+			_squad_key = ""
+			return
+	var slots := _slots(sel, a, w1)
+	for i in sel.size():
+		var s: Ship = sel[i]
+		s.order = "move"
+		s.order_pos = slots[i][0]
+		s.order_head = slots[i][1]
+		s.detached = false
+		if s.order_target != null and not s.order_target.alive:
+			s.order_target = null
+	B.say("%s: proceeding to the position." % _who(), "")
+	Audio.ui("radio", 0.4, "Radio")
+	_squad_key = ""
+
+
+## Left-click on an enemy with ships selected: they shoot at it. Ships with a position keep it
+## and fight from there; the others go after it.
+func _target_order(en: Ship) -> void:
+	for s in sel:
+		s.order_target = en
+		if not s.order in ["move", "hold"]:
+			s.order = "attack"
+		s.detached = false
+	B.say("%s: target %s." % [_who(), en.ship_name], "")
+	Audio.ui("radio", 0.4, "Radio")
+	_squad_key = ""
+
+
+## J: the selected ships stop where they are and hold the spot.
+func _hold_here() -> void:
+	_prune_sel()
+	for s in sel:
+		s.order = "hold"
+		s.order_pos = Vector2(s.x, s.z)
+		s.order_head = -1.0
+	if not sel.is_empty():
+		B.say("%s: hold your position." % _who(), "")
+		Audio.ui("radio", 0.4, "Radio")
+		_squad_key = ""
+
+
+func _who() -> String:
+	return sel[0].ship_name if sel.size() == 1 else "%s and %d more" % [sel[0].ship_name, sel.size() - 1]
+
+
+## Where each selected ship goes and the heading it takes: [[Vector2, heading], ...] in the order
+## of `ships`. Click (a == null): line ahead ending at b, coming from where the ships are now.
+## Drag a -> b: the ships spread along the line, the lead at b, all heading from a to b.
+func _slots(ships: Array, a, b: Vector2) -> Array:
+	var n := ships.size()
+	var maxL := 0.0
+	var c := Vector2.ZERO
+	for s in ships:
+		maxL = maxf(maxL, s.T.L)
+		c += Vector2(s.x, s.z)
+	c /= float(n)
+	var gap := maxL + 250.0
+	var dir: Vector2
+	var lead: Vector2
+	if a == null:
+		dir = b - c
+		if dir.length() < 50.0:
+			dir = U.fwd(B.player.h)
+		dir = dir.normalized()
+		lead = b
+	else:
+		dir = b - a
+		var ln := dir.length()
+		dir = dir.normalized()
+		if n > 1 and ln / float(n - 1) > gap:
+			gap = ln / float(n - 1)
+		var mid: Vector2 = (a + b) / 2.0
+		lead = mid + dir * gap * float(n - 1) / 2.0
+	var head := fposmod(atan2(dir.x, -dir.y), TAU)
+	# the ship furthest along the line takes the lead slot, and so on back
+	var order := range(n)
+	order.sort_custom(func(i, j): return Vector2(ships[i].x, ships[i].z).dot(dir) > Vector2(ships[j].x, ships[j].z).dot(dir))
+	var out := []
+	out.resize(n)
+	for k in n:
+		out[order[k]] = [lead - dir * gap * float(k), head]
+	return out
+
+
+## A ship's outline on the sea: bow point, beam, stern (for destinations and the drag preview).
+func _hull_outline(pos: Vector2, head: float, L: float, col: Color, w: float) -> void:
+	var f := U.fwd(head)
+	var r := Vector2(-f.y, f.x)
+	var hl := maxf(L * 0.5, 12.0 / maxf(0.001, _ppm()))
+	var hb := hl * 0.22
+	var pts := PackedVector2Array()
+	for q in [pos + f * hl, pos + f * hl * 0.35 + r * hb, pos - f * hl + r * hb * 0.8, pos - f * hl - r * hb * 0.8, pos + f * hl * 0.35 - r * hb, pos + f * hl]:
+		pts.append(_p(q.x, q.y))
+	overlay.draw_polyline(pts, col, w, true)
+
+
+const C_SEL := Color(0.55, 0.95, 0.65)
+
+
+## Selection rings, order lines, destination outlines, the selection box and the drag preview.
+func _draw_command() -> void:
+	if B.camst.cine or B.camst.get("low", 0.0) > 0.75 or B.player == null or not B.started:
+		return
+	_prune_sel()
+	var ppm := _ppm()
+	var font = ThemeDB.fallback_font
+	# every friendly under a move order: a faint line to where it is going
+	for s in _mates():
+		if s.order == "move" and not sel.has(s) and _on_screen(s):
+			overlay.draw_dashed_line(_p(s.x, s.z), _p(s.order_pos.x, s.order_pos.y), Color(C_SEL, 0.22), 1.0, 8.0)
+	for s in sel:
+		if not _on_screen(s):
+			continue
+		var sp := _p(s.x, s.z)
+		var r := maxf(16.0, s.T.L * ppm * 0.6)
+		overlay.draw_arc(sp, r, 0, TAU, 40, C_SEL, 2.0, true)
+		if s.order in ["move", "hold"]:
+			var dp := _p(s.order_pos.x, s.order_pos.y)
+			if s.order == "move":
+				overlay.draw_dashed_line(sp, dp, Color(C_SEL, 0.7), 1.5, 10.0)
+			if s.order_head >= 0.0:
+				_hull_outline(s.order_pos, s.order_head, s.T.L, Color(C_SEL, 0.75), 1.5)
+			else:
+				overlay.draw_arc(dp, 6.0, 0, TAU, 16, Color(C_SEL, 0.75), 1.5, true)
+		var ot: Ship = s.order_target
+		if ot != null and ot.alive and not ot.escaped and B.player.contact(ot) and _on_screen(ot):
+			overlay.draw_dashed_line(sp, _p(ot.x, ot.z), Color(C_RED, 0.75), 1.5, 6.0)
+	# the selection box
+	if not box.is_empty() and box.start.distance_to(box.now) >= 8.0:
+		var rb := Rect2(box.start, box.now - box.start).abs()
+		overlay.draw_rect(rb, Color(C_SEL, 0.10))
+		overlay.draw_rect(rb, Color(C_SEL, 0.8), false, 1.0)
+	# dragging out a line: where each ship will go
+	if not drag.is_empty() and drag.get("order", false) and drag.moved >= 6.0 and drag.get("w0") != null and not sel.is_empty():
+		var w1 = B.screen_to_world(drag.last)
+		if w1 != null:
+			overlay.draw_line(_p(drag.w0.x, drag.w0.y), _p(w1.x, w1.y), Color(C_SEL, 0.5), 2.0, true)
+			var sl := _slots(sel, drag.w0, w1)
+			for i in sel.size():
+				_hull_outline(sl[i][0], sl[i][1], sel[i].T.L, C_SEL, 2.0)
+	# what the buttons do now
+	if not sel.is_empty():
+		var tip := "%d SELECTED · right-click move · right-drag line · click enemy: fire · right-click enemy: attack · J hold · Esc" % sel.size()
+		if Game.settings.get("pan_left", false):
+			tip = tip.replace("right-", "left-").replace("click an enemy: fire", "right-click an enemy: fire")
+		var tw: float = font.get_string_size(tip, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+		var tp := Vector2(clampf(800.0 - tw / 2.0, 440.0, overlay.size.x - tw - 20.0), overlay.size.y - 22.0)
+		overlay.draw_rect(Rect2(tp - Vector2(10, 15), Vector2(tw + 20, 22)), Color(0.02, 0.06, 0.1, 0.75))
+		overlay.draw_string(font, tp, tip, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, C_SEL)
 
 
 # =====================================================================

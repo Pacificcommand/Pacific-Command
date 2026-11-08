@@ -246,12 +246,19 @@ func ordered(s: Ship, tgt: Ship):
 				return s.h
 			s.tele = 3 if d < 1500.0 else 5
 			return s.bearing_to(raft.x, raft.z)
+		"move":
+			return _move_order(s)
+		"hold":
+			return _hold_order(s)
 		"attack":
 			var ot: Ship = s.order_target
 			if ot == null or not ot.alive or ot.escaped:
-				s.order = ""
+				# the job is done: stay about here, as a Total War unit would, and keep fighting
+				s.order = "hold"
 				s.order_target = null
-				return null
+				s.order_pos = Vector2(s.x, s.z)
+				s.order_head = -1.0
+				return _hold_order(s)
 			s.target = ot
 			s.fire = true
 			var R := s.range_to(ot)
@@ -272,6 +279,101 @@ func ordered(s: Ship, tgt: Ship):
 				return pt_boat(s, ot)
 			return solo(s, ot, R)
 	return null
+
+
+# ---------------------------------------------------------------------
+# the player's RTS orders: move to a spot, then hold it with some judgement
+# ---------------------------------------------------------------------
+
+const HOLD_LEASH := 1800.0     # how far a ship holding a position may wander to fight
+
+
+## The ship a friendly under move/hold orders shoots at: the one the player named, else its own pick.
+func _order_gun(s: Ship) -> Ship:
+	var ot: Ship = s.order_target
+	if ot != null and ot.alive and not ot.escaped and s.contact(ot):
+		return ot
+	return nearest_noticed(s, s.role() == "pt")
+
+
+## Sail for the ordered spot, shooting on the way; torpedoes too if a good shot comes up.
+func _move_order(s: Ship):
+	var t := _order_gun(s)
+	s.target = t
+	var R: float = s.range_to(t) if t != null else 1e9
+	s.fire = t != null and R <= s.max_range() * 1.05
+	if t != null and torpedo_chance(s, t, R):
+		return s.h
+	var d := U.hyp(s.order_pos.x - s.x, s.order_pos.y - s.z)
+	if d < maxf(160.0, s.T.L * 1.3):
+		s.order = "hold"
+		return _hold_order(s)
+	# a destroyer with fish ready and a target well inside torpedo range swings off to fire, then carries on
+	if t != null and s.cls() in ["dd", "pt"] and s.torps_left() > 0 and s.torp_cd <= 0.0 and R < s.T.torp.range * 0.7:
+		var ip: Array = s.torp_intercept(t, s.x, s.z)
+		var to_ip := s.bearing_to(ip[0].x, ip[0].y)
+		var a1 := to_ip + deg_to_rad(75.0)
+		var a2 := to_ip - deg_to_rad(75.0)
+		s.ai_state = "turning to fire torpedoes"
+		s.tele = 6
+		return a1 if absf(U.ang_d(s.h, a1)) < absf(U.ang_d(s.h, a2)) else a2
+	s.ai_state = "moving to position"
+	s.smoke_on = false
+	s.tele = 6 if d > 1600.0 else (5 if d > 600.0 else 4)
+	var want := s.bearing_to(s.order_pos.x, s.order_pos.y)
+	# coming in with a heading to take: swing in from behind the spot so it arrives lined up
+	if s.order_head >= 0.0 and d < 2500.0 and d > 300.0:
+		var f := U.fwd(s.order_head)
+		var back := clampf(d * 0.5, 150.0, 900.0)
+		want = s.bearing_to(s.order_pos.x - f.x * back, s.order_pos.y - f.y * back)
+	return want
+
+
+## On station: stay within HOLD_LEASH of the spot, but fight from it: torpedo shots for the
+## destroyers, broadside to the enemy for the guns, back to the spot when it has drifted off.
+func _hold_order(s: Ship):
+	var t := _order_gun(s)
+	s.target = t
+	var R: float = s.range_to(t) if t != null else 1e9
+	s.fire = t != null and R <= s.max_range() * 1.05
+	var d := U.hyp(s.order_pos.x - s.x, s.order_pos.y - s.z)
+	var to_pos := s.bearing_to(s.order_pos.x, s.order_pos.y)
+	if t != null and torpedo_chance(s, t, R):
+		return s.h
+	if d > HOLD_LEASH:
+		s.ai_state = "returning to station"
+		s.tele = 5
+		return to_pos
+	var fighting: bool = t != null and (R < s.max_range() * 1.15 or (s.torps_left() > 0 and R < s.T.torp.range))
+	if fighting:
+		if s.cls() in ["dd", "pt"] and s.torps_left() > 0 and s.torp_cd <= 0.0 and R < s.T.torp.range * 0.9 and R > 1200.0:
+			s.ai_state = "working for a torpedo shot"
+			s.tele = 5
+			var ip: Array = s.torp_intercept(t, s.x, s.z)
+			var to_ip := s.bearing_to(ip[0].x, ip[0].y)
+			# put the target on the beam, on whichever side keeps us nearer the spot
+			var a1 := to_ip + deg_to_rad(80.0)
+			var a2 := to_ip - deg_to_rad(80.0)
+			return a1 if absf(U.ang_d(a1, to_pos)) < absf(U.ang_d(a2, to_pos)) else a2
+		# broadside on: every gun bears; turn the way that keeps us near the spot
+		var to_t := s.bearing_to(t.x, t.z)
+		var b1 := to_t + PI / 2.0
+		var b2 := to_t - PI / 2.0
+		var pick: float
+		if d > 500.0:
+			pick = b1 if absf(U.ang_d(b1, to_pos)) < absf(U.ang_d(b2, to_pos)) else b2
+		else:
+			pick = b1 if absf(U.ang_d(s.h, b1)) < absf(U.ang_d(s.h, b2)) else b2
+		s.ai_state = "holding position, broadside to %s" % t.ship_name
+		s.tele = 3 if d < HOLD_LEASH * 0.6 else 4
+		return pick
+	# nothing to shoot at: ease onto the spot and the ordered heading
+	s.ai_state = "holding position"
+	if d > 450.0:
+		s.tele = 3
+		return to_pos
+	s.tele = 2 if s.order_head >= 0.0 else 1
+	return s.order_head if s.order_head >= 0.0 else s.h + 0.25
 
 
 func _nearest_raft(s: Ship) -> Ship:
