@@ -402,85 +402,47 @@ static func new_campaign(start_day: int, ship: String, name: String) -> Dictiona
 # =====================================================================
 
 func _build_ui() -> void:
-	# the War Room: the chart lies on a wooden table under a lamp
-	var wood := TextureRect.new()
-	wood.texture = WT.tex("wood")
-	wood.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	wood.stretch_mode = TextureRect.STRETCH_SCALE
-	wood.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	wood.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(wood)
-	var grad := Gradient.new()
-	grad.set_color(0, Color(1.0, 0.84, 0.59, 0.10))
-	grad.set_color(1, Color(0, 0, 0, 0.62))
-	grad.add_point(0.45, Color(0, 0, 0, 0.12))
-	var gt := GradientTexture2D.new()
-	gt.gradient = grad
-	gt.fill = GradientTexture2D.FILL_RADIAL
-	gt.fill_from = Vector2(0.40, 0.45)
-	gt.fill_to = Vector2(1.05, 1.15)
-	gt.width = 512; gt.height = 288
-	var lamp := TextureRect.new()
-	lamp.texture = gt
-	lamp.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	lamp.stretch_mode = TextureRect.STRETCH_SCALE
-	lamp.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	lamp.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(lamp)
-	# the chart, inset in a frame with a shadow
-	var frame := Panel.new()
-	var fsb := WT.flat(Color("d9cfb3"), Color("6b5534"), 1, 0)
-	fsb.shadow_size = 24; fsb.shadow_color = Color(0, 0, 0, 0.6); fsb.shadow_offset = Vector2(0, 14)
-	frame.add_theme_stylebox_override("panel", fsb)
-	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	frame.offset_left = 30; frame.offset_top = 96; frame.offset_right = -CLIP_W - 50; frame.offset_bottom = -130
-	add_child(frame)
+	# the satellite view fills the screen; glass panels float over it
 	map = Control.new()
 	map.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	map.offset_left = 6; map.offset_top = 6; map.offset_right = -6; map.offset_bottom = -6
 	map.clip_contents = true
 	map.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	map.draw.connect(_draw_map)
 	map.gui_input.connect(_map_input)
 	map.resized.connect(func(): map.queue_redraw())
-	frame.add_child(map)
-	# top left: the brass date plate and the clock speeds
-	var plate := PanelContainer.new()
-	var psb := WT.flat(WT.BRASS, WT.BRASS_EDGE, 2, 2)
-	psb.content_margin_left = 20; psb.content_margin_right = 20; psb.content_margin_top = 4; psb.content_margin_bottom = 6
-	psb.shadow_size = 8; psb.shadow_color = Color(0, 0, 0, 0.5); psb.shadow_offset = Vector2(0, 4)
-	plate.add_theme_stylebox_override("panel", psb)
-	var pv := VBoxContainer.new()
-	pv.add_theme_constant_override("separation", -4)
-	pv.alignment = BoxContainer.ALIGNMENT_CENTER
+	add_child(map)
+	# top left: the date and the clock
+	var dp := PanelContainer.new()
+	var dsb := WT.glass(0.0)
+	dsb.content_margin_left = 18; dsb.content_margin_right = 18; dsb.content_margin_top = 6; dsb.content_margin_bottom = 8
+	dp.add_theme_stylebox_override("panel", dsb)
+	var dv := VBoxContainer.new()
+	dv.add_theme_constant_override("separation", -2)
 	lbl.date = Label.new()
 	lbl.date.add_theme_font_override("font", WT.font("headb"))
-	lbl.date.add_theme_font_size_override("font_size", 26)
-	lbl.date.add_theme_color_override("font_color", WT.BRASS_TEXT)
-	lbl.date.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.date.add_theme_font_size_override("font_size", 24)
+	lbl.date.add_theme_color_override("font_color", Color.WHITE)
 	lbl.hour = Label.new()
 	lbl.hour.add_theme_font_override("font", WT.font("head"))
 	lbl.hour.add_theme_font_size_override("font_size", 12)
-	lbl.hour.add_theme_color_override("font_color", Color("4a3812"))
-	lbl.hour.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	pv.add_child(lbl.date)
-	pv.add_child(lbl.hour)
-	plate.add_child(pv)
+	lbl.hour.add_theme_color_override("font_color", Color(WT.ACCENT, 0.9))
+	dv.add_child(lbl.date)
+	dv.add_child(lbl.hour)
+	dp.add_child(dv)
 	var sp := HBoxContainer.new()
-	sp.add_theme_constant_override("separation", 6)
+	sp.add_theme_constant_override("separation", 4)
 	for i in SPEEDS.size():
 		var b := UI.button(["HOLD", "1×", "4×", "24×"][i], (func(k): speed_i = k; _refresh_top()).bind(i), true)
 		b.tooltip_text = ["Hold the clock", "One hour every three seconds", "Fast", "Very fast"][i]
-		WT.wood_button(b, 15, 52)
-		b.custom_minimum_size.x = 62
+		WT.glass_button(b, 14, 44)
+		b.custom_minimum_size.x = 56
 		btn["sp%d" % i] = b
 		sp.add_child(b)
-	var tl := UI.row([plate, sp], 18)
-	tl.position = Vector2(30, 18)
+	var tl := UI.row([dp, sp], 10)
+	tl.position = Vector2(20, 16)
 	add_child(tl)
-	# top right of the chart: the service record, the mail, the books, the menu
-	var tr := UI.row([], 8)
+	# top right, left of the side panel: the service record, the mail, the books, the menu
+	var tr := UI.row([], 6)
 	btn.career = UI.button("CAREER", _open_career)
 	btn.mail = UI.button("MAIL", _show_mail)
 	btn.books = UI.button("BOOKS", func(): add_child(EncyclopediaPanel.new()))
@@ -488,33 +450,17 @@ func _build_ui() -> void:
 	btn.menu = UI.button("MENU", func(): _save(); get_tree().change_scene_to_file("res://scenes/menu.tscn"))
 	btn.menu.tooltip_text = "Save and go back to the main menu"
 	for k in ["career", "mail", "books", "menu"]:
-		WT.wood_button(btn[k], 15, 52)
+		WT.glass_button(btn[k], 14, 44)
 		tr.add_child(btn[k])
 	tr.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	tr.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	tr.offset_right = -CLIP_W - 50; tr.offset_left = -CLIP_W - 50; tr.offset_top = 18
+	tr.offset_right = -SIDE_W - 36; tr.offset_left = -SIDE_W - 36; tr.offset_top = 16
 	add_child(tr)
-	# the clipboard: everything about the selected thing, on paper
-	var board := Panel.new()
-	var bsb := WT.flat(WT.BOARD, Color("4e3519"), 1, 10)
-	bsb.shadow_size = 20; bsb.shadow_color = Color(0, 0, 0, 0.55); bsb.shadow_offset = Vector2(0, 12)
-	board.add_theme_stylebox_override("panel", bsb)
-	board.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	board.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
-	board.offset_left = -CLIP_W - 22; board.offset_right = -22; board.offset_top = 16; board.offset_bottom = -CARDS_H - 14
-	board.rotation_degrees = 0.8
-	add_child(board)
-	var clip := Panel.new()
-	var csb := WT.flat(Color("b8b8b0"), Color("7c7c74"), 0, 6)
-	csb.border_width_bottom = 3
-	clip.add_theme_stylebox_override("panel", csb)
-	clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	clip.position = Vector2(CLIP_W / 2.0 - 64, 10); clip.size = Vector2(128, 34)
-	board.add_child(clip)
+	# the side panel: everything about the selected thing
 	var sheet := PanelContainer.new()
-	sheet.add_theme_stylebox_override("panel", WT.paper_box(20))
+	sheet.add_theme_stylebox_override("panel", WT.glass(18.0, 12))
 	sheet.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
-	sheet.offset_left = -CLIP_W - 6; sheet.offset_right = -38; sheet.offset_top = 66; sheet.offset_bottom = -CARDS_H - 28
+	sheet.offset_left = -SIDE_W - 16; sheet.offset_right = -16; sheet.offset_top = 16; sheet.offset_bottom = -16
 	sheet.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(sheet)
 	var scroll := ScrollContainer.new()
@@ -524,45 +470,46 @@ func _build_ui() -> void:
 	side = UI.column(8)
 	side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(side)
-	# under the clipboard: the latest signals on index cards
-	log_box = UI.column(10)
-	log_box.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-	log_box.offset_left = -CLIP_W - 6; log_box.offset_right = -36; log_box.offset_top = -CARDS_H; log_box.offset_bottom = -16
-	log_box.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	# bottom left: the latest signals, the dock (in port) and the captain
+	log_box = UI.column(6)
+	log_box.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	log_box.offset_left = 20; log_box.offset_right = 600; log_box.offset_top = -300; log_box.offset_bottom = -96
+	log_box.alignment = BoxContainer.ALIGNMENT_END
+	log_box.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	log_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(log_box)
-	# bottom left: the dock (in port) and the captain's plaque
-	var bl := UI.row([], 14)
+	var bl := UI.row([], 10)
 	btn.dock = UI.button("GO TO THE DOCK", func(): open_dock())
-	WT.brass_button(btn.dock, 18)
-	btn.dock.custom_minimum_size.y = 64
+	WT.glass_button(btn.dock, 16, 56)
+	var dk: StyleBoxFlat = btn.dock.get_theme_stylebox("normal").duplicate()
+	dk.bg_color = Color(WT.ACCENT, 0.92); dk.border_color = WT.ACCENT
+	btn.dock.add_theme_stylebox_override("normal", dk)
+	btn.dock.add_theme_color_override("font_color", Color("1b1405"))
 	bl.add_child(btn.dock)
 	var plq := PanelContainer.new()
-	var qsb := WT.flat(Color(0.08, 0.05, 0.02, 0.62), WT.BRASS_EDGE, 1, 0)
+	var qsb := WT.glass(0.0)
 	qsb.content_margin_left = 16; qsb.content_margin_right = 16; qsb.content_margin_top = 6; qsb.content_margin_bottom = 8
 	plq.add_theme_stylebox_override("panel", qsb)
 	var qv := VBoxContainer.new()
 	qv.add_theme_constant_override("separation", 0)
 	lbl.ship = Label.new()
 	lbl.ship.add_theme_font_override("font", WT.font("head"))
-	lbl.ship.add_theme_font_size_override("font_size", 17)
-	lbl.ship.add_theme_color_override("font_color", WT.WOOD_TEXT)
+	lbl.ship.add_theme_font_size_override("font_size", 16)
+	lbl.ship.add_theme_color_override("font_color", Color.WHITE)
 	lbl.career = Label.new()
-	lbl.career.add_theme_font_override("font", WT.font("type"))
-	lbl.career.add_theme_font_size_override("font_size", 14)
-	lbl.career.add_theme_color_override("font_color", Color("cdb98a"))
+	lbl.career.add_theme_font_size_override("font_size", 13)
+	lbl.career.add_theme_color_override("font_color", Color(1, 1, 1, 0.7))
 	qv.add_child(lbl.ship)
 	qv.add_child(lbl.career)
 	plq.add_child(qv)
 	bl.add_child(plq)
 	bl.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	bl.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	bl.offset_left = 30; bl.offset_bottom = -26; bl.offset_top = -26
+	bl.offset_left = 20; bl.offset_bottom = -20; bl.offset_top = -20
 	add_child(bl)
 
 
-const CLIP_W := 400.0          # the clipboard's width
-const CARDS_H := 330.0         # room under it for the index cards
+const SIDE_W := 400.0          # the side panel's width
 
 
 func _refresh_top() -> void:
@@ -663,7 +610,7 @@ func _refresh_side() -> void:
 			eng.disabled = d2 > ENGAGE_NM or age > 6.0
 			side.add_child(UI.row([icpt, eng]))
 	else:
-		side.add_child(UI.wrap("Click a block or a pin for details; click the sea to set a course. Blue blocks are our convoys, patrols and task forces; red blocks are enemy groups we have found (pale when the report is old). A red cross marks a battle you can sail to and join. Sail within %d nm (the orange ring) to engage or join." % int(ENGAGE_NM), 350, 12, UI.MUTED))
+		side.add_child(UI.wrap("Click a ship or an island for details; click the sea to set a course. Blue-ringed ships are our convoys, patrols and task forces; red-ringed ships are enemy groups we have found (a faded ghost when the sighting is old). Gun flashes in an orange ring mark a battle you can sail to and join. Sail within %d nm (the yellow ring) to engage or join." % int(ENGAGE_NM), 350, 12, UI.MUTED))
 	# nearby list
 	side.add_child(UI.label("Groups in range", 11, UI.BRASS))
 	var near: Array = []
@@ -690,7 +637,6 @@ func _refresh_side() -> void:
 	if near.is_empty():
 		side.add_child(UI.label("Nothing reported nearby.", 12, UI.MUTED))
 	btn.dock.visible = port != ""
-	WT.paperize(side, 318.0)
 
 
 ## "Tokyo Express run" / "convoy" ... for the middle of a sentence.
@@ -892,7 +838,7 @@ func _request_command() -> void:
 	v.add_child(UI.row([UI.button("Cancel", _close_card)]))
 	p.add_child(v)
 	card.add_child(p)
-	WT.paperize_panel(p)
+	WT.glass_panel(p)
 	UI.center(p)
 	add_child(card)
 
@@ -930,7 +876,7 @@ func _refit_menu() -> void:
 	v.add_child(UI.row([UI.button("Close", _close_card)]))
 	p.add_child(v)
 	card.add_child(p)
-	WT.paperize_panel(p)
+	WT.glass_panel(p)
 	UI.center(p)
 	add_child(card)
 
@@ -941,33 +887,37 @@ func _log(txt: String) -> void:
 	C.log.append([int(C.day), txt])
 	if C.log.size() > 200:
 		C.log.pop_front()
-	# the latest signals, typed on index cards pinned under the clipboard
+	# the latest signals as toasts over the ocean, newest at the bottom
 	var h := int(fposmod(C.day, 1.0) * 24.0)
-	var d: PackedStringArray = War.date_str(int(C.day)).to_upper().split(" ")
-	var card_l := Label.new()
-	card_l.text = "%s %s · %02d00 · %s" % [d[0], d[1], h, txt]
-	card_l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	card_l.custom_minimum_size.x = CLIP_W - 80
-	card_l.add_theme_font_override("font", WT.font("type"))
-	card_l.add_theme_font_size_override("font_size", 14)
-	card_l.add_theme_color_override("font_color", WT.INK)
-	card_l.max_lines_visible = 4
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	var tm := Label.new()
+	tm.text = "%02d00" % h
+	tm.add_theme_font_override("font", WT.font("head"))
+	tm.add_theme_font_size_override("font_size", 13)
+	tm.add_theme_color_override("font_color", WT.ACCENT)
+	var tx := Label.new()
+	tx.text = txt
+	tx.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	tx.custom_minimum_size.x = 480
+	tx.max_lines_visible = 3
+	tx.add_theme_font_size_override("font_size", 14)
+	tx.add_theme_color_override("font_color", WT.GLASS_TEXT)
+	row.add_child(tm)
+	row.add_child(tx)
 	var p := PanelContainer.new()
-	var tint: Color = [Color("f7f1df"), Color("efe7cf"), Color("f3ecd6")][C.log.size() % 3]
-	var sb := WT.flat(tint, Color(0, 0, 0, 0), 0, 0)
-	sb.content_margin_left = 16; sb.content_margin_right = 16; sb.content_margin_top = 11; sb.content_margin_bottom = 11
-	sb.shadow_size = 8; sb.shadow_color = Color(0, 0, 0, 0.45); sb.shadow_offset = Vector2(0, 5)
+	var sb := WT.glass(0.0, 8)
+	sb.content_margin_left = 14; sb.content_margin_right = 14; sb.content_margin_top = 7; sb.content_margin_bottom = 8
+	sb.shadow_size = 6
 	p.add_theme_stylebox_override("panel", sb)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	p.add_child(card_l)
-	var tilt: float = [-1.6, 1.2, -0.7, 0.9][C.log.size() % 4]
-	p.resized.connect(func(): p.pivot_offset = p.size / 2.0)
-	p.rotation_degrees = tilt
+	p.add_child(row)
 	log_box.add_child(p)
-	log_box.move_child(p, 0)
 	while log_box.get_child_count() > 3:
-		var last := log_box.get_child(log_box.get_child_count() - 1)
-		log_box.remove_child(last); last.queue_free()
+		var first := log_box.get_child(0)
+		log_box.remove_child(first); first.queue_free()
+	for i in log_box.get_child_count():
+		log_box.get_child(i).modulate.a = [0.55, 0.78, 1.0][3 - log_box.get_child_count() + i]
 
 
 # =====================================================================
@@ -1389,7 +1339,7 @@ func _balance_card(iid: String, mode: String, sg = null) -> void:
 	v.add_child(row)
 	p.add_child(v)
 	card.add_child(p)
-	WT.paperize_panel(p)
+	WT.glass_panel(p)
 	UI.center(p)
 	add_child(card)
 
@@ -2404,7 +2354,7 @@ func _offer_fight(f: Dictionary, attached: bool) -> void:
 	v.add_child(row)
 	p.add_child(v)
 	card.add_child(p)
-	WT.paperize_panel(p)
+	WT.glass_panel(p)
 	UI.center(p)
 	add_child(card)
 
@@ -2446,7 +2396,7 @@ func _show_card(kicker: String, title: String, text: String, button: String) -> 
 	v.add_child(UI.big_button(button, _close_card))
 	p.add_child(v)
 	card.add_child(p)
-	WT.paperize_panel(p)
+	WT.glass_panel(p)
 	UI.center(p)
 	add_child(card)
 
@@ -2475,7 +2425,7 @@ func _offer_operation(op: Dictionary) -> void:
 	v.add_child(row)
 	p.add_child(v)
 	card.add_child(p)
-	WT.paperize_panel(p)
+	WT.glass_panel(p)
 	UI.center(p)
 	add_child(card)
 	_log("Operation: %s." % op.name)
@@ -2511,7 +2461,7 @@ func _check_offers() -> void:
 	v.add_child(UI.wrap("Ships that join sail with you on the map and fight under your orders until they are lost.", 600, 12, UI.MUTED))
 	p.add_child(v)
 	card.add_child(p)
-	WT.paperize_panel(p)
+	WT.glass_panel(p)
 	UI.center(p)
 	add_child(card)
 
@@ -2879,7 +2829,7 @@ func _recruit_menu() -> void:
 	v.add_child(UI.row([UI.button("Close", _close_card)]))
 	p.add_child(v)
 	card.add_child(p)
-	WT.paperize_panel(p)
+	WT.glass_panel(p)
 	UI.center(p)
 	add_child(card)
 
@@ -2924,57 +2874,70 @@ func _from_px(p: Vector2) -> Vector2:
 	return Vector2(cam_lon + (p.x - s.x / 2) / zoom, cam_lat - (p.y - s.y / 2) / zoom)
 
 
-const CHART := [60.0, 252.0, 62.0, -60.0]      # lon0, lon1, lat0, lat1 of assets/map/chart.png
-const SEA_NAMES := [["PACIFIC OCEAN", 178.0, 24.0, 26], ["CORAL SEA", 156.0, -17.0, 17], ["PHILIPPINE SEA", 132.0, 19.0, 17], ["SOLOMON SEA", 153.5, -8.2, 14], ["SOUTH CHINA SEA", 114.0, 13.0, 15], ["BISMARCK SEA", 148.5, -3.6, 13], ["TASMAN SEA", 160.0, -38.0, 15], ["CELEBES SEA", 122.0, 4.0, 13], ["EAST CHINA SEA", 126.0, 29.5, 13]]
-const BLOCK_KIND := {"convoy": "MARU", "express": "EXP", "taskforce": "TF", "carriers": "CV", "barges": "BRG", "sub": "SUB", "patrol": "PAT", "boats": "PT", "picket": "PKT"}
+const CHART := [60.0, 252.0, 62.0, -60.0]      # lon0, lon1, lat0, lat1 of assets/map/sat.jpg
+const SEA_NAMES := [["PACIFIC OCEAN", 178.0, 24.0, 28], ["CORAL SEA", 156.0, -17.0, 17], ["PHILIPPINE SEA", 132.0, 19.0, 17], ["SOLOMON SEA", 153.5, -8.2, 14], ["SOUTH CHINA SEA", 114.0, 13.0, 15], ["BISMARCK SEA", 148.5, -3.6, 13], ["TASMAN SEA", 160.0, -38.0, 15], ["CELEBES SEA", 122.0, 4.0, 13], ["EAST CHINA SEA", 126.0, 29.5, 13]]
+const CLOUD_DRIFT := 2.5       # degrees of longitude the clouds move east per day
 
 
 func _draw_map() -> void:
 	var vs := map.size
 	var f_head := WT.font("head")
 	var f_bold := WT.font("headb")
-	var f_type := WT.font("type")
 	var f_serif := WT.font("serif")
+	var f_ui: Font = ThemeDB.fallback_font
 	var t_ms := Time.get_ticks_msec()
-	# the sea beyond the chart's edges, then the chart
-	map.draw_rect(Rect2(Vector2.ZERO, vs), Color("a3b4ad"))
-	var chart := WT.tex("chart")
-	if chart != null:
-		var c0 := _to_px(CHART[0], CHART[2])
-		var c1 := _to_px(CHART[1], CHART[3])
-		map.draw_texture_rect(chart, Rect2(c0, c1 - c0), false)
-	else:
-		for nm in Geo.LAND:
-			var pts := PackedVector2Array()
-			for p in Geo.LAND[nm]:
-				pts.append(_to_px(Geo.lon_fix(p[0]), p[1]))
-			if pts.size() >= 3:
-				map.draw_colored_polygon(pts, Color("dccba0"))
-	# graticule, labelled along the top and left edges
+	var tsec := t_ms / 1000.0
+	# keep the view inside the image: no zooming out past it, no panning off its edges
+	zoom = maxf(zoom, maxf(vs.x / (CHART[1] - CHART[0]), vs.y / (CHART[2] - CHART[3])))
+	var half_h := vs.y / 2.0 / zoom
+	var half_w := vs.x / 2.0 / zoom
+	cam_lat = clampf(cam_lat, CHART[3] + half_h, CHART[2] - half_h)
+	cam_lon = clampf(cam_lon, CHART[0] + half_w, CHART[1] - half_w)
+	# the ocean beyond the image, then the satellite image
+	map.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.03, 0.17, 0.32))
+	var sat := WT.tex("sat")
+	var c0 := _to_px(CHART[0], CHART[2])
+	var c1 := _to_px(CHART[1], CHART[3])
+	if sat != null:
+		map.draw_texture_rect(sat, Rect2(c0, c1 - c0), false)
+	# clouds drifting east with the days, and their shadows on the sea; thinner as you zoom in
+	var clouds := WT.tex("clouds")
+	if clouds != null:
+		var ca := clampf(0.62 - (zoom - 8.0) * 0.022, 0.18, 0.62)
+		var shift := fposmod(C.day * CLOUD_DRIFT, 360.0)
+		var cw := 360.0 * zoom
+		var ch := c1.y - c0.y
+		for k in [-1, 0]:
+			var x0 := _to_px(CHART[0] + shift + 360.0 * k, 0).x
+			if x0 + cw < 0 or x0 > vs.x:
+				continue
+			var r := Rect2(Vector2(x0, c0.y), Vector2(cw, ch))
+			map.draw_texture_rect(clouds, Rect2(r.position + Vector2(5, 7) * clampf(zoom / 9.0, 1.0, 3.0), r.size), false, Color(0, 0.02, 0.05, ca * 0.35))
+			map.draw_texture_rect(clouds, r, false, Color(1, 1, 1, ca))
+	# graticule, faint, labelled along the edges
 	var step := 10.0 if zoom < 14.0 else 5.0
 	var tl := _from_px(Vector2.ZERO)
 	var br := _from_px(vs)
-	var gcol := Color(WT.GRATICULE, 0.55)
+	var gcol := Color(1, 1, 1, 0.07)
 	var lon := ceilf(tl.x / step) * step
 	while lon <= br.x:
 		var x := _to_px(lon, 0).x
 		map.draw_line(Vector2(x, 0), Vector2(x, vs.y), gcol, 1.0)
 		var ll := int(round(lon))
-		map.draw_string(f_type, Vector2(x + 4, 16), "%d°%s" % [ll if ll <= 180 else 360 - ll, "E" if ll < 180 else ("" if ll == 180 else "W")], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("4f6a60"))
+		_label(Vector2(x + 4, 112), "%d°%s" % [ll if ll <= 180 else 360 - ll, "E" if ll < 180 else ("" if ll == 180 else "W")], f_ui, 11, Color(1, 1, 1, 0.45))
 		lon += step
 	var lat := ceilf(br.y / step) * step
 	while lat <= tl.y:
 		var y := _to_px(0, lat).y
 		map.draw_line(Vector2(0, y), Vector2(vs.x, y), gcol, 1.0)
 		var la := int(round(lat))
-		map.draw_string(f_type, Vector2(6, y - 4), "%d°%s" % [absi(la), "N" if la > 0 else ("S" if la < 0 else "")], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("4f6a60"))
+		_label(Vector2(8, y - 4), "%d°%s" % [absi(la), "N" if la > 0 else ("S" if la < 0 else "")], f_ui, 11, Color(1, 1, 1, 0.45))
 		lat += step
-	# sea names, printed on the chart in spaced capitals
+	# sea names, as Google Earth letters the oceans
 	for sn in SEA_NAMES:
 		if sn[3] >= 20 and zoom > 16.0:
 			continue
-		_spaced(f_serif, _to_px(sn[1], sn[2]), sn[0], int(sn[3] * clampf(zoom / 9.0, 0.8, 1.4)), Color(0.20, 0.30, 0.30, 0.42), 0.35)
-	# zone names where nothing else names the place
+		_spaced(f_serif, _to_px(sn[1], sn[2]), sn[0], int(sn[3] * clampf(zoom / 9.0, 0.8, 1.4)), Color(0.72, 0.86, 1.0, 0.55), 0.35)
 	var named := {}
 	for iid in Geo.ISLANDS:
 		named[Geo.ISLANDS[iid].name] = true
@@ -2986,32 +2949,38 @@ func _draw_map() -> void:
 		for zid in War.ZONES:
 			var z: Dictionary = War.ZONES[zid]
 			if not named.has(z.name) and not War.BASES.has(z.name) and not named.has(String(z.name).to_lower()):
-				_spaced(f_serif, _to_px(z.lon, z.lat) + Vector2(0, -z.r / 60.0 * zoom * 0.55), String(z.name).to_upper(), 11, Color(0.22, 0.30, 0.30, 0.40), 0.25)
-	# the Japanese perimeter: red grease pencil round everything they hold
+				_spaced(f_serif, _to_px(z.lon, z.lat) + Vector2(0, -z.r / 60.0 * zoom * 0.55), String(z.name).to_upper(), 11, Color(0.72, 0.86, 1.0, 0.45), 0.25)
+	# the Japanese perimeter: a soft red line round everything they hold
 	_draw_perimeter()
-	# radar stations on the islands we have taken: a dashed ring of what they watch
+	# radar stations on islands we have taken: a ring and a turning sweep
 	for iid in C.islands:
 		var rst: Dictionary = C.islands[iid]
 		if rst.side == "us" and rst.get("radar_on", false):
 			var rp := _to_px(Geo.ISLANDS[iid].lon, Geo.ISLANDS[iid].lat)
 			var rr: float = RADAR_NM / 60.0 * zoom
-			map.draw_circle(rp, rr, Color(WT.RADAR, 0.05))
-			_dashed_arc(rp, rr, Color(WT.RADAR, 0.75), 2.0, 14.0)
-			var sw := fposmod(t_ms / 1400.0 + iid.hash() % 7, TAU)
-			map.draw_line(rp, rp + Vector2(sin(sw), -cos(sw)) * rr, Color(WT.RADAR, 0.30), 1.5, true)
+			map.draw_circle(rp, rr, Color(0.35, 0.9, 1.0, 0.04))
+			map.draw_arc(rp, rr, 0, TAU, 96, Color(0.35, 0.9, 1.0, 0.55), 1.5, true)
+			var sw := fposmod(tsec / 1.4 + iid.hash() % 7, TAU)
+			var fan := PackedVector2Array([rp])
+			var fc := PackedColorArray([Color(0.35, 0.9, 1.0, 0.0)])
+			for k in 9:
+				var aa := sw - 0.5 * k / 8.0
+				fan.append(rp + Vector2(sin(aa), -cos(aa)) * rr)
+				fc.append(Color(0.35, 0.9, 1.0, 0.22 * (1.0 - k / 8.0)))
+			map.draw_polygon(fan, fc)
 			if zoom > 6.0:
-				map.draw_string(f_type, rp + Vector2(-34, -rr - 6), "RADAR %d NM" % int(RADAR_NM), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(WT.RADAR, 0.9))
-	# bases: a small square in ink
+				_label(rp + Vector2(-40, -rr - 6), "RADAR %d NM" % int(RADAR_NM), f_head, 11, Color(0.6, 0.95, 1.0, 0.9))
+	# bases: a small white diamond and the name
 	for nm in War.BASES:
 		var bb: Dictionary = War.BASES[nm]
 		var us: bool = _base_side(nm) == "us"
 		var p := _to_px(bb.lon, bb.lat)
-		var col := WT.PIN_US if us else WT.PIN_JP
-		map.draw_rect(Rect2(p - Vector2(4, 4), Vector2(8, 8)), Color(col, 0.85))
-		map.draw_rect(Rect2(p - Vector2(4, 4), Vector2(8, 8)), WT.INK, false, 1.0)
+		var dia := PackedVector2Array([p + Vector2(0, -5), p + Vector2(5, 0), p + Vector2(0, 5), p + Vector2(-5, 0)])
+		map.draw_colored_polygon(dia, WT.US_RING if us else WT.JP_RING)
+		map.draw_polyline(PackedVector2Array([dia[0], dia[1], dia[2], dia[3], dia[0]]), Color.WHITE, 1.2, true)
 		if zoom > 8.0 and not named.has(nm):
-			map.draw_string(f_type, p + Vector2(8, 5), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(WT.INK, 0.85))
-	# islands that can be taken: map pins, a paper tag for the key ones
+			_label(p + Vector2(9, 5), nm, f_ui, 12, Color(1, 1, 1, 0.85))
+	# islands that can be taken: a placemark in the holder's colour, the name in white
 	for iid in Geo.ISLANDS:
 		var isl: Dictionary = Geo.ISLANDS[iid]
 		var st: Dictionary = C.islands.get(iid, {})
@@ -3019,36 +2988,38 @@ func _draw_map() -> void:
 		if p.x < -60 or p.y < -40 or p.x > vs.x + 60 or p.y > vs.y + 40:
 			continue
 		var us_held: bool = st.get("side", "ijn") == "us"
-		var col := WT.PIN_US if us_held else WT.PIN_JP
+		var col := WT.US_RING if us_held else WT.JP_RING
 		var sel: bool = iid == selected
-		var hr := 7.0 if isl.key else 5.0
+		var hr := 6.5 if isl.key else 4.5
 		if sel:
-			map.draw_arc(p, hr + 6.0, 0, TAU, 32, WT.BRASS, 3.0, true)
-		map.draw_circle(p + Vector2(1.5, 3.0), hr, Color(0, 0, 0, 0.35))
+			map.draw_arc(p, hr + 6.0 + sin(tsec * 4.0), 0, TAU, 32, Color.WHITE, 2.0, true)
+		map.draw_circle(p + Vector2(1, 2), hr + 1.5, Color(0, 0, 0, 0.35))
+		map.draw_circle(p, hr + 1.5, Color.WHITE)
 		map.draw_circle(p, hr, col)
-		map.draw_circle(p + Vector2(hr * 0.25, hr * 0.25), hr * 0.7, Color(0, 0, 0, 0.18))
-		map.draw_circle(p - Vector2(hr * 0.3, hr * 0.3), hr * 0.3, Color(1, 1, 1, 0.35))
 		if (isl.key and zoom >= 5.0) or zoom > 13.0 or sel:
 			var g: int = int(st.get("garrison", isl.garrison))
-			var r := _tag(p + Vector2(hr + 5, -9), isl.name, f_head, 13, WT.INK, WT.TAG, g * 5)
+			var ts := _label(p + Vector2(hr + 6, 5), isl.name, f_head, 14 if isl.key else 12, Color.WHITE)
 			for k in g:
-				map.draw_rect(Rect2(Vector2(r.end.x - g * 5 - 2 + k * 5, r.position.y + 7), Vector2(3, 5)), col)
+				var q := p + Vector2(hr + 9 + ts + k * 6, -1)
+				map.draw_rect(Rect2(q, Vector2(4, 4)), col)
+				map.draw_rect(Rect2(q, Vector2(4, 4)), Color.WHITE, false, 1.0)
 	# the player's search radius and engage ring
 	var pp := _to_px(C.lon, C.lat)
-	_dashed_arc(pp, _detect_range() / 60.0 * zoom, Color(WT.INK, 0.28), 1.2, 10.0)
-	# friendly groups: blue wooden blocks
+	_dashed_arc(pp, _detect_range() / 60.0 * zoom, Color(1, 1, 1, 0.16), 1.0, 10.0)
+	_dashed_arc(pp, ENGAGE_NM / 60.0 * zoom, Color(WT.ACCENT, 0.4), 1.5, 6.0)
+	# friendly groups: ships under way, ringed in blue
+	var gl := clampf(zoom * 0.9, 13.0, 26.0)
 	for g in C.groups:
 		if g.side != "us":
 			continue
 		var p := _to_px(g.lon, g.lat)
 		var sel: bool = g.id == selected
 		if g.dest != null:
-			_dashed_line(p, _to_px(g.dest[0], g.dest[1]), Color(WT.INK_BLUE, 0.45 if sel else 0.22), 1.5, 6.0)
-		_course_tick(p, _course(g), Color(WT.INK_BLUE, 0.8))
-		var r := _block(p, _block_tag(g), WT.BLOCK_US, WT.BLOCK_US_SIDE, sel, false)
+			_dashed_line(p, _to_px(g.dest[0], g.dest[1]), Color(WT.US_RING, 0.55 if sel else 0.25), 1.5, 6.0)
+		_group_ships(p, _course(g), g, gl, WT.US_RING, sel, 1.0, tsec)
 		if sel or zoom > 15.0:
-			_tag(Vector2(p.x - r.size.x / 2.0, r.end.y + 8), g.name, f_type, 12, WT.INK, WT.TAG)
-	# enemy groups we know about: red blocks at the last known position (faded when the report is old)
+			_label(p + Vector2(-gl, gl * 1.3 + 14), g.name, f_ui, 12, Color.WHITE)
+	# enemy groups we know about: red-ringed ships; an old sighting is a fading ghost where they were
 	for g in C.groups:
 		if g.side != "ijn" or g.seen < 0.0:
 			continue
@@ -3059,60 +3030,135 @@ func _draw_map() -> void:
 		var pos: Vector2 = Vector2(g.lon, g.lat) if fresh else Vector2(g.seen_lon, g.seen_lat)
 		var p := _to_px(pos.x, pos.y)
 		var sel: bool = g.id == selected
-		if fresh:
-			_course_tick(p, _course(g), Color(WT.INK_RED, 0.85))
-		var r := _block(p, ("INV %d" if g.get("assault", "") != "" else BLOCK_KIND.get(g.kind, "?") + " %d") % g.ships.size(), WT.BLOCK_JP, WT.BLOCK_JP_SIDE, sel, not fresh)
+		var alpha: float = 1.0 if fresh else clampf(0.75 - age / 60.0, 0.25, 0.6)
+		_group_ships(p, _course(g), g, gl, WT.JP_RING, sel, alpha, tsec if fresh else -1.0)
 		if not fresh:
-			map.draw_string(f_type, Vector2(p.x - r.size.x / 2.0, r.end.y + 16), "%dH AGO" % int(age), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, WT.INK_RED)
+			_label(p + Vector2(-gl, gl * 1.3 + 14), "seen %dh ago" % int(age), f_ui, 12, Color(1, 0.75, 0.7, 0.9))
 		elif sel:
-			_tag(Vector2(p.x - r.size.x / 2.0, r.end.y + 8), "Enemy " + _kind_lc(g.kind), f_type, 12, WT.INK, WT.TAG)
-	# battles in progress: a big grease-pencil cross
+			_label(p + Vector2(-gl, gl * 1.3 + 14), "Enemy " + _kind_lc(g.kind), f_ui, 12, Color.WHITE)
+	# battles in progress: gun flashes and a ring
 	for f in C.fights:
 		var p := _to_px(f.lon, f.lat)
-		var pulse := 18.0 + 3.0 * sin(t_ms / 250.0)
-		var col: Color = WT.BRASS if f.id == selected else WT.INK_RED
-		_pencil_circle(p, pulse, Color(col, 0.55), 2.0)
-		_pencil(PackedVector2Array([p + Vector2(-11, -11), p + Vector2(11, 11)]), col, 4.0)
-		_pencil(PackedVector2Array([p + Vector2(-11, 11), p + Vector2(11, -11)]), col, 4.0)
-		_tag(p + Vector2(pulse + 4, -10), "BATTLE · " + _gname(f.us), f_head, 12, Color("fbf3df"), WT.INK_RED)
-	# islands under attack: a red ring with an X, and the days the garrison has left
+		var pulse := 20.0 + 4.0 * sin(t_ms / 250.0)
+		var col: Color = Color.WHITE if f.id == selected else Color(1.0, 0.55, 0.2)
+		map.draw_arc(p, pulse, 0, TAU, 40, Color(col, 0.7), 2.0, true)
+		for k in 6:
+			var ph := fposmod(tsec * 1.7 + k * 0.37, 1.0)
+			if ph < 0.25:
+				var fp := p + Vector2(cos(k * 2.1 + f.lon), sin(k * 1.3 + f.lat)) * (6.0 + k * 2.0)
+				map.draw_circle(fp, 4.0 * (1.0 - ph * 4.0) + 1.0, Color(1.0, 0.85, 0.5, 0.9))
+		_label(p + Vector2(pulse + 6, 5), "BATTLE · " + _gname(f.us), f_head, 13, Color(1.0, 0.8, 0.55))
+	# islands under attack: a pulsing red double ring and the days the garrison has left
 	for sg in C.sieges:
 		var ip := _to_px(Geo.ISLANDS[sg.iid].lon, Geo.ISLANDS[sg.iid].lat)
-		var pulse := 22.0 + 2.0 * sin(t_ms / 260.0)
-		var scol := WT.INK_RED if sg.side == "ijn" else WT.PENCIL
-		_pencil_circle(ip, pulse, Color(scol, 0.85), 3.5)
-		_pencil(PackedVector2Array([ip + Vector2(-13, -13), ip + Vector2(13, 13)]), Color(scol, 0.8), 3.0)
-		_pencil(PackedVector2Array([ip + Vector2(-13, 13), ip + Vector2(13, -13)]), Color(scol, 0.8), 3.0)
+		var pulse := 22.0 + 2.5 * sin(t_ms / 260.0)
+		var scol: Color = WT.JP_RING if sg.side == "ijn" else WT.ACCENT
+		map.draw_arc(ip, pulse, 0, TAU, 48, Color(scol, 0.9), 2.5, true)
+		map.draw_arc(ip, pulse + 7.0, 0, TAU, 48, Color(scol, 0.35), 1.5, true)
 		var lt := "INVASION · %.1f DAYS" % maxf(0.0, float(sg.ends) - C.day) if sg.side == "ijn" else "LANDING · %.1f DAYS" % maxf(0.0, float(sg.ends) - C.day)
-		_tag(ip + Vector2(-60, pulse + 6), lt, f_type, 13, Color("fbf3df"), scol)
-	# the player: the course in orange grease pencil, then the yellow block
+		_label(ip + Vector2(-60, pulse + 22), lt, f_head, 13, scol.lightened(0.3))
+	# the player: the course as a bright path, then your ship with its wake
+	var ph: float = float(C.get("heading", 0.0))
+	var moving: bool = SPEEDS[speed_i] > 0.0 and (C.dest != null or C.attached != "")
 	if C.dest != null and C.attached == "":
 		var dp := _to_px(C.dest[0], C.dest[1])
 		var dv := dp - pp
 		if dv.length() > 20.0:
-			var pts := PackedVector2Array()
-			var n := maxi(2, int(dv.length() / 16.0))
-			var nrm := Vector2(-dv.y, dv.x).normalized()
-			for i in n + 1:
-				var t := float(i) / n
-				pts.append(pp + dv * t + nrm * sin(t * 9.0 + float(i) * 0.7) * 1.4 * (1.0 if i > 0 and i < n else 0.0))
-			_pencil(pts, Color(WT.PENCIL, 0.9), 5.0)
-			var u := dv.normalized()
-			var head := PackedVector2Array([dp, dp - u * 18.0 + nrm * 9.0, dp - u * 18.0 - nrm * 9.0])
-			map.draw_colored_polygon(head, Color(WT.PENCIL, 0.9))
-	_dashed_arc(pp, ENGAGE_NM / 60.0 * zoom, Color(WT.PENCIL, 0.55), 1.5, 6.0)
-	_block(pp, "YOU", WT.YOU, WT.YOU_SIDE, false, false, Color("3b2a10"), 32.0)
+			ph = fposmod(atan2(dv.x, -dv.y), TAU)
+			map.draw_line(pp, dp, Color(0, 0, 0, 0.35), 5.0, true)
+			_dashed_line(pp, dp, Color(WT.ACCENT, 0.95), 2.5, 12.0)
+			map.draw_arc(dp, 8.0, 0, TAU, 24, WT.ACCENT, 2.0, true)
+			map.draw_circle(dp, 2.5, WT.ACCENT)
+	elif C.attached != "":
+		for g in C.groups:
+			if g.id == C.attached:
+				ph = _course(g)
+	C.heading = ph
+	var pl := clampf(zoom * 1.5, 24.0, 46.0)
+	map.draw_arc(pp, pl * 0.85, 0, TAU, 40, Color(WT.ACCENT, 0.9), 2.0, true)
+	_ship(pp, ph, pl, Color(0.70, 0.73, 0.76), 1.0 if moving else 0.0, 1.0, tsec)
+	for k in mini(C.squadron.size(), 3):
+		var f := Vector2(sin(ph), -cos(ph))
+		_ship(pp - f * pl * (1.15 + k * 0.95) + Vector2(-f.y, f.x) * pl * 0.22 * (1 if k % 2 == 0 else -1), ph, pl * 0.72, Color(0.66, 0.69, 0.72), 1.0 if moving else 0.0, 1.0, tsec + k)
 	if zoom > 5.0:
 		var pn: String = C.name if C.squadron.is_empty() else "%s +%d" % [C.name, C.squadron.size()]
-		_tag(pp + Vector2(26, -12), pn, f_head, 13, WT.INK, WT.TAG)
-	# a ruler and a compass rose on the chart
-	_draw_ruler(Vector2(20, vs.y - 46), f_type)
-	_draw_rose(Vector2(vs.x - 70, vs.y - 80), 44.0, f_bold)
+		_label(pp + Vector2(pl * 0.9 + 4, -pl * 0.5), pn, f_bold, 14, WT.ACCENT)
+	# a scale bar and a north arrow
+	_draw_ruler(Vector2(vs.x - SIDE_W - 300, vs.y - 34), f_ui)
+	_draw_rose(Vector2(vs.x - SIDE_W - 70, 110), 22.0, f_bold)
 	if C.get("war_over", false):
-		_tag(Vector2(vs.x / 2 - 280, 40), "The war is over. The Pacific stays open for patrols.", WT.font("serifb"), 20, WT.INK, WT.TAG)
+		_label(Vector2(vs.x / 2 - 300, 110), "The war is over. The Pacific stays open for patrols.", WT.font("serifb"), 22, Color.WHITE)
 
 
-## The Japanese perimeter: a smoothed hull round every island and base they hold, pushed out a little.
+## White text with a dark halo, as Google Earth labels places. Returns the text width.
+func _label(pos: Vector2, txt: String, f: Font, size: int, col: Color) -> float:
+	map.draw_string_outline(f, pos, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, size, 4, Color(0, 0, 0, 0.55 * col.a))
+	map.draw_string(f, pos, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
+	return f.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+
+
+## One ship seen from above: a wake behind it when under way, a shadow, the hull, the upperworks.
+## `ln` = length on screen in px, `hd` = heading (radians clockwise from north), `spd` 0..1.
+func _ship(p: Vector2, hd: float, ln: float, hull: Color, spd: float, alpha: float, tsec: float, kind := "warship") -> void:
+	var f := Vector2(sin(hd), -cos(hd))
+	var r := Vector2(-f.y, f.x)
+	var bw := ln * (0.15 if kind == "merchant" else (0.08 if kind == "sub" else 0.11))
+	var stern := p - f * ln * 0.48
+	if spd > 0.0:
+		var wl := ln * (0.9 + 1.3 * spd)
+		var tip := stern - f * wl
+		# the white churn straight behind, fading out
+		map.draw_polygon(PackedVector2Array([stern + r * bw * 0.8, stern - r * bw * 0.8, tip - r * bw * 1.8, tip + r * bw * 1.8]),
+			PackedColorArray([Color(1, 1, 1, 0.55 * alpha), Color(1, 1, 1, 0.55 * alpha), Color(1, 1, 1, 0), Color(1, 1, 1, 0)]))
+		# the two arms of the V
+		for sgn in [-1.0, 1.0]:
+			map.draw_polyline_colors(PackedVector2Array([stern + r * bw * sgn, tip + r * wl * 0.36 * sgn]),
+				PackedColorArray([Color(1, 1, 1, 0.45 * alpha), Color(1, 1, 1, 0)]), 1.2, true)
+		# foam rolling back along the wake
+		if tsec >= 0.0:
+			for k in 3:
+				var u := fposmod(tsec * 0.6 + k / 3.0, 1.0)
+				map.draw_circle(stern - f * wl * u + r * bw * sin(tsec * 3.0 + k) * 0.6, maxf(0.8, bw * 0.5 * (1.0 - u)), Color(1, 1, 1, 0.5 * alpha * (1.0 - u)))
+		# the bow wave
+		map.draw_polyline_colors(PackedVector2Array([p + f * ln * 0.5 + r * bw * 0.2, p + f * ln * 0.2 + r * bw * 2.2]), PackedColorArray([Color(1, 1, 1, 0.6 * alpha), Color(1, 1, 1, 0)]), 1.2, true)
+		map.draw_polyline_colors(PackedVector2Array([p + f * ln * 0.5 - r * bw * 0.2, p + f * ln * 0.2 - r * bw * 2.2]), PackedColorArray([Color(1, 1, 1, 0.6 * alpha), Color(1, 1, 1, 0)]), 1.2, true)
+	var hullpts := PackedVector2Array([p + f * ln * 0.5, p + f * ln * 0.22 + r * bw, p - f * ln * 0.4 + r * bw * 0.9,
+		p - f * ln * 0.5 + r * bw * 0.55, p - f * ln * 0.5 - r * bw * 0.55, p - f * ln * 0.4 - r * bw * 0.9, p + f * ln * 0.22 - r * bw])
+	var shadow := PackedVector2Array()
+	for q in hullpts:
+		shadow.append(q + Vector2(1.5, 2.5))
+	map.draw_colored_polygon(shadow, Color(0, 0, 0, 0.35 * alpha))
+	map.draw_colored_polygon(hullpts, Color(hull, alpha))
+	# the deck: lighter down the middle, a dark superstructure block and funnel
+	map.draw_line(p + f * ln * 0.4, p - f * ln * 0.42, Color(hull.lightened(0.25), alpha), maxf(1.0, bw * 0.9), true)
+	if kind != "sub":
+		map.draw_line(p + f * ln * 0.12, p - f * ln * 0.12, Color(hull.darkened(0.35), alpha), maxf(1.0, bw * 1.1), true)
+		map.draw_circle(p - f * ln * 0.04, maxf(0.8, bw * 0.45), Color(0.15, 0.15, 0.15, alpha))
+	map.draw_polyline(PackedVector2Array([hullpts[0], hullpts[1], hullpts[2], hullpts[3], hullpts[4], hullpts[5], hullpts[6], hullpts[0]]), Color(0, 0, 0, 0.4 * alpha), 1.0, true)
+
+
+## A group on the map: up to three of its ships in column, with a ring in its side's colour.
+func _group_ships(p: Vector2, hd: float, g: Dictionary, ln: float, ring: Color, sel: bool, alpha: float, tsec: float) -> void:
+	var n := clampi((g.ships.size() + 1) / 2, 1, 3)
+	var kind := "merchant" if g.kind in ["convoy", "barges"] else ("sub" if g.kind == "sub" else "warship")
+	var hull := Color(0.52, 0.48, 0.42) if kind == "merchant" else (Color(0.22, 0.24, 0.26) if kind == "sub" else (Color(0.66, 0.69, 0.72) if g.side == "us" else Color(0.50, 0.52, 0.55)))
+	var size := ln * (0.75 if kind == "sub" else 1.0)
+	var f := Vector2(sin(hd), -cos(hd))
+	var rv := Vector2(-f.y, f.x)
+	var rr := ln * (0.75 + 0.4 * (n - 1))
+	map.draw_circle(p, rr, Color(ring, 0.10 * alpha))
+	map.draw_arc(p, rr, 0, TAU, 40, Color(ring, 0.85 * alpha), 2.0, true)
+	if sel:
+		map.draw_arc(p, rr + 5.0, 0, TAU, 40, Color(1, 1, 1, 0.9), 2.0, true)
+	var spd := 0.0 if tsec < 0.0 else 0.7
+	for k in n:
+		var off := f * size * 0.9 * (float(n - 1) / 2.0 - k) + rv * size * 0.25 * (0.0 if k == 0 else (1.0 if k % 2 == 1 else -1.0))
+		_ship(p + off, hd, size, hull, spd, alpha, maxf(tsec, 0.0) + k * 0.4 if tsec >= 0.0 else -1.0, kind)
+	if g.ships.size() > 3:
+		_label(p + Vector2(rr * 0.7, -rr * 0.7), "×%d" % g.ships.size(), WT.font("head"), 12, Color(1, 1, 1, alpha))
+
+
+## Japan's perimeter: a smoothed hull round every island and base they hold, pushed out a little.
 func _draw_perimeter() -> void:
 	var pts := PackedVector2Array([Vector2(TOKYO[0], TOKYO[1])])
 	for iid in Geo.ISLANDS:
@@ -3133,7 +3179,6 @@ func _draw_perimeter() -> void:
 	var ring := PackedVector2Array()
 	for i in hull.size() - 1:
 		ring.append(hull[i] + (hull[i] - ctr).normalized() * 1.6)
-	# Chaikin smoothing, twice
 	for it in 2:
 		var sm := PackedVector2Array()
 		for i in ring.size():
@@ -3145,31 +3190,14 @@ func _draw_perimeter() -> void:
 	for q in ring:
 		px.append(_to_px(q.x, q.y))
 	px.append(px[0])
-	_pencil(px, Color(WT.PERIMETER, 0.6), 3.5)
+	map.draw_polyline(px, Color(WT.JP_RING, 0.12), 8.0, true)
+	map.draw_polyline(px, Color(WT.JP_RING, 0.6), 1.8, true)
 	if zoom < 16.0:
-		# name it where it runs furthest east
 		var best := 0
 		for i in px.size():
 			if px[i].x > px[best].x:
 				best = i
-		_spaced(WT.font("head"), px[best] + Vector2(-80, -14), "JAPANESE PERIMETER", 12, Color(WT.PERIMETER, 0.85), 0.15)
-
-
-## A grease-pencil stroke: a soft wide line with a darker core.
-func _pencil(pts: PackedVector2Array, col: Color, w: float) -> void:
-	if pts.size() < 2:
-		return
-	map.draw_polyline(pts, Color(col, col.a * 0.35), w + 2.0, true)
-	map.draw_polyline(pts, col, w, true)
-	map.draw_polyline(pts, Color(col.darkened(0.25), col.a * 0.6), maxf(1.0, w * 0.3), true)
-
-
-func _pencil_circle(c: Vector2, r: float, col: Color, w: float) -> void:
-	var pts := PackedVector2Array()
-	for i in 41:
-		var a := TAU * i / 40.0 + 0.2
-		pts.append(c + Vector2(cos(a), sin(a)) * (r + sin(a * 3.0) * 0.8))
-	_pencil(pts, col, w)
+		_label(px[best] + Vector2(-150, -10), "JAPANESE PERIMETER", WT.font("head"), 12, Color(1.0, 0.6, 0.55, 0.9))
 
 
 func _dashed_arc(c: Vector2, r: float, col: Color, w: float, dash: float) -> void:
@@ -3186,68 +3214,7 @@ func _dashed_line(a: Vector2, b: Vector2, col: Color, w: float, dash: float) -> 
 	map.draw_dashed_line(a, b, col, w, dash, true, true)
 
 
-## A short course line out of a block, in the direction it sails.
-func _course_tick(p: Vector2, course: float, col: Color) -> void:
-	var d := Vector2(sin(course), -cos(course))
-	map.draw_line(p + d * 16.0, p + d * 30.0, col, 2.5, true)
-
-
-## A wooden block on the chart. Returns its face rect.
-func _block(p: Vector2, txt: String, face: Color, side_c: Color, sel: bool, hollow: bool, ink := Color("f6ecd2"), minw := 40.0) -> Rect2:
-	var f := WT.font("headb")
-	var tw := f.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
-	var w := maxf(minw, tw + 14.0)
-	var h := 24.0 if minw < 32.0 or txt != "YOU" else 26.0
-	var r := Rect2(p - Vector2(w / 2.0, h / 2.0 + 2.0), Vector2(w, h))
-	var shadow := WT.flat(Color(0, 0, 0, 0.0), Color(0, 0, 0, 0), 0, 4)
-	shadow.shadow_size = 8; shadow.shadow_color = Color(0, 0, 0, 0.42); shadow.shadow_offset = Vector2(0, 6)
-	if hollow:
-		var hb := WT.flat(Color(face, 0.28), Color(face, 0.9), 2, 4)
-		map.draw_style_box(hb, r)
-		map.draw_string(f, Vector2(r.position.x + (w - tw) / 2.0, r.position.y + h - 7), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, face.darkened(0.3))
-	else:
-		map.draw_style_box(shadow, Rect2(r.position + Vector2(0, 4), r.size))
-		map.draw_style_box(WT.flat(side_c, Color(0, 0, 0, 0), 0, 4), Rect2(r.position + Vector2(0, 4), r.size))
-		map.draw_style_box(WT.flat(face, Color(0, 0, 0, 0), 0, 4), r)
-		map.draw_line(r.position + Vector2(3, 1), Vector2(r.end.x - 3, r.position.y + 1), Color(1, 1, 1, 0.25), 1.0)
-		map.draw_string(f, Vector2(r.position.x + (w - tw) / 2.0, r.position.y + h - 7), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, ink)
-	if sel:
-		map.draw_style_box(WT.flat(Color(0, 0, 0, 0), WT.BRASS, 3, 6), r.grow(4).grow_side(SIDE_BOTTOM, 4))
-	return r
-
-
-## The short name on a friendly block: TF 34, TG ABLE, CVY BAKER, DD 38...
-func _block_tag(g: Dictionary) -> String:
-	var nm: String = g.name
-	var parts := nm.split(" ")
-	if nm.begins_with("Task Force "):
-		return "TF " + parts[2]
-	if nm.begins_with("Task Group ") or nm.begins_with("Task Unit "):
-		return ("TG " if parts[1] == "Group" else "TU ") + parts[2].substr(0, 1)
-	if nm.begins_with("DesDiv "):
-		return "DD " + parts[1]
-	if nm.begins_with("Convoy "):
-		return "CVY " + parts[1].substr(0, 1)
-	if nm.ends_with(" patrol") or nm.ends_with(" guard"):
-		return nm.substr(0, 3).to_upper() + (" PAT" if nm.ends_with(" patrol") else " GRD")
-	if nm.ends_with(" Invasion Force"):
-		return "INV " + nm.substr(0, 3).to_upper()
-	if g.kind == "sub":
-		return "SS"
-	return nm.substr(0, 5).to_upper()
-
-
-## A paper tag with text. `extra` widens it (room for garrison pips). Returns its rect.
-func _tag(pos: Vector2, txt: String, f: Font, size: int, ink: Color, bg: Color, extra := 0) -> Rect2:
-	var ts := f.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, size)
-	var r := Rect2(pos, Vector2(ts.x + 12 + extra + (4 if extra > 0 else 0), size + 7))
-	map.draw_rect(Rect2(r.position + Vector2(1, 2), r.size), Color(0, 0, 0, 0.28))
-	map.draw_rect(r, bg)
-	map.draw_string(f, Vector2(r.position.x + 6, r.position.y + size + 1), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, size, ink)
-	return r
-
-
-## Text in spaced capitals, centred on `c` (chart lettering).
+## Text in spaced capitals, centred on `c`, with a soft halo.
 func _spaced(f: Font, c: Vector2, txt: String, size: int, col: Color, spacing: float) -> void:
 	var gap := size * spacing
 	var total := 0.0
@@ -3255,43 +3222,32 @@ func _spaced(f: Font, c: Vector2, txt: String, size: int, col: Color, spacing: f
 		total += f.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x + gap
 	var x := c.x - total / 2.0
 	for ch in txt:
+		map.draw_string_outline(f, Vector2(x, c.y), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, size, 3, Color(0, 0.05, 0.12, 0.35 * col.a))
 		map.draw_string(f, Vector2(x, c.y), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
 		x += f.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x + gap
 
 
-## A paper ruler: 500 nautical miles in hundreds.
+## A Google Earth style scale bar.
 func _draw_ruler(at: Vector2, f: Font) -> void:
-	var ln := 500.0 / 60.0 * zoom
 	var nm := 500
-	while ln > 360.0 and nm > 50:
+	var ln := nm / 60.0 * zoom
+	while ln > 260.0 and nm > 50:
 		nm /= 2; ln = nm / 60.0 * zoom
-	while ln < 120.0:
+	while ln < 100.0:
 		nm *= 2; ln = nm / 60.0 * zoom
-	var r := Rect2(at - Vector2(8, 22), Vector2(ln + 16, 34))
-	map.draw_rect(Rect2(r.position + Vector2(2, 3), r.size), Color(0, 0, 0, 0.3))
-	map.draw_rect(r, Color("efe2bd"))
-	map.draw_rect(r, Color("8a6d3b"), false, 1.0)
-	for i in 11:
-		var x := at.x + ln * i / 10.0
-		map.draw_line(Vector2(x, at.y + 12), Vector2(x, at.y + (2 if i % 5 == 0 else 6)), WT.INK, 1.0)
-	map.draw_string(f, at + Vector2(0, -6), "%d NAUTICAL MILES" % nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, WT.INK)
+	var pts := PackedVector2Array([at + Vector2(0, -6), at, at + Vector2(ln, 0), at + Vector2(ln, -6)])
+	map.draw_polyline(pts, Color(0, 0, 0, 0.5), 4.0, true)
+	map.draw_polyline(pts, Color.WHITE, 2.0, true)
+	_label(at + Vector2(ln + 8, 4), "%d nm" % nm, f, 13, Color.WHITE)
 
 
-## A compass rose, north in red.
+## A small north arrow.
 func _draw_rose(c: Vector2, r: float, f: Font) -> void:
-	map.draw_circle(c, r, Color(0.95, 0.91, 0.80, 0.55))
-	map.draw_arc(c, r, 0, TAU, 48, Color(WT.INK, 0.7), 1.5, true)
-	map.draw_arc(c, r * 0.82, 0, TAU, 48, Color(WT.INK, 0.4), 1.0, true)
-	for i in 8:
-		var a := TAU * i / 8.0
-		var l := r * (0.78 if i % 2 == 0 else 0.45)
-		var d := Vector2(sin(a), -cos(a))
-		var nrm := Vector2(-d.y, d.x) * (r * 0.12)
-		var tip := c + d * l
-		var col := WT.INK_RED if i == 0 else WT.INK
-		map.draw_colored_polygon(PackedVector2Array([c + nrm, tip, c]), col)
-		map.draw_colored_polygon(PackedVector2Array([c - nrm, tip, c]), col.lightened(0.35))
-	map.draw_string(f, c + Vector2(-5, -r - 6), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, WT.INK_RED)
+	map.draw_circle(c, r, Color(0.035, 0.07, 0.11, 0.7))
+	map.draw_arc(c, r, 0, TAU, 32, Color(1, 1, 1, 0.25), 1.0, true)
+	map.draw_colored_polygon(PackedVector2Array([c + Vector2(0, -r * 0.75), c + Vector2(r * 0.28, 0), c + Vector2(-r * 0.28, 0)]), WT.JP_RING)
+	map.draw_colored_polygon(PackedVector2Array([c + Vector2(0, r * 0.75), c + Vector2(r * 0.28, 0), c + Vector2(-r * 0.28, 0)]), Color(1, 1, 1, 0.8))
+	map.draw_string(f, c + Vector2(-5, -r - 4), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
 
 
 func _map_input(e: InputEvent) -> void:
@@ -3378,6 +3334,6 @@ func _offer_end(title: String, text: String) -> void:
 	v.add_child(UI.big_button("Main menu", func(): get_tree().change_scene_to_file("res://scenes/menu.tscn")))
 	p.add_child(v)
 	card.add_child(p)
-	WT.paperize_panel(p)
+	WT.glass_panel(p)
 	UI.center(p)
 	add_child(card)

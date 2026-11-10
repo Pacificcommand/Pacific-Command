@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dl782ygnyfwtw"
-path="res://.godot/imported/chart.png-96b405029d87de6e903a5d0f7ae4f6b0.ctex"
+uid="uid://dr74qofd5cu3d"
+path="res://.godot/imported/rgrid2.png-daf99372ab265cfaaa2304bc7d6a22fd.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/map/chart.png"
-dest_files=["res://.godot/imported/chart.png-96b405029d87de6e903a5d0f7ae4f6b0.ctex"]
+source_file="res://rgrid2.png"
+dest_files=["res://.godot/imported/rgrid2.png-daf99372ab265cfaaa2304bc7d6a22fd.ctex"]
 
 [params]
 
@@ -23,7 +23,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

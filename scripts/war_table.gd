@@ -57,8 +57,12 @@ static func font(kind: String) -> Font:
 
 static func tex(name: String) -> Texture2D:
 	if not _tex.has(name):
-		var p := "res://assets/map/%s.png" % name
-		_tex[name] = load(p) if ResourceLoader.exists(p) else null
+		_tex[name] = null
+		for ext in ["png", "jpg"]:
+			var p := "res://assets/map/%s.%s" % [name, ext]
+			if ResourceLoader.exists(p):
+				_tex[name] = load(p)
+				break
 	return _tex[name]
 
 
@@ -244,3 +248,53 @@ static func paperize(n: Node, wrap_max := 0.0) -> void:
 			elif r.color.r > r.color.b + 0.2:
 				r.color = INK_RED
 		paperize(c, wrap_max)
+
+
+# ---------------------------------------------------------------------
+# the satellite look (0.28): dark glass panels floating over the ocean
+# ---------------------------------------------------------------------
+
+const GLASS := Color(0.035, 0.07, 0.11, 0.78)
+const GLASS_EDGE := Color(1, 1, 1, 0.13)
+const GLASS_TEXT := Color(0.92, 0.95, 0.97)
+const ACCENT := Color("ffd166")          # the player's colour: course line, own ship ring
+const US_RING := Color(0.40, 0.70, 1.00)
+const JP_RING := Color(1.00, 0.33, 0.27)
+
+
+static func glass(margin := 16.0, radius := 10) -> StyleBoxFlat:
+	var sb := flat(GLASS, GLASS_EDGE, 1, radius, margin)
+	sb.shadow_size = 14
+	sb.shadow_color = Color(0, 0, 0, 0.35)
+	sb.shadow_offset = Vector2(0, 6)
+	return sb
+
+
+## A finished card panel (UI.panel) on dark glass.
+static func glass_panel(p: PanelContainer, margin := 24.0) -> void:
+	var sb := glass(margin, 12)
+	sb.bg_color = Color(0.03, 0.06, 0.10, 0.92)
+	p.add_theme_stylebox_override("panel", sb)
+
+
+## A glass button for the top bars. `on` (pressed) glows in the accent colour.
+static func glass_button(b: Button, size := 14, h := 40.0) -> void:
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size.y = h
+	b.add_theme_font_override("font", font("head"))
+	b.add_theme_font_size_override("font_size", size)
+	for st in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		var sb := flat(Color(0.035, 0.07, 0.11, 0.72), GLASS_EDGE, 1, 8)
+		sb.content_margin_left = 14; sb.content_margin_right = 14
+		sb.content_margin_top = 4; sb.content_margin_bottom = 4
+		if st == "hover":
+			sb.bg_color = Color(0.08, 0.14, 0.20, 0.85)
+		if st == "pressed" or st == "hover_pressed":
+			sb.bg_color = Color(ACCENT, 0.92)
+			sb.border_color = ACCENT
+		b.add_theme_stylebox_override(st, sb)
+	b.add_theme_color_override("font_color", GLASS_TEXT)
+	b.add_theme_color_override("font_hover_color", Color.WHITE)
+	b.add_theme_color_override("font_pressed_color", Color("1b1405"))
+	b.add_theme_color_override("font_hover_pressed_color", Color("1b1405"))
+	b.add_theme_color_override("font_disabled_color", Color(1, 1, 1, 0.35))

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://mkeg2rsoa3x6"
-path="res://.godot/imported/paper.png-cd2ddcd55422c39a0adf3199fb7f76a0.ctex"
+uid="uid://cmhgly0rkvwee"
+path="res://.godot/imported/sat.jpg-b3163614e29a16cd17fa4f06f28189d0.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/map/paper.png"
-dest_files=["res://.godot/imported/paper.png-cd2ddcd55422c39a0adf3199fb7f76a0.ctex"]
+source_file="res://assets/map/sat.jpg"
+dest_files=["res://.godot/imported/sat.jpg-b3163614e29a16cd17fa4f06f28189d0.ctex"]
 
 [params]
 
@@ -23,7 +23,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=false
+mipmaps/generate=true
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""
