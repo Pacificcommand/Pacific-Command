@@ -207,6 +207,16 @@ func _test_args() -> void:
 			if _test.has("height"):
 				camst.th = float(_test.height)
 			camst.h = camst.th)
+	if _test.has("crewgrid"):
+		var cg: PackedStringArray = String(_test.crewgrid).split(",")
+		crew.grid_png(cg[0], cg[1])
+		get_tree().quit()
+		return
+	if _test.has("crewcheck"):
+		# test: every ship class's deck grid and crew run (scripts/crew.gd clip_check)
+		crew.clip_check()
+		get_tree().quit()
+		return
 	if _test.has("rtsfire"):
 		# recording: --rtsfire=T: the selected ships are told to fire at the nearest enemy at T s
 		after(float(_test.rtsfire), func():
