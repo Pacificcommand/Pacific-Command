@@ -18,8 +18,8 @@ PAL = {
                  wood='#857b66', raft='#7a858c', black='#0b0b0b', rail='#2a3036', canvas='#9b9580', glass='#3a4850', light='#d8dee0', band='#2b3a4c',
                  fdeck='#4a4a48', mark='#d9d6cc', plane='#2d3f55', planew='#9fa9b2', rim='#b8c0c4'),
     # IJN Kure / Sasebo gray, linoleum decks (brown) on cruisers and destroyers, wood on capital ships
-    'ijn': dict(hull='#6a7174', deck='#7b4f37', sup='#737a7d', gun='#6e7578', dark='#26292b', bottom='#6b2b22', boot='#1b1c1d',
-                black='#0b0b0b', rail='#2a2d2f', canvas='#9a917a', light='#c9cfd1', brass='#a88a52', glass='#2f383c', wood='#9c8762', raft='#5c6164',
+    'ijn': dict(hull='#6a7174', deck='#6e4a38', sup='#737a7d', gun='#6e7578', dark='#26292b', bottom='#6b2b22', boot='#1b1c1d',
+                black='#0b0b0b', rail='#2a2d2f', canvas='#9a917a', light='#c9cfd1', brass='#a88a52', glass='#2f383c', wood='#8f806a', raft='#5c6164',
                 fdeck='#8a7a5a', mark='#e6e2d4', red='#b3312c', plane='#6d7a5c', planew='#b9b2a0', rim='#aeb4b6'),
 }
 from detail import (Paint, shade, mix, portholes, door, ladder, window_strip, hatch, locker, raft, raft_on_wall,
@@ -502,7 +502,7 @@ def aircraft(B, P, x, y, z, heading=0.0, span=12.0, length=9.5, folded=False):
 # weapons: every one is its own group so it can train
 # =====================================================================
 
-def turret(M, name, pos, face, P, cal, barrels, shielded=True):
+def turret(M, name, pos, face, P, cal, barrels, shielded=True, roof_rafts=False):
     """Main-battery turret scaled from the calibre in mm (152 = 6-inch ... 460 = 18.1-inch)."""
     k = cal / 203.0                       # 1.0 for an 8-inch turret
     G = Builder(M, name, P['gun'], pivot=pos)
@@ -527,6 +527,10 @@ def turret(M, name, pos, face, P, cal, barrels, shielded=True):
         G.cyl((L * 0.05, 0.35 + h + 0.2, dz), (L * 0.05, 0.35 + h + 0.75 * k + 0.3, dz), 0.12, n=6)
     G.box((-L * 0.42, 0.35 + h + 0.22, 0), (0.9 * k + 0.3, 0.12, 0.9 * k + 0.3))
     ladder(G, P, (-L * 0.55 + 0.02, 0.35 + h * 0.5, 0.0), 'x-', h * 0.9)
+    if roof_rafts:
+        # life rafts lashed on the turret roof (New Orleans / Northampton photos)
+        for dz in (-w * 0.3, w * 0.3):
+            raft(G, P, -L * 0.15, 0.35 + h + 0.2, dz, L=2.6, w=1.2, t=0.3)
     # barrels and blast bags
     bl = 10.5 * k + 2.0
     rb = 0.14 + 0.18 * k
@@ -1022,8 +1026,8 @@ PARTS = {
 }
 
 
-def _w_turret(c, name, x, y, face, cal, barrels):
-    turret(c['M'], name, (x, y, 0.0), face, c['P'], cal, barrels)
+def _w_turret(c, name, x, y, face, cal, barrels, roof_rafts=False):
+    turret(c['M'], name, (x, y, 0.0), face, c['P'], cal, barrels, roof_rafts=roof_rafts)
 def _w_dp_twin(c, name, x, y, z, face, cal=127):
     dp_twin(c['M'], name, (x, y, z), face, c['P'], cal=cal)
 def _w_dp_single(c, name, x, y, z, face, cal=127, enclosed=True):
