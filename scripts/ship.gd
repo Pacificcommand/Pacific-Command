@@ -60,6 +60,14 @@ var q_target: Ship = null
 var fire := false
 var salvo_busy := false
 var last_fired := -99.0
+# concealment (fog of war)
+var bloom_r := 0.0           # how far the guns that last fired give the ship away (their range)
+var bloom_until := -99.0     # ... and until when (battle time)
+var shown := true            # drawn on screen: own side always, enemies only while the player's side holds them
+var lost_t := -99.0          # when the player's side last held this ship
+var seen_x := 0.0            # where it was then (the last-known marker)
+var seen_z := 0.0
+var seen_h := 0.0
 var vis := {}                # ship name -> can see visually
 var radar := {}              # ship name -> radar contact
 var smoke_on := false
@@ -397,7 +405,7 @@ func update_visual(t: float) -> void:
 		var gy: float = Battle.I.terrain.height_at(x, z) if Battle.I and Battle.I.terrain else 0.0
 		position = Vector3(x, gy, z)
 		transform.basis = Basis(Vector3.UP, -h)
-		visible = not gone
+		visible = not gone and shown
 		return
 	position = Vector3(x, -sink + bob - depth_m, z)
 	var trim := 0.0
@@ -405,7 +413,7 @@ func update_visual(t: float) -> void:
 		trim = deg_to_rad(4.5) * clampf(v / (35.0 * Data.KN), 0.0, 1.0)
 	var b := Basis(Vector3.UP, -h) * Basis(Vector3.RIGHT, -(pitch - trim)) * Basis(Vector3.BACK, -(roll + swell_roll))
 	transform.basis = b
-	visible = not gone
+	visible = not gone and shown
 	# guns, tubes, director and light AA turn on their pivots
 	for m in mounts:
 		var n = m.node
@@ -435,7 +443,7 @@ const SAVE_FIELDS := ["type_id", "team", "ship_name", "is_player", "objective", 
 	"group", "leader_flag", "detached", "escort_group", "tactic", "tactic_until", "zig", "zig_t",
 	"x", "z", "h", "v", "tele", "rud", "rud_cmd", "rud_jam_until", "roll", "pitch", "sink", "sinking", "alive", "gone", "mag_blown",
 	"crew", "flood", "flood_side", "flood_fwd", "dir_ang", "illum", "q", "fire", "smoke_on", "star_cd", "torp_cd",
-	"ai_state", "evade_until", "spotted_once", "weave_t", "last_fired", "protect", "rescued", "aground", "depth", "depth_m", "battery", "dc_left", "dc_cd", "hh_cd", "asw_state"]
+	"ai_state", "evade_until", "spotted_once", "weave_t", "last_fired", "bloom_r", "bloom_until", "lost_t", "seen_x", "seen_z", "seen_h", "protect", "rescued", "aground", "depth", "depth_m", "battery", "dc_left", "dc_cd", "hh_cd", "asw_state"]
 
 
 ## Everything about this ship as plain data (ship references become indices in battle.gd).

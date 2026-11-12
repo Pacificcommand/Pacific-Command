@@ -35,6 +35,10 @@ var events: Array = []         # [time, Callable]
 var salvo_n := 0
 var shake := 0.0
 var report := {}               # where the enemy was last reported
+var was_detected := false      # the enemy held the player at the last look
+var det_pending := false       # ... and at this one; called once it has held 10 s
+var det_said := -99.0
+var ever_detected := false
 var stats := {"salvos": 0, "shells": 0, "hits": 0, "torps": 0, "torp_hits": 0, "sunk": [], "start_crew": 0}
 var mouse_w = null             # world point under the mouse (Vector2) or null
 var click_shot = null          # manual-aim click waiting to be fired
@@ -1642,18 +1646,65 @@ func detect_range(obs: Ship, tgt: Ship) -> float:
 	var rng: float = W.vis * (obs.T.night_eye if W.night else 1.0) * tgt.T.get("size_vis", 1.0)
 	if tgt.is_player:
 		rng *= 1.0 - 0.5 * Career.mod("stealth")
+	var fire := 0.0
+	for f in tgt.fires:
+		fire += f.int
+	if tgt.T.get("ground", false) and not W.night and weather != "fog":
+		# works on shore are on the chart and stand against the land: seen from well out by day
+		rng = maxf(rng, W.vis * 1.6)
 	if W.night or weather == "fog":
 		if t - tgt.last_fired < 3.0:
 			var flash: float = clampf(tgt.gun.size, 0.35, 1.0)
 			rng = maxf(rng, (6000.0 if W.night else 2500.0) * flash)
-		var fire := 0.0
-		for f in tgt.fires:
-			fire += f.int
 		if fire > 0.0:
 			rng = maxf(rng, (2500.0 if W.night else 1600.0) + fire * 1300.0)
 		if tgt.illum > 0.0:
 			rng = maxf(rng, 6000.0)
+	else:
+		# by day: gun smoke and flashes give a firing ship away out to the reach of the guns
+		# she fired, for BLOOM_T seconds after the last salvo; a burning ship trails a smoke
+		# column that is seen from farther off
+		if t < tgt.bloom_until:
+			rng = maxf(rng, minf(tgt.bloom_r, W.vis * BLOOM_VIS))
+		if fire > 0.0:
+			rng *= 1.0 + minf(fire, 2.0) * 0.15
 	return rng
+
+
+const BLOOM_T := 20.0       # seconds a ship stays given away after firing by day
+const BLOOM_VIS := 2.6      # ... but never farther than this many times the weather's visibility
+const HIDE_LINGER := 3.0    # an enemy stays drawn this long after the last sighting
+const GHOST_T := 180.0      # the last-known marker fades over this long
+
+## No fog of war: filming scenes and tests that point the camera at the enemy.
+func fog_off() -> bool:
+	if _test.has("nofog") or scenario in ["duel", "ddcv"]:
+		return true
+	if _test.has("focus") and player != null:
+		# a camera told to follow an enemy ship must be able to see her
+		var nm := String(_test.focus).replace("_", " ")
+		for s in ships:
+			if s.ship_name == nm:
+				return s.team != player.team
+	return false
+
+
+## A ship's guns have fired: by day she is given away out to their range for a while.
+func note_fired(s: Ship, g: Dictionary) -> void:
+	var r: float = g.range_max
+	if t >= s.bloom_until or r >= s.bloom_r:
+		s.bloom_r = r
+		s.bloom_until = t + BLOOM_T
+	elif r >= s.bloom_r * 0.6:
+		s.bloom_until = t + BLOOM_T
+
+
+## Is the ship given away by her own gunfire right now (day), or flashing in the dark?
+func bloomed(s: Ship) -> bool:
+	var W: Dictionary = Data.WEATHER[weather]
+	if W.night or weather == "fog":
+		return t - s.last_fired < 3.0
+	return t < s.bloom_until and s.bloom_r > concealment(s)[0]
 
 
 ## The player's concealment: how far an ordinary enemy lookout sees the ship by sea, and the
@@ -1666,6 +1717,8 @@ func concealment(s: Ship) -> Array:
 	var bloom := base
 	if W.night or weather == "fog":
 		bloom = maxf(base, (6000.0 if W.night else 2500.0) * clampf(s.gun.size, 0.35, 1.0))
+	else:
+		bloom = maxf(base, minf(s.max_range(), W.vis * BLOOM_VIS))
 	return [base, bloom]
 
 
@@ -1697,6 +1750,32 @@ func update_visibility() -> void:
 					a.radar[b.ship_name] = true
 					break
 	var p := player
+	# fog of war: enemy ships are drawn only while our side holds them (and wrecks we have seen);
+	# the place a lost contact was last seen is remembered for the plot
+	var open := fog_off()
+	for b in ships:
+		if b.team == p.team or open:
+			b.shown = true
+			continue
+		if b.alive and p.contact(b):
+			b.lost_t = t
+			b.seen_x = b.x; b.seen_z = b.z; b.seen_h = b.h
+		b.shown = t - b.lost_t < HIDE_LINGER or (not b.alive and b.spotted_once)
+	# the lookouts call it when the enemy first has us in sight, and when we slip away
+	var det := detected(p)
+	# a change is called only once it has held for a while (not every flicker at the edge);
+	# the first sighting is called at once
+	if det != det_pending:
+		det_pending = det
+		det_said = t
+	if det_pending != was_detected and p.alive and started and (t - det_said >= 10.0 or (det and not ever_detected)):
+		was_detected = det_pending
+		if det_pending:
+			ever_detected = true
+			say("We have been sighted.", "bad")
+			Audio.ui("bell")
+		else:
+			say("We are out of their sight.", "good")
 	for b in ships:
 		if b.team != p.team and b.alive and p.contact(b) and not b.spotted_once:
 			b.spotted_once = true
@@ -1797,13 +1876,15 @@ func _launch_shells(s: Ship, sv: Dictionary, ready: Array, aim: Vector2, sig_r: 
 			m.recoil = 1.5
 			var fp := s.to_world_xz(m.x + cos(m.ang) * 9.0 * sz, sin(m.ang) * 9.0 * sz)
 			var wb: float = s.h + m.ang
-			fx.flash(fp.x, muzzle_y + 1.0, fp.y, 7.0 * sz, 30.0 * sz, 0.25 * maxf(sz, 0.5), Color(1.0, 0.85, 0.55))
-			fx.light(Vector3(fp.x, muzzle_y + 2.0, fp.y), 520.0 * sz, Color(1.0, 0.7, 0.4), 5.0 * sz, 0.28)
-			# cordite smoke blown out ahead of the guns; it hangs over the line of battle and drifts
-			fx.gun_smoke(fp.x, muzzle_y + 1.0, fp.y, sin(wb), -cos(wb), sz)
+			if s.shown:
+				fx.flash(fp.x, muzzle_y + 1.0, fp.y, 7.0 * sz, 30.0 * sz, 0.25 * maxf(sz, 0.5), Color(1.0, 0.85, 0.55))
+				fx.light(Vector3(fp.x, muzzle_y + 2.0, fp.y), 520.0 * sz, Color(1.0, 0.7, 0.4), 5.0 * sz, 0.28)
+				# cordite smoke blown out ahead of the guns; it hangs over the line of battle and drifts
+				fx.gun_smoke(fp.x, muzzle_y + 1.0, fp.y, sin(wb), -cos(wb), sz)
 			sfx.gun(sz, fp, cam.position)
 		)
 	s.last_fired = t
+	note_fired(s, g)
 	if combat_t < 0.0 and (s.is_player or s.team != player.team):
 		combat_t = t
 		Audio.music(_battle_track())
@@ -2462,9 +2543,13 @@ func step_ship(s: Ship, dt: float) -> void:
 		s.star_cd -= dt
 	if s.gone:
 		return
-	# effects: fires, funnel smoke, smoke screen, oil, wake
+	# effects: fires, funnel smoke, smoke screen, oil, wake. Fog of war: a ship nobody on our
+	# side can see shows no fire, funnel smoke, oil or wake (her smoke screen is still seen)
+	var on_screen: bool = s.shown
 	_sync_fire_nodes(s)
 	for fr in s.fires:
+		if not on_screen:
+			break
 		var wp := s.to_world_xz(fr.lx, fr.lz)
 		if randf() < dt * 9.0 * fr.int:
 			fx.fire_puff(wp.x + randf_range(-2, 2), 7.0, wp.y + randf_range(-2, 2), randf_range(2, 4) * (0.6 + fr.int))
@@ -2474,7 +2559,7 @@ func step_ship(s: Ship, dt: float) -> void:
 		if fr.int > 0.2 and randf() < dt * 6.0:
 			fx.light(Vector3(wp.x, 14.0, wp.y), 320.0 * (0.6 + fr.int), Color(1.0, 0.5, 0.18), 4.0, 0.3)
 	var eng_dmg := 1.0 - s.mod_health("engine")
-	if s.alive and randf() < dt * (1.6 + eng_dmg * 2.0):
+	if on_screen and s.alive and randf() < dt * (1.6 + eng_dmg * 2.0):
 		var power := clampf(absf(s.v) / (TT.max_kn * Data.KN), 0.0, 1.2)
 		for fxp in TT.funnels:
 			var wp := s.to_world_xz(fxp, 0.0)
@@ -2501,10 +2586,11 @@ func step_ship(s: Ship, dt: float) -> void:
 			s.alive = false
 			stats.escaped.append(s.ship_name)
 			say("%s has reached safety." % s.ship_name, "bad")
-	if (s.flood > TT.displacement * 0.025 or s.mod_health("engine") < 0.6) and randf() < dt * 0.7 and TT.L > 40.0:
+	if on_screen and (s.flood > TT.displacement * 0.025 or s.mod_health("engine") < 0.6) and randf() < dt * 0.7 and TT.L > 40.0:
 		var wp := s.to_world_xz(-TT.L / 2.0 - 5.0, 0.0)
 		fx.oil(wp.x, wp.y, randf_range(5, 9))
-	_spawn_wake(s, dt)
+	if on_screen:
+		_spawn_wake(s, dt)
 	for m in s.mounts:
 		m.recoil = maxf(0.0, m.recoil - dt * 2.5)
 		m.reload = maxf(0.0, m.reload - dt)

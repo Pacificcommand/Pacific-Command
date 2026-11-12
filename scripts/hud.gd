@@ -857,12 +857,17 @@ func _give_order(ships: Array, o: String) -> void:
 func _refresh_detection(p: Ship, W: Dictionary) -> void:
 	var cc: Array = B.concealment(p)
 	var det: bool = B.detected(p)
-	var firing: bool = B.t - p.last_fired < 3.0 and (W.night or B.weather == "fog")
-	lbl.detected.text = ("DETECTED" if det else "Not detected") + (" · gun flashes seen to %s" % U.yards(cc[1]) if firing else "")
+	var firing: bool = B.bloomed(p)
+	var dark: bool = W.night or B.weather == "fog"
+	var left: float = maxf(0.0, p.bloom_until - B.t)
+	var why := ""
+	if firing:
+		why = (" · gun flashes seen to %s" % U.yards(cc[1])) if dark else (" · gunfire seen to %s for %d s" % [U.yards(minf(p.bloom_r, W.vis * B.BLOOM_VIS)), int(ceil(left))])
+	lbl.detected.text = ("DETECTED" if det else "Not detected") + why
 	lbl.detected.add_theme_color_override("font_color", C_RED if det else C_GREEN)
 	lbl.det_conceal.text = "%s by sea%s" % [U.yards(cc[0]), (" · %s firing" % U.yards(cc[1])) if cc[1] > cc[0] * 1.05 else ""]
 	var eye: float = W.vis * (p.T.night_eye if W.night else 1.0)
-	lbl.det_spot.text = "PT %s · DD %s · BB %s" % [U.yards(eye * 0.5), U.yards(eye * 0.95), U.yards(eye * 1.4)]
+	lbl.det_spot.text = "PT %s · DD %s · BB %s" % [U.yards(eye * 0.5), U.yards(eye * 1.0), U.yards(eye * 2.0)]
 	lbl.det_radar.text = U.yards(p.T.radar) if p.T.radar > 0.0 and p.mod_health("director") > 0.0 else ("knocked out" if p.T.radar > 0.0 else "none")
 	lbl.det_main.text = U.yards(p.max_range()) if p.max_range() > 0.0 else "none"
 	var sr := p.secondary_range()
@@ -1173,6 +1178,18 @@ func _draw_overlay() -> void:
 			continue
 		var known: bool = p.contact(s) or (not s.alive and s.spotted_once)
 		if not known:
+			# a lost contact: a fading marker where she was last seen
+			var age: float = B.t - s.lost_t
+			if s.alive and not s.escaped and s.spotted_once and age < B.GHOST_T and not B.fog_off():
+				var ga: float = 0.75 * (1.0 - age / B.GHOST_T) + 0.15
+				var gp := _p(s.seen_x, s.seen_z, 3.0)
+				if Rect2(Vector2.ZERO, vs).grow(-20).has_point(gp):
+					var gc := Color(C_RED, ga)
+					var gh := 9.0
+					overlay.draw_polyline(PackedVector2Array([gp + Vector2(0, -gh), gp + Vector2(gh, 0), gp + Vector2(0, gh), gp + Vector2(-gh, 0), gp + Vector2(0, -gh)]), gc, 1.4)
+					var gf := U.fwd(s.seen_h)
+					overlay.draw_line(gp, gp + Vector2(gf.x, gf.y) * 16.0, gc, 1.2)
+					overlay.draw_string(font, gp + Vector2(gh + 6, 4), "%s · lost %d:%02d ago" % [s.T.name, int(age) / 60, int(age) % 60], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, gc)
 			continue
 		var sp := _p(s.x, s.z, 6.0)
 		var on := Rect2(Vector2.ZERO, vs).grow(-20).has_point(sp)

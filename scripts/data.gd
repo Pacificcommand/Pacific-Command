@@ -184,11 +184,11 @@ const TELE := [
 
 ## Weather and time of day. vis = how far a lookout can see a ship (m).
 const WEATHER := {
-	"clear": {"name": "Clear day", "vis": 10000.0, "night": false,
+	"clear": {"name": "Clear day", "vis": 6500.0, "night": false,
 		"deep": Color(0.02, 0.13, 0.27), "shallow": Color(0.06, 0.3, 0.45), "sun": Color(1.0, 0.96, 0.88), "sun_energy": 1.15,
 		"sky": Color(0.45, 0.58, 0.7), "ambient": 0.32, "fog": Color(0.66, 0.76, 0.84), "fog_k": 0.03, "chop": 0.9, "spec": 0.45,
 		"sun_dir": Vector3(-0.45, -0.8, -0.38), "lit": 1.0},
-	"overcast": {"name": "Overcast", "vis": 6500.0, "night": false,
+	"overcast": {"name": "Overcast", "vis": 5000.0, "night": false,
 		"deep": Color(0.07, 0.15, 0.18), "shallow": Color(0.18, 0.27, 0.29), "sun": Color(0.85, 0.88, 0.92), "sun_energy": 0.7,
 		"sky": Color(0.42, 0.45, 0.48), "ambient": 0.65, "fog": Color(0.5, 0.54, 0.57), "fog_k": 0.1, "chop": 1.3, "spec": 0.2,
 		"sun_dir": Vector3(-0.2, -0.95, -0.25), "lit": 0.75},

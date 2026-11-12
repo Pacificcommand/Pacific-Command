@@ -179,6 +179,12 @@ All keys can be changed in Settings › Controls.
 - The ship is alive: a representative crew walks the decks while cruising, runs to the
   open gun mounts and the rails at general quarters, repair parties fight the fires, and
   when she goes down the men go to the side and over.
+- Fog of war: enemy ships are drawn only while someone on your side sees them (by eye, radar
+  or a scout plane); before that there is just the reported position on the plot. Big ships are
+  seen from farther off than small ones (clear day: a PT boat about 3,500 yd, a destroyer
+  7,000, a cruiser 10-11,000, a battleship 14,000), so small ships see first. By day, firing
+  gives a ship away out to the range of her guns for 20 seconds. A contact that slips away
+  leaves a fading "lost" marker where she was last seen.
 - Detection plate (top left): your concealment by sea (and how far your gun flashes are seen
   at night), how far your lookouts see a PT boat / destroyer / battleship in this weather,
   radar, main gun, secondary, AA, torpedo and sonar ranges, and a DETECTED / Not detected
